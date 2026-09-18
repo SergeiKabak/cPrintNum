@@ -152,13 +152,13 @@ npm install          :: только в первый раз
 npm run dev
 ```
 
-WXT соберёт расширение в `extension\.output\chrome-mv3`.
+WXT соберёт расширение в `extension\output\chrome-mv3`.
 
 ### Шаг 3. Загрузите расширение в браузер
 
 1. Откройте `chrome://extensions`
 2. Включите **Режим разработчика**
-3. **Загрузить распакованное** → выберите папку `extension\.output\chrome-mv3`
+3. **Загрузить распакованное** → выберите папку `extension\output\chrome-mv3`
 
 ### Шаг 4. Откройте Ozon и консоль
 
@@ -250,7 +250,7 @@ cd extension
 npm run dev
 ```
 
-**Браузер** — загрузить расширение из `.output\chrome-mv3`, открыть Ozon, F12,
+**Браузер** — загрузить расширение из `output\chrome-mv3`, открыть Ozon, F12,
 в консоли:
 
 ```js

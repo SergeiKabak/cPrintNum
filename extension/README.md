@@ -457,7 +457,7 @@ npm run build
 После сборки готовое расширение будет находиться в каталоге:
 
 ```text
-.output/chrome-mv3
+output/chrome-mv3
 ```
 
 ---
@@ -490,7 +490,7 @@ chrome://extensions
    npm run dev
    ```
 
-2. Загрузите распакованное расширение из `.output/chrome-mv3` в браузер
+2. Загрузите распакованное расширение из `output/chrome-mv3` в браузер
    (`chrome://extensions` → «Загрузить распакованное»).
 3. Откройте страницу Ozon и DevTools (F12).
 4. В консоли вызовите:

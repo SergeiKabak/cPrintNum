@@ -13,6 +13,10 @@ export default defineConfig({
   },
 
   srcDir: "src",
+
+  // Папка сборки: extension/output/<браузер> (например, output/chrome-mv3).
+  outDir: "output",
+
   vite: () => ({
     plugins: [react()],
     build: {
