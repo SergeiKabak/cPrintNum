@@ -1,16 +1,26 @@
 # Logs
 logs
 *.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
 
+# Rust
+/target
+src-printnum/target
+**/*.rs.bk
+
+# Node / extension
 node_modules
 dist
 dist-ssr
 *.local
+
+# Installer / build artifacts
+src-printnum/installer-output
+*.exe
+*.msi
+*.pdb
+
+# Локальный config.json (при запуске вне Windows)
+src-printnum/PrintNum/
 
 # Editor directories and files
 .vscode/*

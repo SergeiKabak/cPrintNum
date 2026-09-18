@@ -3,11 +3,15 @@ declare const chrome: any;
 import { qrCommandRecommendation } from "@/utils/constants";
 import { listening } from "@/utils/listener";
 import { waitLoadElement } from "@/utils/find";
+import { registerScannerSimulator } from "@/utils/scannerSimulator";
 
 export default defineContentScript({
   matches: ["https://turbo-pvz.ozon.ru/*"],
 
   main() {
+    // В dev-сборке доступен эмулятор сканера.
+    registerScannerSimulator();
+
     let isRunning = false;
 
     async function clickByElem(selector: string, textValue: string) {

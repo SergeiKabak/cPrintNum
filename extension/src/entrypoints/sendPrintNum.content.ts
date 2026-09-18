@@ -1,11 +1,15 @@
 import { sendServer } from "@/utils/api";
 import { SELECTORS, workPathNames } from "@/utils/constants";
 import { subscribe } from "@/utils/observer";
+import { registerScannerSimulator, onSimulatedScan } from "@/utils/scannerSimulator";
 
 export default defineContentScript({
   matches: ["https://turbo-pvz.ozon.ru/*"],
 
   async main() {
+    // В dev-сборке доступен эмулятор сканера: PrintNumScanner.simulate("123-47").
+    registerScannerSimulator();
+
     let firstRun = false;
     let observer: MutationObserver | null = null;
 
@@ -109,5 +113,10 @@ export default defineContentScript({
     }
 
     subscribe(toggleState);
+
+    // Логирование симулированного сканирования (dev) — видно в консоли.
+    onSimulatedScan((value) => {
+      console.info(`[PrintNum:scanner] обработка номера: "${value}"`);
+    });
   },
 });

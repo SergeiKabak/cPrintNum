@@ -1,0 +1,457 @@
+// PrintNum — нативный GUI на Slint (одна тёмная тема).
+// Соответствует референсу docs/frontend-reference.md.
+
+import { Button, CheckBox, ComboBox, LineEdit, VerticalBox, HorizontalBox, ScrollView } from "std-widgets.slint";
+
+// ---- Палитра (одна тёмная тема) ----
+global Palette {
+    in-out property <color> bg: #111318;
+    in-out property <color> panel: #181b22;
+    in-out property <color> panel-2: #1f232c;
+    in-out property <color> border: #2a2f3a;
+    in-out property <color> fg: #e8eaf0;
+    in-out property <color> muted: #98a0b3;
+    in-out property <color> accent: #3b82f6;
+    in-out property <color> accent-fg: #ffffff;
+    in-out property <color> danger: #ef4444;
+    in-out property <color> success: #22c55e;
+    in-out property <color> white: #ffffff;
+    in-out property <color> black: #000000;
+}
+
+// ---- Иконка приложения (упрощённая «ячейка») ----
+component AppIcon inherits Rectangle {
+    width: 28px;
+    height: 28px;
+    background: transparent;
+    border-radius: 6px;
+    border-width: 2px;
+    border-color: Palette.accent;
+    Text {
+        text: "PN";
+        color: Palette.accent;
+        font-size: 11px;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+// ---- Кнопка заголовка окна ----
+component TitleButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> danger: false;
+    callback clicked;
+    width: 40px;
+    height: 100%;
+    background: touch.pressed ? Palette.border : (touch.has-hover ? (danger ? Palette.danger : Palette.panel-2) : transparent);
+    Text {
+        text: root.label;
+        color: touch.has-hover && root.danger ? Palette.white : Palette.muted;
+        font-size: 14px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+        mouse-cursor: pointer;
+    }
+}
+
+export component AppWindow inherits Window {
+    title: "PrintNum — Печать ячеек";
+    width: 460px;
+    height: 580px;
+    background: Palette.bg;
+    default-font-family: "Segoe UI";
+
+    in-out property <bool> server-online: true;
+    in-out property <bool> printer-online: false;
+    in-out property <bool> dry-run: false;
+    in-out property <string> version: "3.0.0";
+    in-out property <bool> show-settings: false;
+    in-out property <bool> running: true;
+
+    // Настройки
+    in-out property <string> printer: "";
+    in-out property <string> paper: "30*20";
+    in-out property <bool> id-num: false;
+    in-out property <bool> end-line: false;
+    in-out property <bool> hybrid: false;
+    in-out property <int> expand: 500;
+
+    // Индексы для ComboBox (вычисляются в Rust).
+    in-out property <int> printer-index: 0;
+    in-out property <int> paper-index: 0;
+
+    in property <[string]> list-printers: [];
+    in property <[string]> list-papers: ["30*20", "40*30", "43*25", "50*70", "58*40", "60*40", "75*120", "100*150"];
+
+    // Колбэки в Rust
+    callback set-running(bool);
+    callback set-printer(string);
+    callback set-paper(string);
+    callback set-id-num(bool);
+    callback set-end-line(bool);
+    callback set-hybrid(bool);
+    callback set-expand(int);
+    callback minimize-window;
+    callback close-window;
+    callback open-help;
+
+    // ===== Загрузочный экран =====
+    if !server-online : Rectangle {
+        background: Palette.bg;
+        VerticalLayout {
+            alignment: center;
+            spacing: 14px;
+            Rectangle {
+                width: 56px;
+                height: 56px;
+                background: transparent;
+                AppIcon { x: 14px; y: 14px; width: 28px; height: 28px; }
+            }
+            Text {
+                text: "Печать ячеек";
+                color: Palette.fg;
+                font-size: 24px;
+                font-weight: 700;
+                horizontal-alignment: center;
+            }
+            Text {
+                text: "Приложение запускается...";
+                color: Palette.muted;
+                font-size: 13px;
+                horizontal-alignment: center;
+            }
+        }
+    }
+
+    // ===== Основной каркас =====
+    if server-online : VerticalLayout {
+        // ---- Header ----
+        Rectangle {
+            height: 44px;
+            background: Palette.panel;
+            border-width: 1px;
+            border-color: Palette.border;
+            HorizontalLayout {
+                padding-left: 8px;
+                spacing: 6px;
+                Rectangle {
+                    width: 28px;
+                    height: 28px;
+                    AppIcon { width: 28px; height: 28px; }
+                }
+                Text {
+                    text: "Печать ячеек";
+                    color: Palette.fg;
+                    font-size: 13px;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                }
+                Rectangle { horizontal-stretch: 1; }
+                TitleButton {
+                    label: "⚙";
+                    clicked => { show-settings = !show-settings; }
+                }
+                TitleButton { label: "—"; clicked => { root.minimize-window(); } }
+                TitleButton { label: "✕"; danger: true; clicked => { root.close-window(); } }
+            }
+        }
+
+        // ---- Main ----
+        Rectangle {
+            vertical-stretch: 1;
+            background: Palette.bg;
+
+            if !show-settings : VerticalLayout {
+                alignment: center;
+                spacing: 10px;
+
+                Rectangle {
+                    width: 140px;
+                    height: 140px;
+                    border-radius: 70px;
+                    background: running ? Palette.danger : Palette.success;
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 4px;
+                        Text {
+                            text: running ? "■" : "▶";
+                            color: Palette.white;
+                            font-size: 30px;
+                            horizontal-alignment: center;
+                        }
+                        Text {
+                            text: running ? "Остановить" : "Запустить";
+                            color: Palette.white;
+                            font-size: 16px;
+                            font-weight: 600;
+                            horizontal-alignment: center;
+                        }
+                    }
+                    touch := TouchArea {
+                        clicked => { root.set-running(!root.running); }
+                        mouse-cursor: pointer;
+                    }
+                }
+                Text {
+                    text: running ? "Приложение запущено" : "Приложение остановлено";
+                    color: Palette.muted;
+                    font-size: 12px;
+                    horizontal-alignment: center;
+                }
+            }
+
+            // ---- Settings ----
+            if show-settings : ScrollView {
+                VerticalLayout {
+                    padding: 12px;
+                    spacing: 10px;
+
+                    Text {
+                        text: "OZON";
+                        color: Palette.accent;
+                        font-size: 14px;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                    }
+
+                    // Принтер + Этикетка
+                    HorizontalLayout {
+                        spacing: 10px;
+                        VerticalLayout {
+                            Text { text: "Принтер"; color: Palette.muted; font-size: 12px; }
+                            ComboBox {
+                                model: list-printers;
+                                current-index: root.printer-index;
+                                selected(value) => { root.set-printer(value); }
+                            }
+                        }
+                        VerticalLayout {
+                            Text { text: "Этикетка (mm)"; color: Palette.muted; font-size: 12px; }
+                            ComboBox {
+                                model: list-papers;
+                                current-index: root.paper-index;
+                                selected(value) => { root.set-paper(value); }
+                            }
+                        }
+                    }
+
+                    Rectangle { height: 1px; background: Palette.border; }
+
+                    Text {
+                        text: "Оформление этикетки";
+                        color: Palette.fg;
+                        font-size: 13px;
+                        font-weight: 600;
+                        horizontal-alignment: center;
+                    }
+
+                    HorizontalLayout {
+                        spacing: 10px;
+                        // Настройки
+                        VerticalLayout {
+                            spacing: 6px;
+                            CheckBox {
+                                text: "Показывать ID";
+                                checked: root.id-num;
+                                toggled => { root.set-id-num(self.checked); }
+                            }
+                            CheckBox {
+                                text: "Подчёркивание";
+                                checked: root.end-line;
+                                toggled => { root.set-end-line(self.checked); }
+                            }
+                            CheckBox {
+                                text: "Гибридный формат";
+                                checked: root.hybrid;
+                                toggled => { root.set-hybrid(self.checked); }
+                            }
+                            if root.hybrid : HorizontalLayout {
+                                spacing: 6px;
+                                Text {
+                                    text: "Начиная с номера";
+                                    color: Palette.muted;
+                                    font-size: 11px;
+                                    vertical-alignment: center;
+                                }
+                                Rectangle {
+                                    width: 28px; height: 28px;
+                                    border-radius: 6px;
+                                    background: Palette.panel-2;
+                                    border-width: 1px;
+                                    border-color: Palette.border;
+                                    Text { text: "−"; color: Palette.fg; horizontal-alignment: center; vertical-alignment: center; }
+                                    TouchArea { clicked => { root.set-expand(Math.max(1, root.expand - 1)); } mouse-cursor: pointer; }
+                                }
+                                LineEdit {
+                                    width: 64px;
+                                    text: root.expand;
+                                    input-type: number;
+                                    edited => {
+                                        root.set-expand(Math.max(1, floor(self.text.to-float())));
+                                    }
+                                }
+                                Rectangle {
+                                    width: 28px; height: 28px;
+                                    border-radius: 6px;
+                                    background: Palette.panel-2;
+                                    border-width: 1px;
+                                    border-color: Palette.border;
+                                    Text { text: "+"; color: Palette.fg; horizontal-alignment: center; vertical-alignment: center; }
+                                    TouchArea { clicked => { root.set-expand(root.expand + 1); } mouse-cursor: pointer; }
+                                }
+                            }
+                        }
+
+                        // Превью
+                        HorizontalLayout {
+                            spacing: 6px;
+                            // Левая этикетка
+                            VerticalLayout {
+                                spacing: 4px;
+                                if root.hybrid : Text {
+                                    text: "Этикетки 1 – " + (root.expand - 1);
+                                    color: Palette.muted;
+                                    font-size: 10px;
+                                    horizontal-alignment: center;
+                                }
+                                Rectangle {
+                                    width: 80px; height: 56px;
+                                    border-radius: 8px;
+                                    background: Palette.white;
+                                    border-width: 1px;
+                                    border-color: Palette.border;
+                                    VerticalLayout {
+                                        padding: 4px;
+                                        if root.id-num : Text {
+                                            text: "−47";
+                                            color: Palette.black;
+                                            font-family: "Arial";
+                                            font-size: 8px;
+                                            horizontal-alignment: right;
+                                        }
+                                        Rectangle {
+                                            vertical-stretch: 1;
+                                            background: transparent;
+                                            Text {
+                                                text: !root.end-line ? "123." : "123";
+                                                color: Palette.black;
+                                                font-family: "Arial";
+                                                font-size: 30px;
+                                                horizontal-alignment: center;
+                                                vertical-alignment: center;
+                                            }
+                                            // Имитация подчёркивания.
+                                            if root.end-line : Rectangle {
+                                                x: (parent.width - 44px) / 2;
+                                                y: parent.height - 8px;
+                                                width: 44px;
+                                                height: 2px;
+                                                background: Palette.black;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            // Правая этикетка
+                            if root.hybrid : VerticalLayout {
+                                spacing: 4px;
+                                Text {
+                                    text: "Этикетки от " + root.expand;
+                                    color: Palette.muted;
+                                    font-size: 10px;
+                                    horizontal-alignment: center;
+                                }
+                                Rectangle {
+                                    width: 80px; height: 56px;
+                                    border-radius: 8px;
+                                    background: Palette.white;
+                                    border-width: 1px;
+                                    border-color: Palette.border;
+                                    VerticalLayout {
+                                        padding: 4px;
+                                        Text {
+                                            text: root.expand + "−";
+                                            color: Palette.black;
+                                            font-family: "Arial";
+                                            font-size: 8px;
+                                            horizontal-alignment: left;
+                                        }
+                                        Rectangle {
+                                            vertical-stretch: 1;
+                                            background: transparent;
+                                            Text {
+                                                text: !root.end-line ? "123." : "123";
+                                                color: Palette.black;
+                                                font-family: "Arial";
+                                                font-size: 30px;
+                                                font-weight: 700;
+                                                horizontal-alignment: center;
+                                                vertical-alignment: center;
+                                            }
+                                            if root.end-line : Rectangle {
+                                                x: (parent.width - 44px) / 2;
+                                                y: parent.height - 8px;
+                                                width: 44px;
+                                                height: 2px;
+                                                background: Palette.black;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Rectangle { height: 1px; background: Palette.border; }
+
+                    Text {
+                        text: "v" + root.version;
+                        color: Palette.muted;
+                        font-size: 11px;
+                        horizontal-alignment: center;
+                    }
+                }
+            }
+        }
+
+        // ---- Footer ----
+        Rectangle {
+            height: 40px;
+            background: Palette.panel;
+            border-width: 1px;
+            border-color: Palette.border;
+            HorizontalLayout {
+                padding-left: 10px;
+                padding-right: 10px;
+                spacing: 8px;
+
+                Text {
+                    text: "GitHub";
+                    color: Palette.muted;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                    TouchArea { clicked => { root.open-help(); } mouse-cursor: pointer; }
+                }
+                Rectangle { horizontal-stretch: 1; }
+                if root.dry-run : Text {
+                    text: "РЕЖИМ ЭМУЛЯЦИИ";
+                    color: Palette.accent;
+                    font-size: 12px;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                }
+                if !root.printer-online && !root.dry-run : Text {
+                    text: "Принтер НЕДОСТУПЕН";
+                    color: Palette.danger;
+                    font-size: 12px;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+}

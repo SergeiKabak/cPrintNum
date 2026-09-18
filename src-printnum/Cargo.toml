@@ -1,0 +1,50 @@
+[package]
+name = "printnum"
+version = "3.0.0"
+edition = "2021"
+description = "PrintNum — печать ячеек Ozon (нативный Rust GUI, Windows 7+)"
+authors = ["PrintNum"]
+build = "build.rs"
+
+# Целевая платформа — Windows 7 SP1 x64 и выше.
+# На macOS/Linux крейт собирается только для разработки (GUI + HTTP + тесты);
+# печать и функции принтера заменены заглушками, см. src/lib.rs.
+
+[[bin]]
+name = "printnum"
+path = "src/main.rs"
+
+[dependencies]
+slint = "1.8"
+slint-build = "1.8"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+tiny_http = "0.12"
+
+# Windows — реальная работа с принтером (Win32 GDI + Spooler).
+# На macOS/Linux этот блок не подключается: модули используют заглушки.
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Storage_Xps",
+    "Win32_Security",
+    "Win32_Graphics_Printing",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Console",
+] }
+
+[build-dependencies]
+slint-build = "1.8"
+
+[target.'cfg(windows)'.build-dependencies]
+winres = "0.1"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
