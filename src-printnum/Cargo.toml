@@ -14,6 +14,19 @@ build = "build.rs"
 name = "printnum"
 path = "src/main.rs"
 
+# Конфигурация cargo-bundle для сборки .app/.dmg на macOS
+# (только для разработки/тестов — печать на macOS недоступна).
+# Сборка: cargo bundle --release  → target/release/bundle/osx/PrintNum.app
+[package.metadata.bundle]
+name = "PrintNum"
+identifier = "ru.printnum.app"
+icon = ["assets/icon.icns"]
+version = "3.0.0"
+category = "public.app-category.productivity"
+short_description = "Печать ячеек Ozon (только для разработки на macOS)"
+long_description = "PrintNum — нативный клиент печати ячеек Ozon. На macOS сборка предназначена только для разработки и не выполняет печать."
+osx_minimum_system_version = "10.15"
+
 [dependencies]
 slint = "1.8"
 slint-build = "1.8"

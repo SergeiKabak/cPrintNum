@@ -496,7 +496,54 @@ cargo build --release --target x86_64-pc-windows-msvc
 Благодаря статической линковке CRT (`+crt-static`) на целевую машину не нужно
 устанавливать Visual C++ Redistributable.
 
-### Установка
+### Сборка под macOS (только для разработки)
+
+> ⚠️ macOS-сборка **не умеет печатать** (нет Win32 GDI/Spooler). Это режим
+> разработки: GUI + HTTP API + эмуляция. Для рабочей печати нужна Windows.
+
+На машине с macOS (нужны Rust и Xcode Command Line Tools):
+
+```bash
+cd src-printnum
+./build-macos.sh
+```
+
+или вручную:
+
+```bash
+cd src-printnum
+cargo build --release                        # target/release/printnum
+cargo install cargo-bundle                    # один раз
+cargo bundle --release                        # .app + .dmg
+```
+
+Результат:
+
+- `target/release/printnum` — исполняемый файл (запуск из терминала);
+- `target/release/bundle/osx/PrintNum.app` — .app-бандл (запуск двойным кликом);
+- `target/release/bundle/dmg/PrintNum.dmg` — .dmg-образ для распространения.
+
+### Упаковка браузерного расширения
+
+```bash
+cd extension
+npm install          # если ещё не сделано
+npm run build        # → output/chrome-mv3
+npm run zip          # → output/printnum-<версия>-chrome.zip
+```
+
+Готовый `output/printnum-<версия>-chrome.zip` загружается в
+[Chrome Web Store](https://chrome.google.com/webstore/devconsole) или
+распаковывается для локальной установки.
+
+Для Firefox:
+
+```bash
+npm run build:firefox
+npm run zip:firefox
+```
+
+### Установка (Windows)
 
 Скопируйте `printnum.exe` на целевую машину и запустите. Приложение не требует
 установки и работает с Windows 7 SP1 x64 и выше.
@@ -537,9 +584,10 @@ PrintNum/
 │   ├── Cargo.toml                # Зависимости: slint, tiny_http, windows
 │   ├── build.rs                  # Компиляция Slint и ресурсов Windows
 │   ├── build-windows.bat         # Скрипт сборки под Windows
+│   ├── build-macos.sh            # Скрипт сборки .app/.dmg (только тесты)
 │   ├── .cargo/config.toml        # Статическая линковка CRT для Win7
 │   ├── .env.example              # Шаблон настроек (порт, dry-run)
-│   ├── assets/                   # Иконки приложения
+│   ├── assets/                   # Иконки приложения (ico, icns, png)
 │   ├── ui/
 │   │   └── app.slint             # Нативный GUI (одна тёмная тема)
 │   ├── src/
