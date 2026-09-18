@@ -97,13 +97,32 @@ fn handle(mut request_tiny: tiny_http::Request) {
             let text = text.trim().to_string();
             let cfg = config::get();
 
-            if !text.is_empty()
-                && cfg.running
-                && !cfg.printer.trim().is_empty()
-                && printer::status_printer(&cfg.printer)
-            {
+            // В режиме эмуляции (dry-run) принтер не нужен — проверяем только
+            // активность приложения и непустой номер. В боевом режиме — как раньше,
+            // требуется выбранный и доступный принтер.
+            let should_print = if print::is_dry_run() {
+                !text.is_empty() && cfg.running
+            } else {
+                !text.is_empty()
+                    && cfg.running
+                    && !cfg.printer.trim().is_empty()
+                    && printer::status_printer(&cfg.printer)
+            };
+
+            if should_print {
                 if let Err(e) = print::print_text(&text, &cfg) {
                     eprintln!("[print] ошибка: {e}");
+                }
+            } else {
+                // Не печатаем — сообщаем причину для отладки.
+                if text.is_empty() {
+                    eprintln!("[print] пропуск: пустой номер");
+                } else if !cfg.running {
+                    eprintln!("[print] пропуск: приложение остановлено (running=false)");
+                } else if !print::is_dry_run() && cfg.printer.trim().is_empty() {
+                    eprintln!("[print] пропуск: принтер не выбран");
+                } else if !print::is_dry_run() {
+                    eprintln!("[print] пропуск: принтер недоступен");
                 }
             }
 
