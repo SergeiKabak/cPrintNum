@@ -1,6 +1,6 @@
 declare const chrome: any;
 
-import { useEffect, useState } from "react";
+import { useEffect, useState } from "preact/hooks";
 import { sendServer } from "@/utils/api";
 
 export default function StatusPrinting() {

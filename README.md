@@ -55,7 +55,7 @@
 | **Desktop**   | [Rust](https://www.rust-lang.org/) 1.70+ + [Slint](https://slint.dev/) 1.x       | Нативный GUI (Windows 7+)             |
 | **Backend**   | Rust + [`tiny_http`](https://github.com/tiny-http/tiny-http) 0.12               | Встроенный HTTP API для печати        |
 | **Печать**    | Rust + [`windows`](https://github.com/microsoft/windows-rs) (Win32 GDI / Spooler) | Печать этикеток, статус, очередь      |
-| **Extension** | [WXT](https://wxt.dev/) + React 18 + TypeScript                                  | Браузерное расширение Ozon            |
+| **Extension** | [WXT](https://wxt.dev/) + Preact + TypeScript                               | Браузерное расширение Ozon            |
 
 > **Весь backend и frontend написан исключительно на Rust.** Python, Node.js и WebView2 для работы приложения не требуются.
 
@@ -87,7 +87,7 @@
 - `OpenPrinter(ADMINISTER)` + `SetPrinter(PURGE)` — очистка очереди.
 - GDI (`CreateDC`, `CreateFont`, `TextOut`) — печать этикетки.
 
-### 🌐 **Браузерное расширение (WXT + React + TypeScript)**
+### 🌐 **Браузерное расширение (WXT + Preact + TypeScript)**
 
 - Работает на страницах Ozon и отправляет номера ячеек в программу PrintNum на ПК.
 - Автоматизирует процессы выдачи, приемку, возврат товаров и упаковку.

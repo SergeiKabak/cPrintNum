@@ -184,3 +184,44 @@ Preact меняет только изменившийся текст, vanilla п
 - **Текущий React-бандл:** `npm run build` в `extension/` → `output/chrome-mv3/chunks/popup-*.js`.
 
 Числа могут немного отличаться на другой машине, но соотношения устойчивы.
+
+---
+
+## Результат миграции (выполнено)
+
+Popup расширения переведён с React + Radix UI на Preact. Radix заменён
+на собственные компоненты (`accordion`, `button`), иконки — на `lucide-preact`.
+
+### Фактические цифры
+
+| Метрика | Было (React + Radix) | Стало (Preact) | Изменение |
+| ------- | -------------------- | -------------- | --------- |
+| popup-бандл | 199 792 Б | **55 144 Б** | −72 % |
+| popup gzip | 61.5 КБ | **18.3 КБ** | −70 % |
+| React/Radix в бандле | да | **нет** | — |
+| Зависимости (deps) | 14 | **5** | −64 % |
+
+### Что изменилось в коде
+
+- `src/components/preact/accordion.tsx` — собственный аккордеон (замена Radix).
+- `src/components/preact/button.tsx` — собственная кнопка.
+- `src/hooks/useStorageState.ts` — переписан на `preact/hooks`.
+- `src/entrypoints/popup/*` — все компоненты переведены на Preact.
+- `lucide-react` → `lucide-preact`, `class` вместо `className` у иконок.
+- `wxt.config.ts` / `tsconfig.json` — JSX настроен на `preact` (`jsxImportSource`).
+- Удалён каталог `src/components/ui/*` (14 React/Radix-компонентов).
+
+### Сохранилось без изменений
+
+- Контракт `chrome.storage.local` (ключи и формат данных).
+- WXT auto-import `useStorageState`.
+- Внешний вид и поведение popup (проверено в headless Chrome: рендер,
+  статус печати, раскрытие аккордеонов — без JS-ошибок).
+
+### Проверка
+
+```bash
+cd extension
+npm run compile   # tsc --noEmit — без ошибок
+npm run build     # сборка output/chrome-mv3
+```

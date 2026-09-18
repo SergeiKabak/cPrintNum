@@ -2,10 +2,10 @@ import {
   AccordionContent,
   AccordionItem,
   AccordionTrigger,
-} from "@/components/ui/accordion";
-import { Button } from "@/components/ui/button";
+} from "@/components/preact/accordion";
+import { Button } from "@/components/preact/button";
 import { cn } from "@/lib/utils";
-import { FolderOpen, LucideIcon } from "lucide-react";
+import { FolderOpen, type LucideIcon } from "lucide-preact";
 
 interface SettingRowProps {
   label: string;
@@ -24,7 +24,6 @@ export function SettingRow({
 }: SettingRowProps) {
   return (
     <Button
-      type="button"
       variant="ghost"
       onClick={onToggle}
       title={isHidden ? "Отключено" : "Включено"}
@@ -38,9 +37,9 @@ export function SettingRow({
     >
       <div className="flex items-center justify-center shrink-0">
         {isHidden ? (
-          <HiddenIcon className="h-4 w-4 text-muted-foreground/50" />
+          <HiddenIcon class="h-4 w-4 text-muted-foreground/50" />
         ) : (
-          <VisibleIcon className="h-4 w-4 text-emerald-600 dark:text-emerald-500" />
+          <VisibleIcon class="h-4 w-4 text-emerald-600 dark:text-emerald-500" />
         )}
       </div>
       <span
@@ -85,7 +84,7 @@ export function SettingSection({
         {/* Проверка на пустой список */}
         {items.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-1.5 py-3 px-2 rounded-lg border border-dashed border-muted text-center text-muted-foreground/60 select-none">
-            <FolderOpen className="h-4 w-4 stroke-[1.5]" />
+            <FolderOpen class="h-4 w-4 stroke-[1.5]" />
             <span className="text-[11px] font-medium">Список пуст</span>
           </div>
         ) : (

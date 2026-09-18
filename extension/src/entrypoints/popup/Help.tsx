@@ -1,5 +1,5 @@
 import { UniversalLinkButton } from "@/components/opeTabURL";
-import { HelpCircle } from "lucide-react";
+import { HelpCircle } from "lucide-preact";
 
 export default function Help() {
   return (
@@ -8,8 +8,8 @@ export default function Help() {
       icon={HelpCircle}
       text="Помощь"
       variant="ghost"
-      size="sm" // Или "default" / "lg" в зависимости от требований дизайна
-      className="text-muted-foreground hover:text-foreground" // Дополнительная стилизация цвета при желании
+      size="sm"
+      className="text-muted-foreground hover:text-foreground"
     />
   );
 }

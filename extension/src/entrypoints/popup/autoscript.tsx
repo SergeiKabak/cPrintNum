@@ -1,6 +1,6 @@
-import { Accordion } from "@/components/ui/accordion";
+import { Accordion } from "@/components/preact/accordion";
 import { SettingSection } from "./SettingSection";
-import { Play, Pause } from "lucide-react";
+import { Play, Pause } from "lucide-preact";
 
 export default function Autoscript() {
   const [autoscript, setAutoscript] = useStorageState("autoscripts", []);

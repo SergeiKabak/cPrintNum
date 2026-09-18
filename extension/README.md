@@ -348,10 +348,10 @@ PrintNum Backend
 | Компонент     | Технология   |
 | ------------- | ------------ |
 | Framework     | WXT          |
-| UI            | React 18     |
+| UI            | Preact       |
 | Язык          | TypeScript 5 |
 | Стили         | Tailwind CSS |
-| UI-компоненты | Radix UI     |
+| Иконки        | lucide-preact |
 | Сборщик       | Vite         |
 | Расширение    | WXT          |
 

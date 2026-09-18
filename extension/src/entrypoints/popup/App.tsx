@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect } from "preact/hooks";
 import Hide from "./hide";
 
 import {
@@ -6,7 +6,7 @@ import {
   AccordionContent,
   AccordionItem,
   AccordionTrigger,
-} from "@/components/ui/accordion";
+} from "@/components/preact/accordion";
 import StatusPrinting from "./statusPrinting";
 import Autoscript from "./autoscript";
 import QrCommands from "./qrCommands";
@@ -26,13 +26,12 @@ function App() {
       <Accordion
         type="single"
         collapsible
-        className="w-full bg-card text-card-foreground shadow-sm overflow-hidden  border"
+        className="w-full bg-card text-card-foreground shadow-sm overflow-hidden border"
       >
         <AccordionItem value="dop-menu" className="border-b-0">
           <AccordionTrigger className="p-3 text-sm font-semibold hover:no-underline hover:bg-muted/50 transition-colors">
             Дополнительные возможности
           </AccordionTrigger>
-          {/* Убрали лишний внутренний div, перенеся центрирование сюда */}
           <AccordionContent className="p-3 pt-0 flex flex-col items-center gap-2">
             <div className="flex flex-col items-center p-2 w-full gap-2">
               <QrCommands />

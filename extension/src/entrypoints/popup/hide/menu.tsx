@@ -1,4 +1,4 @@
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff } from "lucide-preact";
 import { SettingSection } from "../SettingSection";
 
 export default function Menu() {

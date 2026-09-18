@@ -1,4 +1,4 @@
-import { Bell, BellOff } from "lucide-react"; // Заменили Eye и EyeOff на Bell и BellOff
+import { Bell, BellOff } from "lucide-preact";
 import { SettingSection } from "../SettingSection";
 
 export default function Notification() {

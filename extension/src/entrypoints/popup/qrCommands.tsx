@@ -1,11 +1,10 @@
 import { SettingSection } from "./SettingSection";
-import { Ban, QrCode } from "lucide-react";
-import { Accordion } from "@/components/ui/accordion";
-import { Printer } from "lucide-react";
+import { Ban, QrCode } from "lucide-preact";
+import { Accordion } from "@/components/preact/accordion";
+import { Printer } from "lucide-preact";
 import { UniversalLinkButton } from "@/components/opeTabURL";
 
 export default function QrCommands() {
-  // Предполагается, что useStorageState объявлен выше или импортирован
   const [qrCodes, setQrCodes] = useStorageState("qrCodes", []);
   const [offQrCodes, setOffQrId] = useStorageState("offQrCodes", []);
 
@@ -26,7 +25,6 @@ export default function QrCommands() {
           HiddenIcon={Ban}
         />
       </Accordion>
-      {/* Передаем пропс fileUrl, который вы указали в вызове */}
       <UniversalLinkButton
         fileUrl="/qrCodes.pdf"
         icon={Printer}

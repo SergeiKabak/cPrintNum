@@ -1,5 +1,4 @@
 import { defineConfig } from "wxt";
-import react from "@vitejs/plugin-react";
 
 // See https://wxt.dev/api/config.html
 export default defineConfig({
@@ -18,14 +17,23 @@ export default defineConfig({
   outDir: "output",
 
   vite: () => ({
-    plugins: [react()],
-    build: {
-      // Указываем Vite компилировать под современные стандарты
+    // Popup написан на Preact (лёгкая замена React): JSX компилируется
+    // в вызовы preact/jsx-runtime.
+    esbuild: {
+      jsx: "automatic",
+      jsxImportSource: "preact",
       target: "es2022",
     },
-    esbuild: {
-      // Запрещаем внутреннему esbuild транспилировать приватные поля в функции .call()
+    build: {
       target: "es2022",
+    },
+    resolve: {
+      alias: {
+        // Позволяет писать `import { useState } from "react"` при желании,
+        // но основной код использует preact напрямую.
+        react: "preact/compat",
+        "react-dom": "preact/compat",
+      },
     },
   }),
 });
