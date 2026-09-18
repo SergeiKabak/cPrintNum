@@ -66,6 +66,13 @@ fn main() {
     }
 
     // 2. GUI.
+    //
+    // Явно выбираем software-рендерер Slint — ради совместимости с Windows 7:
+    // он не требует OpenGL/Direct2D/DirectWrite и новых GPU-API.
+    // Если env SLINT_BACKEND задан явно — уважаем его.
+    if std::env::var("SLINT_BACKEND").is_err() {
+        std::env::set_var("SLINT_BACKEND", "winit-software");
+    }
     let app = AppWindow::new().expect("Не удалось создать окно");
 
     let cfg = config::get();

@@ -28,7 +28,16 @@ long_description = "PrintNum — нативный клиент печати яч
 osx_minimum_system_version = "10.15"
 
 [dependencies]
-slint = "1.8"
+# Slint без default-фич: используется только software-рендерер.
+# Причина — совместимость с Windows 7: femtovg требует OpenGL/Direct2D,
+# а DirectWrite/Direct2D на Win7 ограничены. Software-рендерер рисует
+# через GDI и не зависит от GPU/новых API.
+slint = { version = "1.8", default-features = false, features = [
+    "std",
+    "compat-1-2",
+    "backend-winit",
+    "renderer-software",
+] }
 slint-build = "1.8"
 
 serde = { version = "1", features = ["derive"] }
