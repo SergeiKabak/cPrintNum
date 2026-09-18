@@ -24,6 +24,9 @@ src-printnum/installer-output
 *.msi
 *.pdb
 
+# Шаблон/результат релизного архива
+PrintNum-win7-x64-*.zip
+
 # Локальный config.json (при запуске вне Windows)
 src-printnum/PrintNum/
 
