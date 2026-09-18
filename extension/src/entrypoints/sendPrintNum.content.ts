@@ -114,9 +114,35 @@ export default defineContentScript({
 
     subscribe(toggleState);
 
-    // Логирование симулированного сканирования (dev) — видно в консоли.
+    // Логирование и обработка симулированного сканирования (dev).
+    //
+    // В боевом режиме sendNumber() вызывает MutationObserver при изменении DOM.
+    // Эмулятор сканера меняет только keydown-события и DOM не трогает, поэтому
+    // здесь явно прогоняем номер через ту же отправку — иначе "сканирование"
+    // в эмуляторе никуда бы не уходило.
+    let lastSimulated: { value: string; at: number } | null = null;
     onSimulatedScan((value) => {
       console.info(`[PrintNum:scanner] обработка номера: "${value}"`);
+
+      // Защита от возможного дублирования с DOM-событием.
+      const now = Date.now();
+      if (
+        lastSimulated &&
+        lastSimulated.value === value &&
+        now - lastSimulated.at < 500
+      ) {
+        return;
+      }
+      lastSimulated = { value, at: now };
+
+      // Отправляем номер в приложение так же, как при реальном сканировании.
+      sendNumber(value).then((ok) => {
+        console.info(
+          ok
+            ? `[PrintNum:scanner] номер "${value}" отправлен в PrintNum`
+            : `[PrintNum:scanner] не удалось отправить номер "${value}"`,
+        );
+      });
     });
   },
 });
