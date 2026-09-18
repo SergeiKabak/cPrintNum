@@ -194,9 +194,13 @@ npm install          :: только в первый раз
 npm run dev
 ```
 
-WXT соберёт расширение в `extension\output\chrome-mv3`.
+> Без `npm install` команда `npm run dev` выдаст `wxt: command not found`.
+
+WXT соберёт расширение в `extension\output\chrome-mv3` и обычно сам откроет Chrome.
 
 ### Шаг 3. Загрузите расширение в браузер
+
+Если браузер не открылся автоматически:
 
 1. Откройте `chrome://extensions`
 2. Включите **Режим разработчика**
@@ -206,6 +210,7 @@ WXT соберёт расширение в `extension\output\chrome-mv3`.
 
 1. Перейдите на `https://turbo-pvz.ozon.ru/...`
 2. Нажмите **F12** → вкладка **Console**
+3. **Переключите контекст** Console с `top` на **`PrintNum`** (см. примечание ниже)
 
 ### Шаг 5. Симулируйте сканирование
 
@@ -289,19 +294,25 @@ cargo run --release -- --dry-run
 
 ```bat
 cd extension
+npm install          :: если ещё не сделано
 npm run dev
 ```
 
 **Браузер** — загрузить расширение из `output\chrome-mv3`, открыть Ozon, F12,
-в консоли:
+**переключить контекст Console на `PrintNum`**, в консоли:
 
 ```js
 PrintNumScanner.simulateSequence(["123-47", "500-47", "КГТ-1"], 1500);
 ```
 
-**Результат** — в каталоге `previews` (см. таблицу путей) появятся три пары файлов
-(`.bmp` + `.json`) — по одному на каждый «отсканированный» номер, без единой
-реальной печати и без сканера.
+**Результат:**
+
+- в **консоли браузера** — `[PrintNum:scanner] номер "..." отправлен в PrintNum`;
+- в **терминале 1** — `[dry-run] Разбор номера: ...` для каждого номера;
+- на **Windows** — ещё и файлы `.bmp` + `.json` в каталоге `previews`
+  (см. таблицу путей в разделе 1).
+
+Всё это без реальной печати и без сканера.
 
 ---
 
@@ -309,7 +320,7 @@ PrintNumScanner.simulateSequence(["123-47", "500-47", "КГТ-1"], 1500);
 
 | Что нужно проверить           | Команды                                                                        |
 | ----------------------------- | ------------------------------------------------------------------------------ |
-| Только логика печати          | `cd src-printnum && cargo run -- --dry-run` + `curl ... /print-number`         |
+| Только логика печати          | `cd src-printnum && cargo run --release -- --dry-run` + `curl ... /print-number` |
 | Вся цепочка со сканером       | PrintNum `--dry-run` + `cd extension && npm run dev` + `PrintNumScanner.simulate(...)` |
 | Логика этикеток без запуска   | `cd src-printnum && cargo test`                                                |
 | Только HTTP API               | `curl http://127.0.0.1:5000/status-printer` и другие                           |

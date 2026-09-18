@@ -372,6 +372,20 @@ printnum.exe
 - позиционирование header/main;
 - соответствие размеров этикетки (мм → пиксели, DPI 203).
 
+В терминал приложения при этом выводится разбор номера:
+
+```
+[dry-run] Разбор номера:
+  Вход:        "500-47"
+  Основной:    "47."
+  Колонтитул:  "500-"
+  Жирный:      да
+  Рокировка:   да
+  Подчёркивание: нет
+  Этикетка:    30*20 мм
+  Параметры:   hybrid=true, idNum=true, endLine=false, expand=500
+```
+
 **Проверка без запуска принтера:**
 
 ```bash
@@ -379,11 +393,12 @@ curl -X POST http://127.0.0.1:5000/print-number \
   -H "Content-Type: application/json" -d "{\"text\":\"500-47\"}"
 ```
 
->  Подробная инструкция по обоим эмуляторам (печати и сканера ШК) — в
+> 🧪 Подробная инструкция по обоим эмуляторам (печати и сканера ШК) — в
 > [`docs/emulation-testing.md`](./docs/emulation-testing.md).
 
-> Вне Windows эмуляция не рендерит изображение (нет GDI), но режим всё равно
-> отрабатывает без ошибок — удобно для отладки API на macOS/Linux.
+> На macOS/Linux эмуляция не рендерит изображение (нет GDI), но **разбор номера
+> выводится в терминал** — этого достаточно, чтобы проверить логику без Windows
+> и принтера. Полные BMP/JSON-превью создаются только на Windows.
 
 ### Эмуляция сканирования ШК (в расширении)
 
@@ -419,18 +434,29 @@ PrintNumScanner.simulateSequence(["123-47", "500-47", "КГТ-1"], 1500);
    Приложение соберёт Slint-интерфейс, запустит HTTP-сервер на `http://127.0.0.1:5000`
    и откроет нативное окно.
 
+   Порт можно изменить через `.env` (см. `src-printnum/.env.example`)
+   или переменную окружения `PRINTNUM_PORT`.
+
    >  **Разработка на macOS/Linux:** `cargo run` работает, но печать и функции
    > принтера заменены заглушками (список принтеров пуст, статус «недоступен»).
    > Это режим разработки, а не поддержка платформы. Чтобы проверить API и GUI,
    > этого достаточно; для реальной печати нужна Windows.
 
-3. **Запустите тесты бизнес-логики печати**:
+3. **Запустите приложение в режиме эмуляции печати** (без принтера):
+
+   ```bash
+   cargo run --release -- --dry-run
+   ```
+
+   Подробнее — в [`docs/emulation-testing.md`](./docs/emulation-testing.md).
+
+4. **Запустите тесты** (бизнес-логика печати и пути данных):
 
    ```bash
    cargo test
    ```
 
-4. **Проверьте сборку под Windows** (с macOS/Linux — только проверка типов):
+5. **Проверьте сборку под Windows** (с macOS/Linux — только проверка типов):
 
    ```bash
    cargo check --target x86_64-pc-windows-msvc
@@ -442,7 +468,7 @@ PrintNumScanner.simulateSequence(["123-47", "500-47", "КГТ-1"], 1500);
    rustup target add x86_64-pc-windows-msvc
    ```
 
-5. **Разработка расширения**:
+6. **Разработка расширения**:
    см. [Документация расширения](https://github.com/kirill18734/PrintNum/tree/main/extension)
 
 ## Сборка и установка
@@ -489,16 +515,20 @@ PrintNum/
 │   └── frontend-reference.md     # Референс прежнего React/Tauri фронтенда
 ├── extension/                    # WXT расширение для Ozon
 │   ├── package.json              # Зависимости расширения
-│   ├── wxt.config.ts             # Конфигурация WXT сборки
+│   ├── wxt.config.ts             # Конфигурация WXT сборки (outDir: output)
+│   ├── .env.example              # Шаблон VITE_PRINTNUM_PORT
 │   ├── tailwind.config.js        # Конфиг Tailwind
 │   ├── tsconfig.json             # TypeScript конфигурация
 │   ├── README.md                 # Документация расширения
+│   ├── output/                   # Результат сборки (создаётся автоматически)
 │   └── src/
 │       ├── entrypoints/          # Content scripts и popup
 │       ├── components/           # Компоненты UI
 │       ├── hooks/
 │       ├── lib/
 │       └── utils/
+│           ├── api.ts            # HTTP-клиент (порт из VITE_PRINTNUM_PORT)
+│           └── scannerSimulator.ts  # Эмулятор сканера ШК (только dev)
 ├── public/                       # Статические ассеты (иконка, скриншоты README)
 │   ├── favicon.ico
 │   ├── dark/
@@ -508,6 +538,7 @@ PrintNum/
 │   ├── build.rs                  # Компиляция Slint и ресурсов Windows
 │   ├── build-windows.bat         # Скрипт сборки под Windows
 │   ├── .cargo/config.toml        # Статическая линковка CRT для Win7
+│   ├── .env.example              # Шаблон настроек (порт, dry-run)
 │   ├── assets/                   # Иконки приложения
 │   ├── ui/
 │   │   └── app.slint             # Нативный GUI (одна тёмная тема)
@@ -515,11 +546,13 @@ PrintNum/
 │   │   ├── main.rs               # Точка входа: GUI + HTTP + опрос статуса
 │   │   ├── lib.rs                # Публичные модули для тестов
 │   │   ├── config.rs             # Чтение/запись config.json
+│   │   ├── settings.rs           # Порт из .env/переменной окружения
 │   │   ├── print.rs              # Логика печати (GDI) + бизнес-логика
 │   │   ├── printer.rs            # Win32 Spooler: список, статус, очистка очереди
 │   │   └── server.rs             # HTTP API на tiny_http
 │   └── tests/
-│       └── label_logic.rs        # Тесты паритета бизнес-логики печати
+│       ├── label_logic.rs        # Тесты паритета бизнес-логики печати
+│       └── config_path.rs        # Тесты путей данных по платформам
 └── amvera/                       # (вне области) облачный сервер обновлений
 ```
 
