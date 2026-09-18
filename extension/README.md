@@ -525,6 +525,9 @@ chrome://extensions
   а сохранится как превью в `%APPDATA%\PrintNum\previews\`.
 
 > Внутренний модуль: [`src/utils/scannerSimulator.ts`](./src/utils/scannerSimulator.ts).
+>
+> Полная инструкция по эмуляции (включая эмуляцию печати) — в
+> [`docs/emulation-testing.md`](../docs/emulation-testing.md).
 
 ## Авторы
 

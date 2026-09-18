@@ -7,6 +7,7 @@
 - [PrintNum — Печать ячеек Ozon](#printnum--печать-ячеек-ozon)
 - [🚀 Быстрый старт](#-быстрый-старт)
 - [📖 Инструкция по первому запуску](docs/first-run.md)
+- [🧪 Эмуляция для тестирования](docs/emulation-testing.md)
 - [Стек технологий](#стек-технологий)
 - [Архитектура](#архитектура)
 - [Внешний вид](#внешний-вид)
@@ -346,6 +347,9 @@ curl -X POST http://127.0.0.1:5000/print-number \
   -H "Content-Type: application/json" -d "{\"text\":\"500-47\"}"
 ```
 
+>  Подробная инструкция по обоим эмуляторам (печати и сканера ШК) — в
+> [`docs/emulation-testing.md`](./docs/emulation-testing.md).
+
 > Вне Windows эмуляция не рендерит изображение (нет GDI), но режим всё равно
 > отрабатывает без ошибок — удобно для отладки API на macOS/Linux.
 
@@ -448,6 +452,7 @@ PrintNum/
 ├── .gitignore
 ├── .vscode/                      # Настройки редактора
 ├── docs/
+│   ├── emulation-testing.md      # Эмуляция печати и сканера для тестов
 │   ├── first-run.md              # Инструкция по первому запуску
 │   └── frontend-reference.md     # Референс прежнего React/Tauri фронтенда
 ├── extension/                    # WXT расширение для Ozon
@@ -493,3 +498,5 @@ PrintNum/
 - **Telegram-канал**: `printnum`
 - **GitHub Issues**: [создать обращение](https://github.com/kirill18734/PrintNum/issues)
 - **Документация расширения**: [extension/README.md](./extension/README.md)
+- **Эмуляция для тестирования**: [docs/emulation-testing.md](./docs/emulation-testing.md)
+- **Первый запуск**: [docs/first-run.md](./docs/first-run.md)
