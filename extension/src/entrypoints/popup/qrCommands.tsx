@@ -9,11 +9,11 @@ export default function QrCommands() {
   const [offQrCodes, setOffQrId] = useStorageState("offQrCodes", []);
 
   return (
-    <div className="bg-background flex items-start justify-between gap-1 w-full">
+    <div className="bg-background flex items-center gap-1 w-full">
       <Accordion
         type="single"
         collapsible
-        className="border rounded-xl bg-background overflow-hidden w-full"
+        className="border rounded-xl bg-background overflow-hidden flex-1 min-w-0"
       >
         <SettingSection
           value="qr-settings"

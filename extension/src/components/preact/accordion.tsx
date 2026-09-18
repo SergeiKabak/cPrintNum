@@ -118,7 +118,7 @@ export function AccordionTrigger({
   return (
     <button
       type="button"
-      className={className}
+      className={`flex w-full items-center justify-between gap-2 text-left ${className ?? ""}`}
       data-state={isOpen ? "open" : "closed"}
       aria-expanded={isOpen}
       onClick={() => toggle(value)}
@@ -151,7 +151,7 @@ export function AccordionContent({
 
   return (
     <div
-      className="overflow-hidden text-sm transition-all"
+      className="w-full overflow-hidden text-sm transition-all"
       data-state="open"
     >
       <div className={className}>{children}</div>

@@ -66,7 +66,7 @@ export default function StatusPrinting() {
 
   return (
     <div
-      className={`flex items-center p-3 gap-3 border w-full ${
+      className={`flex items-center p-3 gap-3 border rounded-xl w-full ${
         isActive
           ? "bg-emerald-500/10 border-emerald-500/20"
           : "bg-red-500/10 border-red-500/20"

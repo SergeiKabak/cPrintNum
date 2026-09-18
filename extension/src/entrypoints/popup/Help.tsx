@@ -9,7 +9,7 @@ export default function Help() {
       text="Помощь"
       variant="ghost"
       size="sm"
-      className="text-muted-foreground hover:text-foreground"
+      className="text-muted-foreground hover:text-foreground w-full"
     />
   );
 }

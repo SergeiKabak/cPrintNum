@@ -29,7 +29,7 @@ function App() {
       <Accordion
         type="single"
         collapsible
-        className="w-full bg-card text-card-foreground shadow-sm overflow-hidden border"
+        className="w-full bg-card text-card-foreground shadow-sm overflow-hidden border rounded-xl"
       >
         <AccordionItem value="dop-menu" className="border-b-0">
           <AccordionTrigger className="p-3 text-sm font-semibold hover:no-underline hover:bg-muted/50 transition-colors">
