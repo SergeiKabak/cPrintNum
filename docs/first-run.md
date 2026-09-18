@@ -150,13 +150,23 @@
 
 ## 8. Где сохраняются данные
 
+Расположение зависит от платформы (поддерживается только Windows; macOS/Linux —
+только для разработки):
+
+| Платформа | Каталог данных |
+| --------- | -------------- |
+| **Windows** | `%APPDATA%\PrintNum\` |
+| **macOS** (только разработка) | `~/Library/Application Support/PrintNum/` |
+| **Linux** (только разработка) | `$XDG_CONFIG_HOME/PrintNum/` или `~/.config/PrintNum/` |
+
+Внутри каталога:
+
 ```
-%APPDATA%\PrintNum\config.json      — настройки приложения
-%APPDATA%\PrintNum\previews\        — превью из режима эмуляции (если включён)
+PrintNum\config.json      — настройки приложения
+PrintNum\previews\        — превью из режима эмуляции (если включён)
 ```
 
-`%APPDATA%` — это `C:\Users\<Имя>\AppData\Roaming`.
-
+На Windows `%APPDATA%` — это `C:\Users\<Имя>\AppData\Roaming`.
 Настройки восстанавливаются автоматически при следующем запуске.
 
 ---
@@ -182,7 +192,7 @@ printnum.exe
 
 ### Что сохраняется
 
-Для каждого вызова в `%APPDATA%\PrintNum\previews\`:
+Для каждого вызова (на Windows — в `%APPDATA%\PrintNum\previews\`, см. раздел 8):
 
 - `label_<текст>_<время>.bmp` — изображение этикетки (белый фон, реальный шрифт и позиции);
 - `label_<текст>_<время>.json` — отчёт с вычисленными параметрами (шрифт, позиции, размеры).

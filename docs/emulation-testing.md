@@ -60,8 +60,11 @@ cargo run -- --dry-run
 ```
 *** РЕЖИМ ЭМУЛЯЦИИ ПЕЧАТИ (dry-run) ***
 Печать на принтер выполняться НЕ будет.
-Превью сохраняются в %APPDATA%\PrintNum\previews\
+Превью сохраняются в: <каталог данных>\PrintNum\previews   (Windows)
+Превью сохраняются в: /Users/<Имя>/Library/Application Support/PrintNum/previews   (macOS)
 ```
+
+Точный каталог см. в таблице путей ниже; программа выводит его при старте.
 
 ### Отправка номеров
 
@@ -82,11 +85,16 @@ curl -X POST http://127.0.0.1:5000/print-number -H "Content-Type: application/js
 
 ### Где смотреть результат
 
-```
-%APPDATA%\PrintNum\previews\
-```
+Каталог данных зависит от платформы:
 
-то есть `C:\Users\<Имя>\AppData\Roaming\PrintNum\previews\`.
+| Платформа | Каталог превью |
+| --------- | -------------- |
+| **Windows** | `%APPDATA%\PrintNum\previews\` |
+| **macOS** (только разработка) | `~/Library/Application Support/PrintNum/previews/` |
+| **Linux** (только разработка) | `~/.config/PrintNum/previews/` (или `$XDG_CONFIG_HOME/PrintNum/previews/`) |
+
+Для справки на Windows `%APPDATA%` — это
+`C:\Users\<Имя>\AppData\Roaming`.
 
 Для каждого вызова создаются два файла:
 
@@ -184,7 +192,8 @@ PrintNumScanner.simulateSequence(["123-47", "500-47", "КГТ-1"], 1500);
 
 - **консоль браузера**: `[PrintNum:scanner] отсканировано: "123-47"`
 - **консоль PrintNum**: строка об отправке номера
-- **папка** `%APPDATA%\PrintNum\previews\`: новый `.bmp` + `.json` для каждого номера
+- **каталог `previews`** (см. таблицу путей в разделе 1): новый `.bmp` + `.json`
+  для каждого номера
 
 > В production-сборке (`npm run build`) эмулятор сканера **вырезается** из бандла —
 > он доступен только при `npm run dev`.
@@ -216,7 +225,7 @@ npm run dev
 PrintNumScanner.simulateSequence(["123-47", "500-47", "КГТ-1"], 1500);
 ```
 
-**Результат** — в `%APPDATA%\PrintNum\previews\` появятся три пары файлов
+**Результат** — в каталоге `previews` (см. таблицу путей) появятся три пары файлов
 (`.bmp` + `.json`) — по одному на каждый «отсканированный» номер, без единой
 реальной печати и без сканера.
 
@@ -255,9 +264,9 @@ curl -X POST http://127.0.0.1:5000/print-number \
    работает и логируется, но изображение не рендерится.
 4. Для симуляции сканера нужен именно **`npm run dev`** (не `npm run build`) —
    иначе `PrintNumScanner` в консоли будет `undefined`.
-5. Настройки эмуляции берутся из того же `config.json`
-   (`%APPDATA%\PrintNum\config.json`), что и при обычной работе. Допустимый бумажный
-   размер и порог `expand` можно менять в настройках приложения.
+5. Настройки эмуляции берутся из того же `config.json` (рядом с каталогом `previews`),
+   что и при обычной работе. Допустимый бумажный размер и порог `expand` можно менять
+   в настройках приложения.
 
 ---
 

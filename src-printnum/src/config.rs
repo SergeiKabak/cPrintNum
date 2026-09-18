@@ -1,4 +1,10 @@
-//! Чтение/запись `config.json` в `%APPDATA%\PrintNum\config.json`.
+//! Чтение/запись `config.json` в пользовательском каталоге приложения.
+//!
+//! Расположение файла зависит от платформы:
+//!
+//! - **Windows** — `%APPDATA%\PrintNum\config.json`
+//! - **macOS** — `~/Library/Application Support/PrintNum/config.json`
+//! - **Linux** — `$XDG_CONFIG_HOME/PrintNum/config.json` (или `~/.config/PrintNum/...`)
 //!
 //! Формат ключей полностью совместим с прежним Python/Flask backend,
 //! поэтому уже установленные конфигурации продолжают работать.
@@ -97,14 +103,56 @@ impl Config {
     }
 }
 
-/// Путь к каталогу `%APPDATA%\PrintNum`.
+/// Путь к каталогу данных приложения (платформозависимый).
+///
+/// - Windows: `%APPDATA%\PrintNum`
+/// - macOS:   `~/Library/Application Support/PrintNum`
+/// - Linux:   `$XDG_CONFIG_HOME/PrintNum` или `~/.config/PrintNum`
+///
+/// Если ни одну из стандартных переменных окружения получить не удалось,
+/// используется текущая рабочая директория — но это крайний случай
+/// (например, среда без `HOME`/`APPDATA`).
 pub fn app_dir() -> PathBuf {
-    let base = std::env::var("APPDATA")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    let base = platform_config_base();
     let dir = base.join("PrintNum");
     let _ = std::fs::create_dir_all(&dir);
     dir
+}
+
+/// Базовая директория конфигурации для текущей платформы.
+#[cfg(windows)]
+fn platform_config_base() -> PathBuf {
+    std::env::var("APPDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| fallback_base())
+}
+
+#[cfg(target_os = "macos")]
+fn platform_config_base() -> PathBuf {
+    // ~/Library/Application Support — стандартное место для данных приложений.
+    match std::env::var("HOME") {
+        Ok(home) if !home.is_empty() => PathBuf::from(home).join("Library/Application Support"),
+        _ => fallback_base(),
+    }
+}
+
+#[cfg(all(not(windows), not(target_os = "macos")))]
+fn platform_config_base() -> PathBuf {
+    // Linux и прочие Unix: следуем XDG Base Directory Specification.
+    if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
+        if !xdg.is_empty() {
+            return PathBuf::from(xdg);
+        }
+    }
+    match std::env::var("HOME") {
+        Ok(home) if !home.is_empty() => PathBuf::from(home).join(".config"),
+        _ => fallback_base(),
+    }
+}
+
+/// Крайний случай: если стандартные переменные недоступны.
+fn fallback_base() -> PathBuf {
+    std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
 }
 
 /// Путь к `config.json`.

@@ -37,7 +37,10 @@ fn main() {
     if printnum::print::is_dry_run() {
         println!("*** РЕЖИМ ЭМУЛЯЦИИ ПЕЧАТИ (dry-run) ***");
         println!("Печать на принтер выполняться НЕ будет.");
-        println!("Превью сохраняются в %APPDATA%\\PrintNum\\previews\\");
+        println!(
+            "Превью сохраняются в: {}",
+            config::app_dir().join("previews").display()
+        );
     }
 
     // 1. Запуск HTTP-сервера (localhost:5000) в отдельном потоке.

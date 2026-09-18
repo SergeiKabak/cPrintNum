@@ -95,7 +95,8 @@
 ## 2. Состояние и хранение
 
 Все настройки сохраняются через Tauri Store в файл `config.json`
-(на Windows фактически `%APPDATA%\PrintNum\config.json`, ключи совместимы с backend).
+(на Windows фактически `%APPDATA%\PrintNum\config.json`; на macOS —
+`~/Library/Application Support/PrintNum/config.json`; ключи совместимы с backend).
 
 | Ключ         | Тип       | Значение по умолчанию | Описание                         |
 | ------------ | --------- | --------------------- | -------------------------------- |
@@ -112,8 +113,9 @@
 Дополнительно backend читает `printerOnline` (не сохраняется) и `listPrinters` (динамически).
 
 > **Важно:** в новой Rust-версии config.json пишется напрямую Rust-кодом в
-> `%APPDATA%\PrintNum\config.json`, формат ключей **не меняется** — совместимость
-> с уже установленными конфигами сохраняется.
+> пользовательский каталог приложения (`%APPDATA%\PrintNum\` на Windows,
+> `~/Library/Application Support/PrintNum/` на macOS), формат ключей **не меняется** —
+> совместимость с уже установленными конфигами сохраняется.
 
 ---
 
