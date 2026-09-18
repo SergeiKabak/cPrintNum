@@ -26,6 +26,7 @@ src-printnum/installer-output
 
 # Шаблон/результат релизного архива
 PrintNum-win7-x64-*.zip
+PrintNum-SOURCE-*.zip
 
 # Локальный config.json (при запуске вне Windows)
 src-printnum/PrintNum/
