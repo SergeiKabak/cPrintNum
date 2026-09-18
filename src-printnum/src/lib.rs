@@ -15,6 +15,7 @@
 //!   Это сделано, чтобы вести разработку не только на Windows.
 //!   Поддержка macOS/Linux как пользовательской платформы **не заявлена**.
 
+pub mod barcode;
 pub mod config;
 pub mod print;
 pub mod printer;

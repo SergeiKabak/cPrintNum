@@ -11,6 +11,7 @@ import StatusPrinting from "./statusPrinting";
 import Autoscript from "./autoscript";
 import QrCommands from "./qrCommands";
 import Help from "./Help";
+import BarcodeGenerator from "./BarcodeGenerator";
 
 function App() {
   useEffect(() => {
@@ -22,6 +23,8 @@ function App() {
   return (
     <div className="flex flex-col w-80 items-center gap-4">
       <StatusPrinting />
+
+      <BarcodeGenerator />
 
       <Accordion
         type="single"

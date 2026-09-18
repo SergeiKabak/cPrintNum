@@ -121,6 +121,21 @@ pub fn is_dry_run() -> bool {
 }
 
 /// Заглушка для macOS/Linux (только для разработки).
+#[cfg(not(windows))]
+pub fn print_barcode(
+    _text: &str,
+    _module_mm: f64,
+    _height_mm: f64,
+    _config: &Config,
+) -> Result<(), String> {
+    if is_dry_run() {
+        eprintln!("[dry-run] Рендер штрихкода недоступен вне Windows (нет GDI).");
+        return Ok(());
+    }
+    Err("Печать штрихкода поддерживается только на Windows".into())
+}
+
+/// Заглушка для macOS/Linux (только для разработки).
 ///
 /// В режиме эмуляции печатает разобранные параметры этикетки (что было бы
 /// напечатано), чтобы можно было проверять логику без Windows и принтера.
@@ -396,6 +411,269 @@ mod win_impl {
         }))
     }
 
+    /// Рисует штрихкод Code128 на этикетке: полоски + текст (HRI) под ними.
+    ///
+    /// @param module_mm ширина одного модуля в мм
+    /// @param height_mm высота полосок в мм
+    fn draw_barcode(
+        hdc: HDC,
+        text: &str,
+        module_mm: f64,
+        height_mm: f64,
+    ) -> Result<serde_json::Value, String> {
+        let bc = crate::barcode::encode_code128(text)?;
+
+        let dpi_x = unsafe { GetDeviceCaps(hdc, LOGPIXELSX) as f64 };
+        let dpi_y = unsafe { GetDeviceCaps(hdc, LOGPIXELSY) as f64 };
+
+        let module_px = ((module_mm / 25.4) * dpi_x).round().max(1.0) as i32;
+        let bars_h = ((height_mm / 25.4) * dpi_y).round() as i32;
+
+        let barcode_w = module_px * bc.module_count() as i32;
+
+        // Тихая зона (quiet zone): 10 модулей с каждой стороны по стандарту.
+        let quiet = module_px * 10;
+        let total_w = barcode_w + quiet * 2;
+
+        // Вертикальная компоновка: ШК сверху, текст (HRI) снизу.
+        let text_h = (bars_h as f64 * 0.35) as i32;
+        let gap = (dpi_y / 25.4 * 1.0) as i32; // 1 мм отступ между ШК и текстом
+        let total_h = bars_h + gap + text_h;
+
+        // Отрисовка полосок через PatBlt (чёрные/белые прямоугольники).
+        // Начинаем с белого фона под всей областью ШК.
+        unsafe {
+            let _ = windows::Win32::Graphics::Gdi::PatBlt(
+                hdc,
+                0,
+                0,
+                total_w,
+                total_h,
+                windows::Win32::Graphics::Gdi::WHITENESS,
+            );
+        }
+
+        let mut x = quiet;
+        let mut i = 0usize;
+        while i < bc.module_count() {
+            if bc.modules[i] {
+                // Считаем ширину серии штрихов.
+                let mut run = 1usize;
+                while i + run < bc.module_count() && bc.modules[i + run] {
+                    run += 1;
+                }
+                let w = module_px * run as i32;
+                unsafe {
+                    let _ = windows::Win32::Graphics::Gdi::PatBlt(
+                        hdc,
+                        x,
+                        0,
+                        w,
+                        bars_h,
+                        windows::Win32::Graphics::Gdi::BLACKNESS,
+                    );
+                }
+                x += w;
+                i += run;
+            } else {
+                x += module_px;
+                i += 1;
+            }
+        }
+
+        // Текст под ШК (HRI), по центру.
+        let font = create_font(text_h, FW_NORMAL.0 as i32, false);
+        let old = unsafe { SelectObject(hdc, HGDIOBJ(font.0)) };
+        let (tw, th) = text_extent(hdc, text);
+        let tx = (total_w - tw) / 2;
+        let ty = bars_h + gap + (text_h - th) / 2;
+        let wide: Vec<u16> = OsStr::new(text).encode_wide().collect();
+        unsafe {
+            let _ = TextOutW(hdc, tx, ty, &wide);
+            SelectObject(hdc, old);
+            let _ = DeleteObject(HGDIOBJ(font.0));
+        }
+
+        Ok(serde_json::json!({
+            "text": text,
+            "module_count": bc.module_count(),
+            "module_px": module_px,
+            "bars_height_px": bars_h,
+            "barcode_width_px": barcode_w,
+            "total": { "width": total_w, "height": total_h },
+            "module_mm": module_mm,
+            "height_mm": height_mm,
+        }))
+    }
+
+    /// Главная функция печати штрихкода. В dry-run — рендер превью.
+    pub fn print_barcode(text: &str, module_mm: f64, height_mm: f64, config: &Config) -> Result<(), String> {
+        if super::is_dry_run() {
+            return emulate_barcode(text, module_mm, height_mm);
+        }
+
+        let printer_name = config.printer.trim();
+        if printer_name.is_empty() {
+            return Err("Принтер не выбран".into());
+        }
+
+        clear_printer_queue(printer_name);
+
+        let driver = to_wide(printer_name);
+        let hdc: HDC = unsafe {
+            CreateDCW(
+                PCWSTR(driver.as_ptr()),
+                PCWSTR(driver.as_ptr()),
+                PCWSTR::null(),
+                None,
+            )
+        };
+        if hdc.is_invalid() {
+            return Err(format!("Не удалось создать DC для принтера '{printer_name}'"));
+        }
+
+        let doc_name = to_wide(&format!("Штрихкод: {text}"));
+        let doc_info = DOCINFOW {
+            cbSize: std::mem::size_of::<DOCINFOW>() as i32,
+            lpszDocName: PCWSTR(doc_name.as_ptr()),
+            ..Default::default()
+        };
+
+        let result = (|| -> Result<serde_json::Value, String> {
+            if unsafe { StartDocW(hdc, &doc_info) } <= 0 {
+                return Err("StartDocW не удался".into());
+            }
+            if unsafe { StartPage(hdc) } <= 0 {
+                unsafe {
+                    let _ = AbortDoc(hdc);
+                }
+                return Err("StartPage не удался".into());
+            }
+
+            unsafe { SetBkMode(hdc, TRANSPARENT) };
+            let report = draw_barcode(hdc, text, module_mm, height_mm)?;
+
+            unsafe {
+                let _ = EndPage(hdc);
+                let _ = EndDoc(hdc);
+            }
+            Ok(report)
+        })();
+
+        unsafe {
+            let _ = DeleteDC(hdc);
+        }
+
+        match result {
+            Ok(report) => {
+                println!(
+                    "Штрихкод отправлен: {} ({} модулей)",
+                    text, report["module_count"]
+                );
+                Ok(())
+            }
+            Err(e) => {
+                eprintln!("Ошибка при печати штрихкода: {e}");
+                Err(e)
+            }
+        }
+    }
+
+    /// Эмуляция печати штрихкода (без GDI-принтера) — рисует в memory DC,
+    /// сохраняет BMP + JSON.
+    fn emulate_barcode(text: &str, module_mm: f64, height_mm: f64) -> Result<(), String> {
+        let bc = crate::barcode::encode_code128(text)?;
+
+        // Рендер при 203 dpi (типичный термопринтер).
+        const DPI: f64 = 203.0;
+        let module_px = ((module_mm / 25.4) * DPI).round().max(1.0) as i32;
+        let bars_h = ((height_mm / 25.4) * DPI).round() as i32;
+        let text_h = (bars_h as f64 * 0.35) as i32;
+        let gap = ((1.0 / 25.4) * DPI).round() as i32;
+        let barcode_w = module_px * bc.module_count() as i32;
+        let quiet = module_px * 10;
+        let width_px = barcode_w + quiet * 2;
+        let height_px = bars_h + gap + text_h + 4;
+
+        let screen = unsafe { CreateCompatibleDC(None) };
+        if screen.is_invalid() {
+            return Err("Не удалось создать memory DC".into());
+        }
+
+        let bmi = BITMAPINFO {
+            bmiHeader: BITMAPINFOHEADER {
+                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                biWidth: width_px,
+                biHeight: -height_px,
+                biPlanes: 1,
+                biBitCount: 24,
+                biCompression: BI_RGB.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let mut bits: *mut std::ffi::c_void = std::ptr::null_mut();
+        let bitmap: HBITMAP = match unsafe {
+            CreateDIBSection(screen, &bmi, DIB_RGB_COLORS, &mut bits, None, 0)
+        } {
+            Ok(b) => b,
+            Err(e) => {
+                unsafe { let _ = DeleteDC(screen); }
+                return Err(format!("CreateDIBSection: {e}"));
+            }
+        };
+
+        let old_bitmap = unsafe { SelectObject(screen, HGDIOBJ(bitmap.0)) };
+
+        unsafe {
+            let _ = windows::Win32::Graphics::Gdi::PatBlt(
+                screen, 0, 0, width_px, height_px, windows::Win32::Graphics::Gdi::WHITENESS,
+            );
+        }
+
+        let report = draw_barcode(screen, text, module_mm, height_mm);
+
+        // Считываем пиксели.
+        let pixels = unsafe {
+            let stride = ((width_px as usize * 3 + 3) & !3) * height_px as usize;
+            if bits.is_null() { Vec::new() } else { std::slice::from_raw_parts(bits as *const u8, stride).to_vec() }
+        };
+
+        unsafe {
+            SelectObject(screen, old_bitmap);
+            let _ = DeleteObject(HGDIOBJ(bitmap.0));
+            let _ = DeleteDC(screen);
+        }
+
+        let report = report?;
+
+        // BMP из top-down BGR.
+        let sizes = Sizes { width_px, height_px, margin_x: 0, margin_y: 0, max_allowed_w: width_px };
+        let bmp = build_bmp(&sizes, &pixels);
+
+        let dir = crate::config::app_dir().join("previews");
+        let _ = std::fs::create_dir_all(&dir);
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let safe: String = text.chars().map(|c| if c.is_alphanumeric() || c == '-' { c } else { '_' }).collect();
+        let json_path = dir.join(format!("barcode_{safe}_{stamp}.json"));
+        let bmp_path = dir.join(format!("barcode_{safe}_{stamp}.bmp"));
+
+        if let Ok(json) = serde_json::to_string_pretty(&report) {
+            let _ = std::fs::write(&json_path, json);
+        }
+        let _ = std::fs::write(&bmp_path, bmp);
+
+        println!("[dry-run] Штрихкод отрендерен (печать не выполнялась).");
+        println!("[dry-run] Текст: {text}, модулей: {}", bc.module_count());
+        println!("[dry-run] Отчёт: {}", json_path.display());
+        println!("[dry-run] Превью: {}", bmp_path.display());
+        Ok(())
+    }
+
     /// Главная функция печати (оркестратор), аналог `print_text`.
     /// В режиме эмуляции (`is_dry_run`) не отправляет на принтер, а рендерит превью.
     pub fn print_text(text: &str, config: &Config) -> Result<(), String> {
@@ -621,4 +899,4 @@ mod win_impl {
 }
 
 #[cfg(windows)]
-pub use win_impl::print_text;
+pub use win_impl::{print_barcode, print_text};

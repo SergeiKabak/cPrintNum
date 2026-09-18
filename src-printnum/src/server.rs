@@ -5,6 +5,7 @@
 //! - `GET  /status-printer` → `{"printerOnline": bool}`
 //! - `GET  /listPrinters`   → `{"listPrinters": [..]}`
 //! - `POST /print-number`   → `"OK"` (тело: `{"text": "<номер>"}`)
+//! - `POST /print-barcode`  → `"OK"` (тело: `{"text", "moduleMm", "heightMm"}`)
 
 use crate::{config, printer, settings};
 use crate::print;
@@ -124,6 +125,55 @@ fn handle(mut request_tiny: tiny_http::Request) {
                 } else if !print::is_dry_run() {
                     eprintln!("[print] пропуск: принтер недоступен");
                 }
+            }
+
+            let _ = request_tiny.respond(text_response(200, "OK"));
+        }
+
+        (Method::Post, "/print-barcode") => {
+            let mut body = String::new();
+            let _ = request_tiny.as_reader().read_to_string(&mut body);
+
+            let parsed = serde_json::from_str::<serde_json::Value>(&body).ok();
+            let text = parsed
+                .as_ref()
+                .and_then(|v| v.get("text").and_then(|t| t.as_str()))
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            // Параметры ШК (мм) с значениями по умолчанию.
+            let module_mm = parsed
+                .as_ref()
+                .and_then(|v| v.get("moduleMm").and_then(|m| m.as_f64()))
+                .unwrap_or(0.25);
+            let height_mm = parsed
+                .as_ref()
+                .and_then(|v| v.get("heightMm").and_then(|m| m.as_f64()))
+                .unwrap_or(10.0);
+
+            let cfg = config::get();
+
+            let should_print = if print::is_dry_run() {
+                !text.is_empty() && cfg.running
+            } else {
+                !text.is_empty()
+                    && cfg.running
+                    && !cfg.printer.trim().is_empty()
+                    && printer::status_printer(&cfg.printer)
+            };
+
+            if should_print {
+                if let Err(e) = print::print_barcode(&text, module_mm, height_mm, &cfg) {
+                    eprintln!("[barcode] ошибка: {e}");
+                }
+            } else if text.is_empty() {
+                eprintln!("[barcode] пропуск: пустой текст");
+            } else if !cfg.running {
+                eprintln!("[barcode] пропуск: приложение остановлено (running=false)");
+            } else if !print::is_dry_run() && cfg.printer.trim().is_empty() {
+                eprintln!("[barcode] пропуск: принтер не выбран");
+            } else if !print::is_dry_run() {
+                eprintln!("[barcode] пропуск: принтер недоступен");
             }
 
             let _ = request_tiny.respond(text_response(200, "OK"));
