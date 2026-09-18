@@ -43,10 +43,15 @@ fn main() {
         );
     }
 
-    // 1. Запуск HTTP-сервера (localhost:5000) в отдельном потоке.
+    // 1. Запуск HTTP-сервера в отдельном потоке.
+    // Порт берётся из PRINTNUM_PORT (env) или .env, иначе 5000.
     if let Err(e) = server::spawn() {
         eprintln!("Не удалось запустить HTTP сервер: {e}");
-        eprintln!("Возможно, порт 5000 уже занят.");
+        eprintln!(
+            "Возможно, порт {} уже занят. Задайте другой порт через \
+             PRINTNUM_PORT или .env",
+            printnum::settings::port()
+        );
         return;
     }
 

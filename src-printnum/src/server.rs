@@ -6,7 +6,7 @@
 //! - `GET  /listPrinters`   → `{"listPrinters": [..]}`
 //! - `POST /print-number`   → `"OK"` (тело: `{"text": "<номер>"}`)
 
-use crate::{config, printer};
+use crate::{config, printer, settings};
 use crate::print;
 
 use serde_json::json;
@@ -14,13 +14,14 @@ use tiny_http::{Header, Method, Response, Server};
 
 /// Запускает HTTP-сервер в отдельном потоке.
 pub fn spawn() -> std::io::Result<()> {
-    let server = Server::http("127.0.0.1:5000")
+    let addr = settings::bind_addr();
+    let server = Server::http(addr.as_str())
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::AddrInUse, e.to_string()))?;
 
     std::thread::Builder::new()
         .name("printnum-http".into())
         .spawn(move || {
-            println!("HTTP сервер запущен на http://127.0.0.1:5000");
+            println!("HTTP сервер запущен на {}", settings::base_url());
             for request in server.incoming_requests() {
                 handle(request);
             }

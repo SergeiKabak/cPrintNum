@@ -19,3 +19,4 @@ pub mod config;
 pub mod print;
 pub mod printer;
 pub mod server;
+pub mod settings;
