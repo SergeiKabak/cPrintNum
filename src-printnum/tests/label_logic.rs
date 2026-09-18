@@ -83,3 +83,27 @@ fn kgt_without_numeric_header_is_not_bold() {
     let data = prepare_label_data("КГТ-АБ", &config(false, false, false, 500));
     assert!(!data.is_bold);
 }
+
+#[test]
+fn describe_label_contains_key_fields() {
+    use printnum::print::describe_label;
+
+    let text = describe_label("500-47", &config(true, true, false, 500));
+
+    // Отчёт содержит вход и результат разбора.
+    assert!(text.contains("\"500-47\""));
+    assert!(text.contains("\"47.\"")); // main после swap
+    assert!(text.contains("\"500-\"")); // header после swap
+    assert!(text.contains("Жирный:      да"));
+    assert!(text.contains("Рокировка:   да"));
+    assert!(text.contains("hybrid=true"));
+}
+
+#[test]
+fn describe_label_shows_dash_when_no_header() {
+    use printnum::print::describe_label;
+
+    let text = describe_label("250", &config(false, false, false, 500));
+    assert!(text.contains("Колонтитул:  —"));
+    assert!(text.contains("Жирный:      нет"));
+}

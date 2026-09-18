@@ -121,13 +121,55 @@ pub fn is_dry_run() -> bool {
 }
 
 /// Заглушка для macOS/Linux (только для разработки).
+///
+/// В режиме эмуляции печатает разобранные параметры этикетки (что было бы
+/// напечатано), чтобы можно было проверять логику без Windows и принтера.
 #[cfg(not(windows))]
-pub fn print_text(_text: &str, _config: &Config) -> Result<(), String> {
+pub fn print_text(text: &str, config: &Config) -> Result<(), String> {
     if is_dry_run() {
-        eprintln!("[dry-run] Печать пропущена (эмуляция не поддерживается вне Windows)");
+        eprintln!("[dry-run] Рендер этикетки недоступен вне Windows (нет GDI).");
+        eprintln!("[dry-run] Разбор номера:\n{}", describe_label(text, config));
         return Ok(());
     }
     Err("Печать поддерживается только на Windows".into())
+}
+
+/// Формирует читаемое описание того, что будет напечатано.
+///
+/// Платформонезависимо — используется в режиме эмуляции для наглядной проверки
+/// разбора номера (swap, жирность, header/main, подчёркивание).
+pub fn describe_label(text: &str, config: &Config) -> String {
+    let d = prepare_label_data(text, config);
+
+    let mut lines = Vec::new();
+    lines.push(format!("  Вход:        {text:?}"));
+    lines.push(format!("  Основной:    {:?}", d.main_text));
+    lines.push(format!(
+        "  Колонтитул:  {}",
+        if d.show_header {
+            format!("{:?}", d.header_text)
+        } else {
+            "—".to_string()
+        }
+    ));
+    lines.push(format!(
+        "  Жирный:      {}",
+        if d.is_bold { "да" } else { "нет" }
+    ));
+    lines.push(format!(
+        "  Рокировка:   {}",
+        if d.force_left_header { "да" } else { "нет" }
+    ));
+    lines.push(format!(
+        "  Подчёркивание: {}",
+        if d.is_underlined { "да" } else { "нет" }
+    ));
+    lines.push(format!("  Этикетка:    {} мм", config.paper));
+    lines.push(format!(
+        "  Параметры:   hybrid={}, idNum={}, endLine={}, expand={}",
+        config.hybrid, config.id_num, config.end_line, config.expand
+    ));
+    lines.join("\n")
 }
 
 #[cfg(windows)]
@@ -527,6 +569,7 @@ mod win_impl {
         let _ = std::fs::write(&bmp_path, bmp);
 
         println!("[dry-run] Этикетка отрендерена (печать не выполнялась).");
+        println!("[dry-run] Разбор номера:\n{}", super::describe_label(text, config));
         println!("[dry-run] Шрифт: {}px, жирный: {}", report["main_font_height_px"], data.is_bold);
         println!("[dry-run] Отчёт: {}", json_path.display());
         println!("[dry-run] Превью: {}", bmp_path.display());
