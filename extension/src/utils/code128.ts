@@ -180,29 +180,43 @@ export function encodeCode128(input: string): Barcode128 {
 }
 
 /**
- * Строит SVG-строку штрихкода.
+ * Строит SVG-строку штрихкода: полоски + текст (HRI) под ними.
  *
- * @param input       текст для кодирования
- * @param moduleMm    ширина одного модуля в мм
- * @param heightMm    высота полосок в мм
+ * Геометрия совпадает с печатью через приложение PrintNum:
+ * тихая зона 10 модулей с каждой стороны, HRI ≈ 35% высоты полосок,
+ * отступ между полосками и текстом ≈ 1 мм.
+ *
+ * @param input      текст для кодирования
+ * @param moduleMm   ширина одного модуля в мм
+ * @param heightMm   высота полосок в мм
+ * @param showHri    показывать ли читаемый текст под полосками
  */
 export function barcode128ToSvg(
   input: string,
   moduleMm = 0.25,
   heightMm = 10,
+  showHri = true,
 ): string {
   const { modules, moduleCount } = encodeCode128(input);
 
-  const widthMm = moduleCount * moduleMm;
+  // Тихая зона (quiet zone): 10 модулей с каждой стороны.
+  const quiet = 10 * moduleMm;
+  const barsWidthMm = moduleCount * moduleMm;
+  const widthMm = barsWidthMm + quiet * 2;
 
-  // Формируем путь из прямоугольников (все штрихи).
+  // Высота HRI и отступ (как в Rust-рендере).
+  const hriHeightMm = showHri ? heightMm * 0.35 : 0;
+  const gapMm = showHri ? 1 : 0;
+  const totalHeightMm = heightMm + (showHri ? gapMm + hriHeightMm : 0);
+
+  // Формируем прямоугольники штрихов (со смещением на quiet zone).
   let rects = "";
   let x = 0;
   while (x < moduleCount) {
     if (modules[x]) {
       let run = 1;
       while (x + run < moduleCount && modules[x + run]) run++;
-      const rx = (x * moduleMm).toFixed(4);
+      const rx = (quiet + x * moduleMm).toFixed(4);
       const rw = (run * moduleMm).toFixed(4);
       rects += `<rect x="${rx}" y="0" width="${rw}" height="${heightMm}"/>`;
       x += run;
@@ -211,12 +225,35 @@ export function barcode128ToSvg(
     }
   }
 
+  // HRI-текст по центру под полосками.
+  let hri = "";
+  if (showHri) {
+    const fontSizeMm = hriHeightMm * 0.9;
+    const textY = heightMm + gapMm + hriHeightMm * 0.8;
+    // Моноширинный шрифт — как при печати ШК.
+    hri =
+      `<text x="${(widthMm / 2).toFixed(4)}" y="${textY.toFixed(4)}" ` +
+      `font-family="Arial, sans-serif" font-size="${fontSizeMm.toFixed(4)}" ` +
+      `text-anchor="middle" fill="#000000">${escapeXml(input)}</text>`;
+  }
+
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" ` +
-    `width="${widthMm}mm" height="${heightMm}mm" ` +
-    `viewBox="0 0 ${widthMm} ${heightMm}" preserveAspectRatio="none">` +
-    `<rect width="${widthMm}" height="${heightMm}" fill="#ffffff"/>` +
+    `width="${widthMm.toFixed(4)}mm" height="${totalHeightMm.toFixed(4)}mm" ` +
+    `viewBox="0 0 ${widthMm.toFixed(4)} ${totalHeightMm.toFixed(4)}" preserveAspectRatio="none">` +
+    `<rect width="${widthMm.toFixed(4)}" height="${totalHeightMm.toFixed(4)}" fill="#ffffff"/>` +
     `<g fill="#000000">${rects}</g>` +
+    hri +
     `</svg>`
   );
+}
+
+/** Экранирует спецсимволы XML для безопасной вставки текста в SVG. */
+function escapeXml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
 }

@@ -3,41 +3,56 @@
  *
  * Возможности:
  * - ручной ввод текста ШК;
+ * - настройка параметров: высота полосок, ширина модуля, показ текста (HRI);
  * - предпросмотр (SVG);
- * - печать из браузера (открывает окно с ШК и вызывает window.print());
- * - печать через приложение PrintNum на реальный принтер (Win32 GDI).
+ * - печать из браузера (окно с ШК + window.print());
+ * - печать через приложение PrintNum (Win32 GDI).
  *
- * Параметры штрихкода по умолчанию: высота полосок 10 мм, модуль 0.25 мм.
+ * Настройки сохраняются в chrome.storage.local.
  */
 
 import { useState } from "preact/hooks";
-import { Printer, Barcode, MonitorUp } from "lucide-preact";
+import { Printer, Barcode, MonitorUp, Settings2 } from "lucide-preact";
 import { barcode128ToSvg } from "@/utils/code128";
 import { Button } from "@/components/preact/button";
 import { sendServer } from "@/utils/api";
+import { useStorageValue } from "@/hooks/useStorageValue";
 
-/** Параметры печати ШК (мм). */
-const MODULE_MM = 0.25;
-const HEIGHT_MM = 10;
+/** Значения по умолчанию. */
+const DEFAULT_TEXT = "ii18725308927";
+const DEFAULT_MODULE_MM = 0.25;
+const DEFAULT_HEIGHT_MM = 10;
 
-type Status = { kind: "idle" } | { kind: "ok"; msg: string } | { kind: "err"; msg: string };
+type Status =
+  | { kind: "idle" }
+  | { kind: "ok"; msg: string }
+  | { kind: "err"; msg: string };
 
 export default function BarcodeGenerator() {
-  const [text, setText] = useState("ii18725308927");
+  const [text, setText] = useState(DEFAULT_TEXT);
+  const [moduleMm, setModuleMm] = useStorageValue<number>(
+    "barcodeModuleMm",
+    DEFAULT_MODULE_MM,
+  );
+  const [heightMm, setHeightMm] = useStorageValue<number>(
+    "barcodeHeightMm",
+    DEFAULT_HEIGHT_MM,
+  );
+  const [showSettings, setShowSettings] = useState(false);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
 
-  // Проверяем валидность и получаем SVG (или null при ошибке).
+  // Проверяем валидность и получаем SVG (или ошибку).
   let svg: string | null = null;
   let error: string | null = null;
   if (text.trim()) {
     try {
-      svg = barcode128ToSvg(text.trim(), MODULE_MM, HEIGHT_MM);
+      svg = barcode128ToSvg(text.trim(), moduleMm, heightMm);
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     }
   }
 
-  /** Печать из браузера: открывает окно с ШК и вызывает печать. */
+  /** Печать из браузера: окно с ШК + window.print(). */
   const printInBrowser = () => {
     if (!svg) return;
     const w = window.open("", "_blank", "width=600,height=400");
@@ -49,7 +64,6 @@ export default function BarcodeGenerator() {
       `<!doctype html><html><head><meta charset="utf-8"><title>Штрихкод</title>` +
         `<style>@page{margin:5mm}body{margin:0;display:flex;justify-content:center}svg{max-width:100%}</style>` +
         `</head><body>${svg}<script>window.onload=()=>{window.print();}` +
-        // закрываем окно после печати (в некоторых браузерах событие не сработает)
         `window.onafterprint=()=>window.close();<\/script></body></html>`,
     );
     w.document.close();
@@ -63,17 +77,14 @@ export default function BarcodeGenerator() {
     try {
       const res = await sendServer.post("print-barcode", {
         text: text.trim(),
-        heightMm: HEIGHT_MM,
-        moduleMm: MODULE_MM,
+        heightMm,
+        moduleMm,
       });
-      if (res.ok) {
-        setStatus({ kind: "ok", msg: "Отправлено в PrintNum" });
-      } else {
-        setStatus({
-          kind: "err",
-          msg: `PrintNum вернул ошибку ${res.status}`,
-        });
-      }
+      setStatus(
+        res.ok
+          ? { kind: "ok", msg: "Отправлено в PrintNum" }
+          : { kind: "err", msg: `PrintNum вернул ошибку ${res.status}` },
+      );
     } catch {
       setStatus({
         kind: "err",
@@ -87,11 +98,48 @@ export default function BarcodeGenerator() {
       {/* Шапка */}
       <div className="px-4 py-3 bg-muted/30 border-b border-border flex items-center gap-2 select-none">
         <Barcode class="h-4 w-4 text-emerald-600 dark:text-emerald-500 shrink-0" />
-        <span className="text-sm font-bold tracking-tight">Штрихкод Code128</span>
+        <span className="text-sm font-bold tracking-tight flex-1">
+          Штрихкод Code128
+        </span>
+        <button
+          type="button"
+          title="Настройки штрихкода"
+          onClick={() => setShowSettings((v) => !v)}
+          className={`shrink-0 rounded-md p-1 transition-colors ${
+            showSettings
+              ? "bg-accent text-accent-foreground"
+              : "text-muted-foreground hover:bg-muted/60"
+          }`}
+        >
+          <Settings2 class="h-4 w-4" />
+        </button>
       </div>
 
-      <div className="p-3 flex flex-col gap-3">
-        {/* Ввод */}
+      {/* Раздел ввода (отступ 16px вокруг: p-4) */}
+      <div className="p-4 flex flex-col gap-3">
+        {/* Настройки (по кнопке) */}
+        {showSettings && (
+          <div className="flex flex-col gap-2 rounded-lg border border-border bg-muted/20 p-4">
+            <NumberField
+              label="Высота полосок (мм)"
+              value={heightMm}
+              min={3}
+              max={50}
+              step={1}
+              onChange={setHeightMm}
+            />
+            <NumberField
+              label="Ширина модуля (мм)"
+              value={moduleMm}
+              min={0.1}
+              max={1}
+              step={0.05}
+              onChange={setModuleMm}
+            />
+          </div>
+        )}
+
+        {/* Ввод текста */}
         <label className="flex flex-col gap-1">
           <span className="text-[11px] font-medium text-muted-foreground">
             Текст штрихкода
@@ -113,7 +161,6 @@ export default function BarcodeGenerator() {
           {svg ? (
             <div
               className="max-w-full overflow-hidden"
-              // svg сгенерирован нами, вставка безопасна
               dangerouslySetInnerHTML={{ __html: svg }}
             />
           ) : (
@@ -123,7 +170,7 @@ export default function BarcodeGenerator() {
           )}
         </div>
 
-        {/* Кнопки */}
+        {/* Кнопки печати */}
         <div className="flex flex-col gap-1.5">
           <Button
             variant="default"
@@ -162,5 +209,44 @@ export default function BarcodeGenerator() {
         )}
       </div>
     </div>
+  );
+}
+
+/** Числовое поле с подписью. */
+function NumberField({
+  label,
+  value,
+  min,
+  max,
+  step,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <label className="flex items-center justify-between gap-2">
+      <span className="text-[11px] font-medium text-muted-foreground">
+        {label}
+      </span>
+      <input
+        type="number"
+        value={value}
+        min={min}
+        max={max}
+        step={step}
+        onInput={(e) => {
+          const raw = parseFloat((e.target as HTMLInputElement).value);
+          if (!Number.isNaN(raw)) {
+            onChange(Math.min(max, Math.max(min, raw)));
+          }
+        }}
+        className="h-7 w-20 rounded-md border border-border bg-background px-2 text-xs text-right outline-none focus:ring-2 focus:ring-ring"
+      />
+    </label>
   );
 }
