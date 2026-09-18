@@ -559,7 +559,8 @@ PrintNum/
 ├── docs/
 │   ├── emulation-testing.md      # Эмуляция печати и сканера для тестов
 │   ├── first-run.md              # Инструкция по первому запуску
-│   └── frontend-reference.md     # Референс прежнего React/Tauri фронтенда
+│   ├── frontend-reference.md     # Референс прежнего React/Tauri фронтенда
+│   └── preact-vs-vanilla.md      # Сравнение Preact и vanilla TS для popup
 ├── extension/                    # WXT расширение для Ozon
 │   ├── package.json              # Зависимости расширения
 │   ├── wxt.config.ts             # Конфигурация WXT сборки (outDir: output)
@@ -613,3 +614,4 @@ PrintNum/
 - **Документация расширения**: [extension/README.md](./extension/README.md)
 - **Эмуляция для тестирования**: [docs/emulation-testing.md](./docs/emulation-testing.md)
 - **Первый запуск**: [docs/first-run.md](./docs/first-run.md)
+- **Preact vs Vanilla TS**: [docs/preact-vs-vanilla.md](./docs/preact-vs-vanilla.md)
