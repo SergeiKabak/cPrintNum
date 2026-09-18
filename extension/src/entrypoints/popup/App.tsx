@@ -21,7 +21,7 @@ function App() {
   }, []);
 
   return (
-    <div className="flex flex-col w-80 items-center gap-4">
+    <div className="flex flex-col w-full p-3 items-stretch gap-3">
       <StatusPrinting />
 
       <BarcodeGenerator />

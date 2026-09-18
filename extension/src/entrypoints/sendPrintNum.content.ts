@@ -75,7 +75,9 @@ export default defineContentScript({
       // Отправляем первый текст нового списка
       const newText = currentTexts[0];
 
-      sendNumber(newText);
+      if (newText) {
+        sendNumber(newText);
+      }
 
       // Обновляем старый список только после успешной отправки
       previousTexts = currentTexts;

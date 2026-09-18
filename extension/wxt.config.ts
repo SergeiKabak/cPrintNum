@@ -20,12 +20,12 @@ export default defineConfig({
     // Popup написан на Preact (лёгкая замена React): JSX компилируется
     // в вызовы preact/jsx-runtime.
     esbuild: {
-      jsx: "automatic",
+      jsx: "automatic" as const,
       jsxImportSource: "preact",
       target: "es2022",
     },
     build: {
-      target: "es2022",
+      target: "es2022" as const,
     },
     resolve: {
       alias: {

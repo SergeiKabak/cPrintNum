@@ -96,16 +96,16 @@ export default function BarcodeGenerator() {
   return (
     <div className="w-full rounded-xl border bg-card text-card-foreground shadow-sm overflow-hidden">
       {/* Шапка */}
-      <div className="px-4 py-3 bg-muted/30 border-b border-border flex items-center gap-2 select-none">
+      <div className="px-3 py-2.5 bg-muted/30 border-b border-border flex items-center gap-2 select-none">
         <Barcode class="h-4 w-4 text-emerald-600 dark:text-emerald-500 shrink-0" />
-        <span className="text-sm font-bold tracking-tight flex-1">
+        <span className="text-sm font-bold tracking-tight flex-1 truncate leading-none">
           Штрихкод Code128
         </span>
         <button
           type="button"
           title="Настройки штрихкода"
           onClick={() => setShowSettings((v) => !v)}
-          className={`shrink-0 rounded-md p-1 transition-colors ${
+          className={`shrink-0 flex items-center justify-center h-6 w-6 rounded-md transition-colors ${
             showSettings
               ? "bg-accent text-accent-foreground"
               : "text-muted-foreground hover:bg-muted/60"
@@ -157,10 +157,11 @@ export default function BarcodeGenerator() {
         </label>
 
         {/* Предпросмотр */}
-        <div className="flex items-center justify-center rounded-lg border border-dashed border-border bg-white p-2 min-h-16 overflow-hidden">
+        <div className="flex items-center justify-center rounded-lg border border-dashed border-border bg-white p-2 min-h-16 overflow-x-auto">
           {svg ? (
             <div
-              className="max-w-full overflow-hidden"
+              className="[&>svg]:h-auto [&>svg]:max-w-full [&>svg]:w-auto"
+              // svg сгенерирован нами, вставка безопасна
               dangerouslySetInnerHTML={{ __html: svg }}
             />
           ) : (

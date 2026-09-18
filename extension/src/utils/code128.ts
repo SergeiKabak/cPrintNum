@@ -71,8 +71,8 @@ export interface Barcode128 {
 }
 
 /** Проверка: является ли символ цифрой. */
-function isDigit(ch: string): boolean {
-  return ch >= "0" && ch <= "9";
+function isDigit(ch: string | undefined): boolean {
+  return ch !== undefined && ch >= "0" && ch <= "9";
 }
 
 /** Проверка: образуют ли позиции pos и pos+1 пару цифр. */
@@ -148,9 +148,9 @@ export function encodeCode128(input: string): Barcode128 {
   }
 
   // Контрольная сумма: startCode + Σ(value_i * position_i), mod 103.
-  let checksum = codes[0];
+  let checksum = codes[0] ?? 0;
   for (let i = 1; i < codes.length; i++) {
-    checksum += codes[i] * i;
+    checksum += (codes[i] ?? 0) * i;
   }
   checksum %= 103;
 
