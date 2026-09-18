@@ -8,6 +8,7 @@
 - [🚀 Быстрый старт](#-быстрый-старт)
 - [📖 Инструкция по первому запуску](docs/first-run.md)
 - [🧪 Эмуляция для тестирования](docs/emulation-testing.md)
+- [🔌 Native Messaging](docs/native-messaging.md)
 - [Стек технологий](#стек-технологий)
 - [Архитектура](#архитектура)
 - [Внешний вид](#внешний-вид)
@@ -318,6 +319,16 @@ curl -X POST http://127.0.0.1:5000/print-barcode \
   -d '{"text":"ii18725308927","heightMm":10,"moduleMm":0.25}'
 ```
 
+### Native Messaging (без порта)
+
+Помимо HTTP, приложение умеет работать через **Native Messaging** — прямой
+обмен с расширением через stdin/stdout, без открытого порта.
+Запускается флагом `printnum.exe --native-host`.
+
+Поддерживаются те же команды (`ping`, `print-number`, `print-barcode`,
+`status-printer`, `list-printers`). Полная инструкция по регистрации —
+в [`docs/native-messaging.md`](./docs/native-messaging.md).
+
 HTTP-сервер работает внутри процесса приложения, поэтому отдельный watchdog
 и завершение по неактивности не требуются — сервер живёт, пока открыто приложение.
 
@@ -580,6 +591,7 @@ PrintNum/
 │   ├── emulation-testing.md      # Эмуляция печати и сканера для тестов
 │   ├── first-run.md              # Инструкция по первому запуску
 │   ├── frontend-reference.md     # Референс прежнего React/Tauri фронтенда
+│   ├── native-messaging.md       # Связь расширения с PrintNum без порта
 │   └── preact-vs-vanilla.md      # Сравнение Preact и vanilla TS для popup
 ├── extension/                    # WXT расширение для Ozon
 │   ├── package.json              # Зависимости расширения
@@ -617,8 +629,11 @@ PrintNum/
 │   │   ├── config.rs             # Чтение/запись config.json
 │   │   ├── settings.rs           # Порт из .env/переменной окружения
 │   │   ├── print.rs              # Логика печати (GDI) + бизнес-логика
+│   │   ├── barcode.rs            # Генератор штрихкодов Code128
+│   │   ├── native_host.rs        # Режим native messaging (stdin/stdout)
 │   │   ├── printer.rs            # Win32 Spooler: список, статус, очистка очереди
 │   │   └── server.rs             # HTTP API на tiny_http
+│   ├── native-host/              # Манифест и скрипт регистрации host
 │   └── tests/
 │       ├── label_logic.rs        # Тесты паритета бизнес-логики печати
 │       └── config_path.rs        # Тесты путей данных по платформам
@@ -633,5 +648,6 @@ PrintNum/
 - **GitHub Issues**: [создать обращение](https://github.com/kirill18734/PrintNum/issues)
 - **Документация расширения**: [extension/README.md](./extension/README.md)
 - **Эмуляция для тестирования**: [docs/emulation-testing.md](./docs/emulation-testing.md)
+- **Native Messaging**: [docs/native-messaging.md](./docs/native-messaging.md)
 - **Первый запуск**: [docs/first-run.md](./docs/first-run.md)
 - **Preact vs Vanilla TS**: [docs/preact-vs-vanilla.md](./docs/preact-vs-vanilla.md)

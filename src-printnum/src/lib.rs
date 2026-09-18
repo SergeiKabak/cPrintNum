@@ -17,6 +17,7 @@
 
 pub mod barcode;
 pub mod config;
+pub mod native_host;
 pub mod print;
 pub mod printer;
 pub mod server;

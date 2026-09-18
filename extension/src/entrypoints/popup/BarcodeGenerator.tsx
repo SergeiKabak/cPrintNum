@@ -17,6 +17,7 @@ import { barcode128ToSvg } from "@/utils/code128";
 import { Button } from "@/components/preact/button";
 import { sendServer } from "@/utils/api";
 import { useStorageValue } from "@/hooks/useStorageValue";
+import { isNativeAvailable, sendNative } from "@/utils/nativeMessaging";
 
 /** Значения по умолчанию. */
 const DEFAULT_TEXT = "ii18725308927";
@@ -70,10 +71,36 @@ export default function BarcodeGenerator() {
     setStatus({ kind: "ok", msg: "Открыто окно печати браузера" });
   };
 
-  /** Печать через приложение PrintNum (Win32 GDI). */
+  /** Печать через приложение PrintNum.
+   * Сначала пробует native messaging (без порта), затем HTTP. */
   const printViaPrintNum = async () => {
     if (!svg) return;
     setStatus({ kind: "idle" });
+
+    // 1. Native messaging (если зарегистрирован host).
+    if (isNativeAvailable()) {
+      try {
+        const r = await sendNative<{ status: string; reason?: string; error?: string }>({
+          command: "print-barcode",
+          text: text.trim(),
+          heightMm,
+          moduleMm,
+        });
+        if (r?.status === "ok") {
+          setStatus({ kind: "ok", msg: "Отправлено в PrintNum (native)" });
+          return;
+        }
+        if (r?.status === "skipped") {
+          setStatus({ kind: "err", msg: `Пропущено: ${r.reason}` });
+          return;
+        }
+        // При ошибке/неизвестном статусе — пробуем HTTP ниже.
+      } catch {
+        // Host не зарегистрирован — переходим на HTTP.
+      }
+    }
+
+    // 2. HTTP (если приложение запущено с сервером).
     try {
       const res = await sendServer.post("print-barcode", {
         text: text.trim(),

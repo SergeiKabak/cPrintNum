@@ -29,6 +29,16 @@ fn now_ms() -> u64 {
 }
 
 fn main() {
+    // Режим native-host: обмен с расширением через stdin/stdout.
+    // Запускается браузером; GUI и HTTP не поднимаются.
+    if printnum::native_host::is_native_host_requested() {
+        if let Err(e) = printnum::native_host::run() {
+            eprintln!("[native-host] ошибка: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
+
     // Разбор аргументов командной строки.
     // --dry-run включает режим эмуляции печати (или PRINTNUM_DRY_RUN=1).
     if std::env::args().any(|a| a == "--dry-run" || a == "-n") {
