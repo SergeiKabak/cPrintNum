@@ -64,25 +64,6 @@ component SectionTitle inherits Text {
     horizontal-alignment: center;
 }
 
-// Иконка приложения (упрощённая «ячейка»).
-// Используется только на загрузочном экране.
-component AppIcon inherits Rectangle {
-    width: 28px;
-    height: 28px;
-    background: transparent;
-    border-radius: 6px;
-    border-width: 2px;
-    border-color: Palette.accent;
-    Text {
-        text: "PN";
-        color: Palette.accent;
-        font-size: 11px;
-        font-weight: 700;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-    }
-}
-
 // Кнопка с текстом (без иконок — см. комментарий в шапке файла).
 //
 // Высоту НЕ задаём: в HorizontalLayout её определяет layout. Явная высота
@@ -268,7 +249,7 @@ export component AppWindow inherits Window {
     in-out property <bool> server-online: true;
     in-out property <bool> printer-online: false;
     in-out property <bool> dry-run: false;
-    in-out property <string> version: "3.0.0";
+    in-out property <string> version: "3.1.0";
     in-out property <bool> running: true;
 
     // Настройки
@@ -308,19 +289,6 @@ export component AppWindow inherits Window {
         VerticalLayout {
             alignment: center;
             spacing: 14px;
-            Rectangle {
-                width: 56px;
-                height: 56px;
-                background: transparent;
-                AppIcon { x: 14px; y: 14px; width: 28px; height: 28px; }
-            }
-            Text {
-                text: "Печать ячеек";
-                color: Palette.fg;
-                font-size: 24px;
-                font-weight: 700;
-                horizontal-alignment: center;
-            }
             Text {
                 text: "Приложение запускается...";
                 color: Palette.muted;
