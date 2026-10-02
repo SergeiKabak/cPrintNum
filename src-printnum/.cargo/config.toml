@@ -1,7 +1,63 @@
-# Сборка под Windows 7 x64: статическая линковка CRT,
-# чтобы не требовать установки MSVC Redistributable.
+# Сборка под Windows 7 x64.
+#
+# ЦЕЛЕВОЙ ТАРГЕТ — x86_64-win7-windows-msvc (НЕ обычный x86_64-pc-windows-msvc!).
+#
+# Зачем специальный win7-таргет:
+#
+#   Обычный x86_64-pc-windows-msvc собирает std, который статически импортирует
+#   функции, отсутствующие в Windows 7:
+#     - WaitOnAddress / WakeByAddressSingle / WakeByAddressAll
+#       (api-ms-win-core-synch-l1-2-0.dll, появились в Windows 8)
+#   На Windows 7 такой exe падает на старте с «точка входа в процедуру ...
+#   не найдена в библиотеке DLL».
+#
+#   Таргет x86_64-win7-windows-msvc собирается с vendor = "win7", поэтому std
+#   обходит эти функции: он загружает их динамически через LoadLibrary
+#   (std/sys/pal/windows/compat.rs) и корректно работает без них.
+#
+# Плюс pin версии Slint =1.13.0 в Cargo.toml убирает второй источник проблем —
+# SystemParametersInfoForDpi (Per-Monitor DPI), которой тоже нет в Windows 7.
+#
+# СБОРКА (обязательно nightly из-за -Z build-std):
+#
+#   rustup toolchain install nightly --component rust-src
+#   cargo +nightly build --release \
+#       --target x86_64-win7-windows-msvc \
+#       -Z build-std=std,panic_abort
+#
+#   Кросс-сборка с macOS/Linux (MSVC-линкер не нужен):
+#   cargo install cargo-xwin
+#   cargo +nightly xwin build --release \
+#       --target x86_64-win7-windows-msvc \
+#       -Z build-std=std,panic_abort
+#
+# ПРОВЕРКА результата (на Windows):
+#   dumpbin /imports target\x86_64-win7-windows-msvc\release\printnum.exe
+#   В списке импортов НЕ должно быть:
+#     ForDpi, WaitOnAddress, WakeByAddress*, api-ms-win-crt-*, VCRUNTIME*, MSVCP*
+#   Допустимы только системные: kernel32, user32, gdi32, comctl32, shell32,
+#   ntdll, oleaut32, ole32, winspool.drv, dwmapi, imm32, advapi32, uxtheme, ws2_32.
+
+# --- Боевой таргет Windows 7 ---
+# +crt-static встраивает CRT в exe: не нужен ни MSVC Redistributable, ни UCRT.
+[target.x86_64-win7-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.i686-win7-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+# --- Обычные MSVC-таргеты (для Windows 8/10/11) ---
 [target.x86_64-pc-windows-msvc]
 rustflags = ["-C", "target-feature=+crt-static"]
 
 [target.i686-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+# --- GNU: только для локальной разработки/кросс-проверок ---
+# mingw-w64 UCRT-тулчейн всегда даёт импорт api-ms-win-crt-*, которого нет
+# на «голой» Windows 7. Для боевой Win7-сборки используйте win7-msvc выше.
+[target.x86_64-pc-windows-gnu]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.x86_64-win7-windows-gnu]
 rustflags = ["-C", "target-feature=+crt-static"]

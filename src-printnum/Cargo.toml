@@ -32,13 +32,20 @@ osx_minimum_system_version = "10.15"
 # Причина — совместимость с Windows 7: femtovg требует OpenGL/Direct2D,
 # а DirectWrite/Direct2D на Win7 ограничены. Software-рендерер рисует
 # через GDI и не зависит от GPU/новых API.
-slint = { version = "1.8", default-features = false, features = [
+#
+# ВАЖНО (Windows 7): версия зафиксирована "=1.13.0".
+# Начиная с i-slint-backend-winit 1.13.1 в граф попадает windows ^0.61,
+# а с 1.14.0 — windows ^0.62. Эти биндинги объявляют
+# SystemParametersInfoForDpi через `link!` (статический импорт user32.dll),
+# которого НЕТ в Windows 7 — процесс падает с ошибкой
+# "Точка входа в процедуру SystemParametersInfoForDpi не найдена".
+# В 1.13.0 windows-крейт в Windows-граф не попадает вовсе.
+slint = { version = "=1.13.0", default-features = false, features = [
     "std",
     "compat-1-2",
     "backend-winit",
     "renderer-software",
 ] }
-slint-build = "1.8"
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -59,7 +66,7 @@ windows = { version = "0.58", features = [
 ] }
 
 [build-dependencies]
-slint-build = "1.8"
+slint-build = "=1.13.0"
 
 [target.'cfg(windows)'.build-dependencies]
 winres = "0.1"

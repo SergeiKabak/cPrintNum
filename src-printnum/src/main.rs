@@ -155,24 +155,55 @@ fn main() {
         }
     });
 
+    // ---- Ручная печать номера из окна ----
+    //
+    // Поле ввода фильтруется здесь, а не в .slint: встроенный
+    // `input-type: number` в Slint пропускает только ASCII-цифры и
+    // отклоняет дефис, а номер ячейки имеет вид "500-47".
     let weak = app.as_weak();
-    app.on_minimize_window(move || {
+    app.on_manual_text_edited(move |raw| {
+        let clean = sanitize_cell_number(&raw);
         if let Some(a) = weak.upgrade() {
-            let _ = a.window().set_minimized(true);
+            if a.get_manual_text() != clean {
+                a.set_manual_text(clean.into());
+            }
         }
     });
 
-    let weak = app.as_weak();
-    app.on_close_window(move || {
-        if let Some(a) = weak.upgrade() {
-            let _ = a.hide();
+    app.on_print_text(move |text| {
+        let number = sanitize_cell_number(&text);
+
+        if number.is_empty() {
+            eprintln!("[manual] пропуск: пустой номер");
+            return;
         }
-        std::process::exit(0);
+
+        let cfg = config::get();
+
+        // В боевом режиме нужен выбранный и доступный принтер — как и для
+        // запросов через HTTP. В режиме эмуляции (--dry-run) принтер не нужен.
+        if !printnum::print::is_dry_run()
+            && (cfg.printer.trim().is_empty() || !printer::status_printer(&cfg.printer))
+        {
+            eprintln!("[manual] пропуск: принтер не выбран или недоступен");
+            return;
+        }
+
+        // Печать выполняем в отдельном потоке, чтобы не блокировать GUI.
+        std::thread::spawn(move || {
+            match printnum::print::print_text(&number, &cfg) {
+                Ok(()) => println!("[manual] напечатано: {number}"),
+                Err(e) => eprintln!("[manual] ошибка печати: {e}"),
+            }
+        });
     });
 
-    app.on_open_help(|| {
-        let _ = open_url("https://github.com/kirill18734/PrintNum");
-    });
+    // Собственной шапки у окна нет — используются системные кнопки
+    // «свернуть» и «закрыть». Закрытие окна штатно завершает event loop,
+    // поэтому отдельных колбэков minimize/close не нужно.
+
+    // Ссылка на GitHub из интерфейса убрана: в футере вместо неё
+    // отображается номер версии, поэтому колбэк open-help не нужен.
 
     // ---- Фоновый опрос статуса принтера (1 сек) и списка принтеров (5 сек) ----
     let shared = Arc::new(Shared {
@@ -241,25 +272,33 @@ fn index_of_strings(items: &[String], value: &str) -> i32 {
     items.iter().position(|s| s == value).unwrap_or(0) as i32
 }
 
-/// Открывает URL в браузере по умолчанию.
-#[cfg(windows)]
-fn open_url(url: &str) -> std::io::Result<()> {
-    // Используем cmd.exe, доступный на Windows 7+.
-    std::process::Command::new("cmd")
-        .args(["/C", "start", "", url])
-        .spawn()
-        .map(|_| ())
+/// Приводит введённый вручную номер ячейки к допустимому виду.
+///
+/// Оставляет только ASCII-цифры и дефис (формат номера — например "500-47"
+/// или "КГТ-1" в части цифр), всё прочее отбрасывается.
+/// Пробелы по краям убираются.
+fn sanitize_cell_number(raw: &str) -> String {
+    raw.trim()
+        .chars()
+        .filter(|c| c.is_ascii_digit() || *c == '-')
+        .collect()
 }
 
-/// Не-Windows (только для разработки): открываем через системный opener.
-#[cfg(not(windows))]
-fn open_url(url: &str) -> std::io::Result<()> {
-    #[cfg(target_os = "macos")]
-    {
-        return std::process::Command::new("open").arg(url).spawn().map(|_| ());
+#[cfg(test)]
+mod tests {
+    use super::sanitize_cell_number;
+
+    #[test]
+    fn keeps_digits_and_hyphen() {
+        assert_eq!(sanitize_cell_number("500-47"), "500-47");
+        assert_eq!(sanitize_cell_number("123-47"), "123-47");
     }
-    #[cfg(not(target_os = "macos"))]
-    {
-        std::process::Command::new("xdg-open").arg(url).spawn().map(|_| ())
+
+    #[test]
+    fn strips_letters_and_spaces() {
+        assert_eq!(sanitize_cell_number("КГТ-1"), "-1");
+        assert_eq!(sanitize_cell_number(" 47 a7 "), "477");
+        assert_eq!(sanitize_cell_number("abc"), "");
+        assert_eq!(sanitize_cell_number(""), "");
     }
 }
