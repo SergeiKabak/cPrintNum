@@ -81,6 +81,19 @@ INCLUDE=("${REQUIRED[@]}")
 # Cargo.lock — опционально: фиксирует точные версии зависимостей.
 [ "$WITH_LOCK" -eq 1 ] && INCLUDE+=("$SRC_DIR/Cargo.lock")
 
+# Готовая сборка браузерного расширения — опционально.
+#
+# Папка появляется только после `npm run build` в extension/, поэтому
+# в REQUIRED её класть нельзя — иначе скрипт падал бы до сборки расширения.
+# Кладём её, если она есть: тогда на Windows не нужны Node.js и npm.
+EXT_BUILD="extension/output/chrome-mv3"
+if [ -d "$EXT_BUILD" ]; then
+    INCLUDE+=("$EXT_BUILD")
+    echo "Расширение:   готовую сборку кладём (Node.js на Windows не потребуется)"
+else
+    echo "Расширение:   сборка не найдена ($EXT_BUILD), будет собираться на Windows"
+fi
+
 zip -rq "$ARCHIVE" "${INCLUDE[@]}"
 
 # --- отчёт -------------------------------------------------------------------
