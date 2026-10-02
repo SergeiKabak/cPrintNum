@@ -17,6 +17,9 @@ REM                        ("Desktop development with C++" workload)
 REM    - Node.js 18+       https://nodejs.org/
 REM ============================================================================
 setlocal EnableDelayedExpansion
+REM Кодировка консоли = OEM 866 (кириллица). Нужна, чтобы русский текст,
+REM который выводят вызываемые шаги/скрипты, отображался корректно.
+chcp 866 >nul
 cd /d "%~dp0"
 
 set "ROOT=%CD%"
@@ -77,30 +80,40 @@ if "%FAIL%"=="1" (
 echo.
 
 REM ============================================================================
-REM  STEP 2. Rust target
+REM  STEP 2. Rust toolchain + target для Windows 7
 REM ============================================================================
-echo [2/5] Checking Rust target (x86_64-pc-windows-msvc)...
-rustup target list --installed 2>nul | findstr /c:"x86_64-pc-windows-msvc" >nul
+echo [2/5] Checking Rust toolchain (nightly + rust-src) и target win7...
+
+REM Таргет x86_64-win7-windows-msvc требует -Z build-std => nightly + rust-src.
+REM Это ключ к совместимости с Windows 7: std соберётся с vendor = "win7"
+REM и не будет импортировать отсутствующие в Win7 функции (WaitOnAddress).
+rustup toolchain list 2>nul | findstr /c:"nightly" >nul
 if errorlevel 1 (
-    echo   Installing target...
-    rustup target add x86_64-pc-windows-msvc
+    echo   Installing nightly toolchain with rust-src...
+    rustup toolchain install nightly --component rust-src
     if errorlevel 1 (
-        echo   [ERROR] could not add target.
+        echo   [ERROR] could not install nightly/rust-src.
         pause
         exit /b 1
     )
 )
-echo   [OK] target ready.
+REM rust-src мог не установиться вместе с уже имеющимся nightly.
+rustup component list --toolchain nightly 2>nul | findstr /c:"rust-src (installed)" >nul
+if errorlevel 1 (
+    echo   Adding rust-src component...
+    rustup component add rust-src --toolchain nightly
+)
+echo   [OK] toolchain ready.
 echo.
 
 REM ============================================================================
 REM  STEP 3. Build application
 REM ============================================================================
-echo [3/5] Building printnum.exe...
-echo   (first build takes 5-15 minutes, please wait)
+echo [3/5] Building printnum.exe (Windows 7 x64)...
+echo   (first build takes 10-20 minutes: std is rebuilt for Win7)
 echo.
 pushd "src-printnum"
-cargo build --release --target x86_64-pc-windows-msvc
+cargo build --release --target x86_64-win7-windows-msvc -Z build-std=std,panic_abort
 if errorlevel 1 (
     echo.
     echo   [ERROR] Application build failed.
@@ -112,7 +125,7 @@ if errorlevel 1 (
 )
 popd
 
-set "EXE=src-printnum\target\x86_64-pc-windows-msvc\release\printnum.exe"
+set "EXE=src-printnum\target\x86_64-win7-windows-msvc\release\printnum.exe"
 if not exist "%EXE%" (
     echo   [ERROR] not found: %EXE%
     pause

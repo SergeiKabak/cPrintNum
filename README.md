@@ -170,8 +170,8 @@
 
 **Для сборки из исходников:**
 
-- **Rust**: 1.70+ ([rustup.rs](https://rustup.rs/)).
-- **MSVC Build Tools** (C++ toolchain) для target `x86_64-pc-windows-msvc`.
+- **Rust**: nightly-тулчейн с компонентом `rust-src` (задаётся автоматически через `src-printnum/rust-toolchain.toml`). Nightly нужен для `-Z build-std`.
+- **MSVC Build Tools** (C++ toolchain) для target `x86_64-win7-windows-msvc`.
 - **Node.js**: 18+ LTS — **только** для сборки браузерного расширения (`extension/`).
 
 ### Поддерживаемые платформы
@@ -490,13 +490,14 @@ PrintNumScanner.simulateSequence(["123-47", "500-47", "КГТ-1"], 1500);
 5. **Проверьте сборку под Windows** (с macOS/Linux — только проверка типов):
 
    ```bash
-   cargo check --target x86_64-pc-windows-msvc
+   cargo check --target x86_64-win7-windows-msvc -Z build-std=std,panic_abort
    ```
 
-   Для этого нужен установленный target:
+   Боевой таргет — `x86_64-win7-windows-msvc` (не обычный `x86_64-pc-windows-msvc`).
+   Он требует nightly-тулчейн с компонентом `rust-src` (см. `rust-toolchain.toml`):
 
    ```bash
-   rustup target add x86_64-pc-windows-msvc
+   rustup toolchain install nightly --component rust-src
    ```
 
 6. **Разработка расширения**:
@@ -519,13 +520,47 @@ build-windows.bat
 
 ```bat
 cd src-printnum
-cargo build --release --target x86_64-pc-windows-msvc
+cargo build --release --target x86_64-win7-windows-msvc -Z build-std=std,panic_abort
 ```
 
-Готовый бинарник: `src-printnum\target\x86_64-pc-windows-msvc\release\printnum.exe`.
+Готовый бинарник: `src-printnum\target\x86_64-win7-windows-msvc\release\printnum.exe`.
 
 Благодаря статической линковке CRT (`+crt-static`) на целевую машину не нужно
 устанавливать Visual C++ Redistributable.
+
+#### Почему специальный таргет `x86_64-win7-windows-msvc`
+
+Это ключ к запуску на **Windows 7 SP1**:
+
+- обычный `x86_64-pc-windows-msvc` собирает стандартную библиотеку Rust,
+  которая статически импортирует `WaitOnAddress`/`WakeByAddressSingle`
+  (появились только в Windows 8) — на Win7 приложение падает с ошибкой
+  «точка входа в процедуру не найдена»;
+- таргет с суффиксом `win7` собирается с `vendor = "win7"`: std загружает эти
+  функции динамически через `LoadLibrary` и работает без них;
+- версия Slint зафиксирована на `=1.13.0` (см. `Cargo.toml`), потому что
+  более новые версии тянут `SystemParametersInfoForDpi` — функции Per-Monitor
+  DPI, которой также нет в Windows 7.
+
+Проверить совместимость готового exe можно так (на Windows):
+
+```bat
+dumpbin /imports target\x86_64-win7-windows-msvc\release\printnum.exe
+```
+
+В списке импортов не должно быть `ForDpi`, `WaitOnAddress`, `WakeByAddress*`,
+`api-ms-win-crt-*`, `VCRUNTIME*`, `MSVCP*` — только системные DLL
+(`kernel32`, `user32`, `gdi32`, `winspool.drv` и т.п.).
+
+Кросс-сборка под Win7 с macOS/Linux (MSVC-линкер не нужен):
+
+```bash
+cargo install cargo-xwin
+cd src-printnum
+cargo xwin build --release \
+    --target x86_64-win7-windows-msvc \
+    -Z build-std=std,panic_abort
+```
 
 ### Сборка под macOS (только для разработки)
 
