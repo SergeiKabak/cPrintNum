@@ -60,6 +60,7 @@ REQUIRED=(
     "$SRC_DIR/build-windows.bat"
     "BUILD.bat"
     "README.md"
+    "docs"
 )
 
 missing=0
@@ -77,6 +78,7 @@ done
 #   .git/    — не нужен на сборщике;
 #   patches/ — не нужны: Slint 1.13.0 не требует патчей.
 INCLUDE=("${REQUIRED[@]}")
+# Cargo.lock — опционально: фиксирует точные версии зависимостей.
 [ "$WITH_LOCK" -eq 1 ] && INCLUDE+=("$SRC_DIR/Cargo.lock")
 
 zip -rq "$ARCHIVE" "${INCLUDE[@]}"
