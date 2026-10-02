@@ -32,7 +32,39 @@ global Palette {
     in-out property <color> black: #000000;
 }
 
-// ---- Иконка приложения (упрощённая «ячейка») ----
+// ============================================================================
+// Переиспользуемые компоненты
+// ============================================================================
+
+// Разделитель секций.
+// Раньше этот Rectangle дублировался пять раз подряд.
+component Divider inherits Rectangle {
+    height: 1px;
+    background: Palette.border;
+}
+
+// Подпись поля формы («Принтер», «Этикетка (mm)»).
+component FieldLabel inherits Text {
+    color: Palette.muted;
+    font-size: 12px;
+}
+
+// Мелкая пояснительная подпись по центру.
+component HintLabel inherits Text {
+    color: Palette.muted;
+    font-size: 10px;
+    horizontal-alignment: center;
+}
+
+// Заголовок секции.
+component SectionTitle inherits Text {
+    color: Palette.fg;
+    font-size: 12px;
+    font-weight: 600;
+    horizontal-alignment: center;
+}
+
+// Иконка приложения (упрощённая «ячейка»).
 // Используется только на загрузочном экране.
 component AppIcon inherits Rectangle {
     width: 28px;
@@ -51,12 +83,187 @@ component AppIcon inherits Rectangle {
     }
 }
 
+// Кнопка с текстом (без иконок — см. комментарий в шапке файла).
+//
+// Высоту НЕ задаём: в HorizontalLayout её определяет layout. Явная высота
+// у прямого потомка layout раньше ломала геометрию (см. историю TitleButton).
+component TextButton inherits Rectangle {
+    in property <string> label;
+    in property <color> base: Palette.accent;
+    in property <color> hover: Palette.accent-hi;
+    in property <color> text-color: Palette.accent-fg;
+    in property <length> font-size: 13px;
+    in property <int> font-weight: 600;
+    in property <bool> bold: false;
+
+    callback clicked();
+
+    border-radius: 6px;
+    background: touch.pressed
+        ? Palette.panel-2
+        : (touch.has-hover ? hover : base);
+
+    Text {
+        width: 100%;
+        height: 100%;
+        text: root.label;
+        color: root.text-color;
+        font-size: root.font-size;
+        font-weight: root.bold ? 700 : root.font-weight;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+        mouse-cursor: pointer;
+    }
+}
+
+// Квадратная кнопка-шаг «−»/«+» для поля «Начиная с номера».
+component StepperButton inherits Rectangle {
+    in property <string> label;
+    callback clicked();
+
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    background: touch.pressed ? Palette.border : Palette.panel-2;
+    border-width: 1px;
+    border-color: Palette.border;
+
+    Text {
+        width: 100%;
+        height: 100%;
+        text: root.label;
+        color: Palette.fg;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+        mouse-cursor: pointer;
+    }
+}
+
+// Чекбокс с белым текстом.
+component WhiteCheckBox {
+    in property <string> text;
+    in-out property <bool> checked;
+    callback toggled(bool);
+
+    HorizontalLayout {
+        spacing: 8px;
+        alignment: start;
+
+        // Двусторонняя привязка (<=>, а не :) — иначе присваивание
+        // в checked извне конфликтует с привязкой и затирается.
+        cb := CheckBox {
+            checked <=> root.checked;
+            toggled => { root.toggled(self.checked); }
+        }
+        Text {
+            text: root.text;
+            color: Palette.white;
+            vertical-alignment: center;
+            // Клик по подписи переключает чекбокс.
+            // TouchArea лежит только на тексте, чтобы не перекрывать сам
+            // CheckBox: иначе клик по квадратику вызывал бы оба обработчика.
+            TouchArea {
+                clicked => {
+                    root.checked = !root.checked;
+                    root.toggled(root.checked);
+                }
+                mouse-cursor: pointer;
+            }
+        }
+    }
+}
+
+// Превью одной этикетки (белый прямоугольник с номером).
+//
+// Используется дважды: для одиночной этикетки и для правой этикетки
+// в гибридном режиме. Различаются только подписи и начертание номера.
+component LabelPreview inherits VerticalLayout {
+    // Ширину задаём самому компоненту: внутри HorizontalLayout он иначе
+    // растягивается, и width: 76px у вложенного Rectangle не ограничивает
+    // внешнюю геометрию — этикетка «расползается» на всю доступную ширину.
+    width: 76px;
+    // Подпись под/над этикеткой ("Этикетки 1 – 499").
+    in property <string> caption: "";
+    in property <bool> show-caption: false;
+    // Текст в левом верхнем углу (номер колонтитула).
+    in property <string> corner-text: "";
+    in property <bool> show-corner: false;
+    in property <bool> corner-right: false;
+    // Начертание основного номера.
+    in property <bool> main-bold: false;
+    in property <bool> id-num: false;
+    in property <bool> end-line: false;
+
+    spacing: 4px;
+
+    if root.show-caption : Text {
+        text: root.caption;
+        color: Palette.muted;
+        font-size: 10px;
+        horizontal-alignment: center;
+    }
+
+    Rectangle {
+        width: 76px;
+        height: 48px;
+        border-radius: 8px;
+        background: Palette.white;
+        border-width: 1px;
+        border-color: Palette.border;
+
+        VerticalLayout {
+            padding: 4px;
+
+            if root.show-corner : Text {
+                text: root.corner-text;
+                color: Palette.black;
+                font-family: "Arial";
+                font-size: 8px;
+                horizontal-alignment: root.corner-right ? right : left;
+            }
+
+            Rectangle {
+                vertical-stretch: 1;
+                background: transparent;
+
+                Text {
+                    text: !root.end-line ? "123." : "123";
+                    color: Palette.black;
+                    font-family: "Arial";
+                    font-size: 26px;
+                    font-weight: root.main-bold ? 700 : 400;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+
+                // Имитация подчёркивания (векторные Path не поддерживаются).
+                if root.end-line : Rectangle {
+                    x: (parent.width - 44px) / 2;
+                    y: parent.height - 8px;
+                    width: 44px;
+                    height: 2px;
+                    background: Palette.black;
+                }
+            }
+        }
+    }
+}
+
 export component AppWindow inherits Window {
     title: "PrintNum — Печать ячеек";
     width: 460px;
     height: 440px;
     background: Palette.bg;
     default-font-family: "Segoe UI";
+    always-on-top: true;
 
     in-out property <bool> server-online: true;
     in-out property <bool> printer-online: false;
@@ -184,13 +391,13 @@ export component AppWindow inherits Window {
                         horizontal-alignment: center;
                     }
 
-                    Rectangle { height: 1px; background: Palette.border; }
+                    Divider { }
 
                     // Принтер + Этикетка
                     HorizontalLayout {
                         spacing: 8px;
                         VerticalLayout {
-                            Text { text: "Принтер"; color: Palette.muted; font-size: 12px; }
+                            FieldLabel { text: "Принтер"; }
                             ComboBox {
                                 model: list-printers;
                                 current-index: root.printer-index;
@@ -198,7 +405,7 @@ export component AppWindow inherits Window {
                             }
                         }
                         VerticalLayout {
-                            Text { text: "Этикетка (mm)"; color: Palette.muted; font-size: 12px; }
+                            FieldLabel { text: "Этикетка (mm)"; }
                             ComboBox {
                                 model: list-papers;
                                 current-index: root.paper-index;
@@ -207,7 +414,10 @@ export component AppWindow inherits Window {
                         }
                     }
 
-                    Rectangle { height: 1px; background: Palette.border; }
+                    Divider { }
+
+                    // ===== Ручная печать =====
+                    SectionTitle { text: "Ручная печать"; }
 
                     HorizontalLayout {
                         spacing: 8px;
@@ -223,68 +433,43 @@ export component AppWindow inherits Window {
                             edited(val) => { root.manual-text-edited(val); }
                             accepted(val) => { root.print-text(val); }
                         }
-                        // Кнопка «Печать» — без явной высоты: её растягивает
-                        // HorizontalLayout (иначе возможен конфликт геометрии).
-                        Rectangle {
+                        TextButton {
                             width: 96px;
-                            border-radius: 6px;
-                            background: print-touch.pressed
-                                ? Palette.panel-2
-                                : (print-touch.has-hover ? Palette.accent-hi : Palette.accent);
-                            Text {
-                                width: 100%;
-                                height: 100%;
-                                text: "Печать";
-                                color: Palette.accent-fg;
-                                font-size: 13px;
-                                font-weight: 600;
-                                horizontal-alignment: center;
-                                vertical-alignment: center;
-                            }
-                            print-touch := TouchArea {
-                                clicked => { root.print-text(root.manual-text); }
-                                mouse-cursor: pointer;
-                            }
+                            label: "Печать";
+                            clicked => { root.print-text(root.manual-text); }
                         }
                     }
 
-                    Text {
-                        text: "Только цифры и дефис. Enter — тоже печать.";
-                        color: Palette.muted;
-                        font-size: 10px;
-                        horizontal-alignment: center;
-                    }
+                    HintLabel { text: "Только цифры и дефис. Enter — тоже печать."; }
 
-                    Rectangle { height: 1px; background: Palette.border; }
+                    Divider { }
 
-                    Text {
-                        text: "Оформление этикетки";
-                        color: Palette.fg;
-                        font-size: 12px;
-                        font-weight: 600;
-                        horizontal-alignment: center;
-                    }
+                    // ===== Оформление этикетки =====
+                    SectionTitle { text: "Оформление этикетки"; }
 
                     HorizontalLayout {
                         spacing: 8px;
-                        // Настройки
+
+                        // ---- Настройки ----
                         VerticalLayout {
                             spacing: 4px;
-                            CheckBox {
+                            WhiteCheckBox {
                                 text: "Показывать ID";
-                                checked: root.id-num;
+                                checked <=> root.id-num;
                                 toggled => { root.set-id-num(self.checked); }
                             }
-                            CheckBox {
+                            WhiteCheckBox {
                                 text: "Подчёркивание";
-                                checked: root.end-line;
+                                checked <=> root.end-line;
                                 toggled => { root.set-end-line(self.checked); }
                             }
-                            CheckBox {
+                            WhiteCheckBox {
                                 text: "Гибридный формат";
-                                checked: root.hybrid;
+                                checked <=> root.hybrid;
                                 toggled => { root.set-hybrid(self.checked); }
                             }
+
+                            // Порог гибридного режима — виден только когда он включён.
                             if root.hybrid : HorizontalLayout {
                                 spacing: 4px;
                                 Text {
@@ -293,14 +478,9 @@ export component AppWindow inherits Window {
                                     font-size: 11px;
                                     vertical-alignment: center;
                                 }
-                                Rectangle {
-                                    width: 24px; height: 24px;
-                                    border-radius: 6px;
-                                    background: Palette.panel-2;
-                                    border-width: 1px;
-                                    border-color: Palette.border;
-                                    Text { text: "−"; color: Palette.fg; horizontal-alignment: center; vertical-alignment: center; }
-                                    TouchArea { clicked => { root.set-expand(Math.max(1, root.expand - 1)); } mouse-cursor: pointer; }
+                                StepperButton {
+                                    label: "−";
+                                    clicked => { root.set-expand(Math.max(1, root.expand - 1)); }
                                 }
                                 LineEdit {
                                     width: 56px;
@@ -310,119 +490,40 @@ export component AppWindow inherits Window {
                                         root.set-expand(Math.max(1, floor(self.text.to-float())));
                                     }
                                 }
-                                Rectangle {
-                                    width: 24px; height: 24px;
-                                    border-radius: 6px;
-                                    background: Palette.panel-2;
-                                    border-width: 1px;
-                                    border-color: Palette.border;
-                                    Text { text: "+"; color: Palette.fg; horizontal-alignment: center; vertical-alignment: center; }
-                                    TouchArea { clicked => { root.set-expand(root.expand + 1); } mouse-cursor: pointer; }
+                                StepperButton {
+                                    label: "+";
+                                    clicked => { root.set-expand(root.expand + 1); }
                                 }
                             }
                         }
 
-                        // Превью
+                        // ---- Превью ----
                         HorizontalLayout {
                             spacing: 4px;
-                            // Левая этикетка
-                            VerticalLayout {
-                                spacing: 4px;
-                                if root.hybrid : Text {
-                                    text: "Этикетки 1 – " + (root.expand - 1);
-                                    color: Palette.muted;
-                                    font-size: 10px;
-                                    horizontal-alignment: center;
-                                }
-                                Rectangle {
-                                    width: 76px; height: 48px;
-                                    border-radius: 8px;
-                                    background: Palette.white;
-                                    border-width: 1px;
-                                    border-color: Palette.border;
-                                    VerticalLayout {
-                                        padding: 4px;
-                                        if root.id-num : Text {
-                                            text: "−47";
-                                            color: Palette.black;
-                                            font-family: "Arial";
-                                            font-size: 8px;
-                                            horizontal-alignment: right;
-                                        }
-                                        Rectangle {
-                                            vertical-stretch: 1;
-                                            background: transparent;
-                                            Text {
-                                                text: !root.end-line ? "123." : "123";
-                                                color: Palette.black;
-                                                font-family: "Arial";
-                                                font-size: 26px;
-                                                horizontal-alignment: center;
-                                                vertical-alignment: center;
-                                            }
-                                            // Имитация подчёркивания.
-                                            if root.end-line : Rectangle {
-                                                x: (parent.width - 44px) / 2;
-                                                y: parent.height - 8px;
-                                                width: 44px;
-                                                height: 2px;
-                                                background: Palette.black;
-                                            }
-                                        }
-                                    }
-                                }
+
+                            LabelPreview {
+                                show-caption: root.hybrid;
+                                caption: "Этикетки 1 – " + (root.expand - 1);
+                                show-corner: root.id-num;
+                                corner-text: "−47";
+                                corner-right: true;
+                                main-bold: false;
+                                end-line: root.end-line;
                             }
-                            // Правая этикетка
-                            if root.hybrid : VerticalLayout {
-                                spacing: 4px;
-                                Text {
-                                    text: "Этикетки от " + root.expand;
-                                    color: Palette.muted;
-                                    font-size: 10px;
-                                    horizontal-alignment: center;
-                                }
-                                Rectangle {
-                                    width: 76px; height: 48px;
-                                    border-radius: 8px;
-                                    background: Palette.white;
-                                    border-width: 1px;
-                                    border-color: Palette.border;
-                                    VerticalLayout {
-                                        padding: 4px;
-                                        Text {
-                                            text: root.expand + "−";
-                                            color: Palette.black;
-                                            font-family: "Arial";
-                                            font-size: 8px;
-                                            horizontal-alignment: left;
-                                        }
-                                        Rectangle {
-                                            vertical-stretch: 1;
-                                            background: transparent;
-                                            Text {
-                                                text: !root.end-line ? "123." : "123";
-                                                color: Palette.black;
-                                                font-family: "Arial";
-                                                font-size: 26px;
-                                                font-weight: 700;
-                                                horizontal-alignment: center;
-                                                vertical-alignment: center;
-                                            }
-                                            if root.end-line : Rectangle {
-                                                x: (parent.width - 44px) / 2;
-                                                y: parent.height - 8px;
-                                                width: 44px;
-                                                height: 2px;
-                                                background: Palette.black;
-                                            }
-                                        }
-                                    }
-                                }
+
+                            if root.hybrid : LabelPreview {
+                                show-caption: true;
+                                caption: "Этикетки от " + root.expand;
+                                show-corner: true;
+                                corner-text: root.expand + "−";
+                                corner-right: false;
+                                main-bold: true;
+                                end-line: root.end-line;
                             }
                         }
                     }
 
-                    Rectangle { height: 1px; background: Palette.border; }
+                    Divider { }
                 }
             }
         }
