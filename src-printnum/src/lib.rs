@@ -21,4 +21,5 @@ pub mod native_host;
 pub mod print;
 pub mod printer;
 pub mod server;
+pub mod service;
 pub mod settings;

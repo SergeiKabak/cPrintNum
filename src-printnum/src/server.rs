@@ -111,23 +111,38 @@ fn handle(mut request_tiny: tiny_http::Request) {
             };
 
             if should_print {
-                if let Err(e) = print::print_text(&text, &cfg) {
-                    eprintln!("[print] ошибка: {e}");
+                match print::print_text(&text, &cfg) {
+                    Ok(()) => {
+                        let _ = request_tiny.respond(text_response(200, "OK"));
+                    }
+                    Err(e) => {
+                        eprintln!("[print] ошибка: {e}");
+                        let _ = request_tiny.respond(text_response(500, &e));
+                    }
                 }
             } else {
-                // Не печатаем — сообщаем причину для отладки.
-                if text.is_empty() {
-                    eprintln!("[print] пропуск: пустой номер");
+                // Не печатаем — сообщаем причину клиенту.
+                //
+                // Статус 200 здесь был бы ошибкой: расширение считает
+                // успехом любой `response.ok` и не покажет пользователю,
+                // что номер не напечатан.
+                //
+                // 503 — служба/приложение не готовы печатать (остановлено,
+                // принтер не выбран или недоступен); 400 — пустой номер.
+                let reason = if text.is_empty() {
+                    "пустой номер".to_string()
                 } else if !cfg.running {
-                    eprintln!("[print] пропуск: приложение остановлено (running=false)");
+                    "приложение остановлено".to_string()
                 } else if !print::is_dry_run() && cfg.printer.trim().is_empty() {
-                    eprintln!("[print] пропуск: принтер не выбран");
-                } else if !print::is_dry_run() {
-                    eprintln!("[print] пропуск: принтер недоступен");
-                }
-            }
+                    "принтер не выбран".to_string()
+                } else {
+                    "принтер недоступен".to_string()
+                };
 
-            let _ = request_tiny.respond(text_response(200, "OK"));
+                eprintln!("[print] пропуск: {reason}");
+                let code = if text.is_empty() { 400 } else { 503 };
+                let _ = request_tiny.respond(text_response(code, &reason));
+            }
         }
 
         (Method::Post, "/print-barcode") => {
@@ -163,20 +178,32 @@ fn handle(mut request_tiny: tiny_http::Request) {
             };
 
             if should_print {
-                if let Err(e) = print::print_barcode(&text, module_mm, height_mm, &cfg) {
-                    eprintln!("[barcode] ошибка: {e}");
+                match print::print_barcode(&text, module_mm, height_mm, &cfg) {
+                    Ok(()) => {
+                        let _ = request_tiny.respond(text_response(200, "OK"));
+                    }
+                    Err(e) => {
+                        eprintln!("[barcode] ошибка: {e}");
+                        let _ = request_tiny.respond(text_response(500, &e));
+                    }
                 }
-            } else if text.is_empty() {
-                eprintln!("[barcode] пропуск: пустой текст");
-            } else if !cfg.running {
-                eprintln!("[barcode] пропуск: приложение остановлено (running=false)");
-            } else if !print::is_dry_run() && cfg.printer.trim().is_empty() {
-                eprintln!("[barcode] пропуск: принтер не выбран");
-            } else if !print::is_dry_run() {
-                eprintln!("[barcode] пропуск: принтер недоступен");
-            }
+            } else {
+                // См. комментарий в /print-number: 200 при пропуске вводит
+                // расширение в заблуждение.
+                let reason = if text.is_empty() {
+                    "пустой текст".to_string()
+                } else if !cfg.running {
+                    "приложение остановлено".to_string()
+                } else if !print::is_dry_run() && cfg.printer.trim().is_empty() {
+                    "принтер не выбран".to_string()
+                } else {
+                    "принтер недоступен".to_string()
+                };
 
-            let _ = request_tiny.respond(text_response(200, "OK"));
+                eprintln!("[barcode] пропуск: {reason}");
+                let code = if text.is_empty() { 400 } else { 503 };
+                let _ = request_tiny.respond(text_response(code, &reason));
+            }
         }
 
         _ => {

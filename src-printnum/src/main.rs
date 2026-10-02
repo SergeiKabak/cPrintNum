@@ -39,6 +39,14 @@ fn main() {
         return;
     }
 
+    // 0. Режим службы и управление автозагрузкой.
+    //
+    // Эти команды не поднимают GUI: они выполняются и завершаются сразу,
+    // кроме `--service`, который блокирует процесс, держа только HTTP-сервер.
+    if handle_service_cli() {
+        return;
+    }
+
     // Разбор аргументов командной строки.
     // --dry-run включает режим эмуляции печати (или PRINTNUM_DRY_RUN=1).
     if std::env::args().any(|a| a == "--dry-run" || a == "-n") {
@@ -270,6 +278,95 @@ fn index_of(items: &[&str], value: &str) -> i32 {
 /// Индекс значения в Vec<String>.
 fn index_of_strings(items: &[String], value: &str) -> i32 {
     items.iter().position(|s| s == value).unwrap_or(0) as i32
+}
+
+/// Обрабатывает команды режима службы.
+///
+/// Возвращает `true`, если процесс должен завершиться (команда обработана)
+/// или продолжить работу в режиме службы без GUI.
+fn handle_service_cli() -> bool {
+    use printnum::service;
+
+    // --- Информационные команды: выполняются быстро и завершают процесс ---
+    if service::is_status_requested() {
+        service::print_status();
+        return true;
+    }
+
+    if service::is_install_requested() {
+        match service::install_autostart() {
+            Ok(path) => {
+                println!("[service] добавлено в автозагрузку: {}", path.display());
+
+                // Сразу поднимаем службу, чтобы печать заработала без перезахода
+                // в систему. Если не удалось — сообщаем, но не считаем это
+                // фатальным: при следующем входе автозагрузка сработает сама.
+                match spawn_detached_service() {
+                    Ok(()) => println!("[service] служба запущена"),
+                    Err(e) => eprintln!("[service] не удалось запустить сразу: {e}"),
+                }
+            }
+            Err(e) => eprintln!("[service] ошибка установки автозагрузки: {e}"),
+        }
+        return true;
+    }
+
+    if service::is_uninstall_requested() {
+        match service::uninstall_autostart() {
+            Ok(Some(path)) => println!("[service] убрано из автозагрузки: {}", path.display()),
+            Ok(None) => println!("[service] автозагрузка уже отсутствовала"),
+            Err(e) => eprintln!("[service] ошибка удаления: {e}"),
+        }
+        return true;
+    }
+
+    // --- Сам режим службы ---
+    if !service::is_service_requested() {
+        return false;
+    }
+
+    println!("PrintNum — служба печати");
+    println!("  Конфиг: {}", config::config_path().display());
+
+    // Порт берётся из env/.env — как и в GUI-режиме.
+    if let Err(e) = server::spawn() {
+        eprintln!("Не удалось запустить HTTP сервер: {e}");
+        eprintln!(
+            "Возможно, порт {} занят (запущена другая копия PrintNum?).",
+            printnum::settings::port()
+        );
+        std::process::exit(1);
+    }
+
+    // Слежение за конфигом — вечный цикл в текущем потоке.
+    service::watch_config();
+    true
+}
+
+/// Запускает отдельный процесс `printnum.exe --service` и не ждёт его.
+///
+/// Нужно, чтобы команда `--install-autostart` сразу включала печать,
+/// а не только регистрировала автозагрузку на следующий вход в систему.
+fn spawn_detached_service() -> std::io::Result<()> {
+    let exe = std::env::current_exe()?;
+
+    #[cfg(windows)]
+    {
+        // CREATE_NO_WINDOW — чтобы не мигало окно консоли у службы.
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        std::process::Command::new(exe)
+            .arg("--service")
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()?;
+    }
+
+    #[cfg(not(windows))]
+    {
+        std::process::Command::new(exe).arg("--service").spawn()?;
+    }
+
+    Ok(())
 }
 
 /// Приводит введённый вручную номер ячейки к допустимому виду.
