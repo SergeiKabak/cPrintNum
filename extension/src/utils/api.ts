@@ -41,6 +41,7 @@ export type PrintSettings = {
   hybrid: boolean;
   expand: number;
   running: boolean;
+  papers: string[];
 };
 
 /** Читает текущие настройки из приложения. Возвращает null, если оно недоступно. */
@@ -77,6 +78,18 @@ export async function saveSettings(
     return { ok: true, settings: data as PrintSettings };
   } catch (e) {
     return { ok: false, error: "Приложение PrintNum не запущено" };
+  }
+}
+
+/** Читает список размеров этикеток из приложения. */
+export async function getPapers(): Promise<string[]> {
+  try {
+    const res = await sendServer.get(API_BASE, "papers");
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data?.papers) ? data.papers : [];
+  } catch {
+    return [];
   }
 }
 

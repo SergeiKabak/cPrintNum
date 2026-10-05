@@ -32,6 +32,14 @@ pub struct Config {
     #[serde(default = "default_true")]
     pub running: bool,
 
+    // Список размеров этикеток, доступных для выбора.
+    //
+    // Хранится в конфиге, а не в коде: пользователь может добавить
+    // свой размер, и он сразу появится и в приложении, и в расширении
+    // (расширение читает список через `GET /papers`).
+    #[serde(default = "default_papers")]
+    pub papers: Vec<String>,
+
     // Поля, которые мог писать старый фронтенд, — сохраняем, чтобы не терять данные.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub theme: Option<String>,
@@ -41,6 +49,19 @@ pub struct Config {
 
 fn default_paper() -> String {
     "30*20".to_string()
+}
+
+/// Размеры этикеток по умолчанию (совместимы с прежним фронтендом).
+///
+/// Возвращаются, если в `config.json` поля `papers` нет или оно пустое —
+/// иначе пользователь остался бы без единого варианта выбора.
+pub fn default_papers() -> Vec<String> {
+    [
+        "30*20", "40*30", "43*25", "50*70", "58*40", "60*40", "75*120", "100*150",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect()
 }
 fn default_expand() -> i64 {
     500
@@ -59,6 +80,7 @@ impl Default for Config {
             hybrid: false,
             expand: default_expand(),
             running: true,
+            papers: default_papers(),
             theme: None,
             theme_style: None,
         }
@@ -73,6 +95,18 @@ impl Config {
     /// чтобы не дублировать список полей.
     pub fn to_json(&self) -> serde_json::Value {
         self.to_value()
+    }
+
+    /// Список размеров этикеток для выбора.
+    ///
+    /// Пустой список заменяется на значения по умолчанию — иначе в UI
+    /// не будет ни одного варианта.
+    pub fn papers(&self) -> Vec<String> {
+        if self.papers.is_empty() {
+            default_papers()
+        } else {
+            self.papers.clone()
+        }
     }
 
     /// Применяет к конфигу пришедшие по HTTP значения.
@@ -106,6 +140,25 @@ impl Config {
         if let Some(x) = v.get("running").and_then(|x| x.as_bool()) {
             self.running = x;
         }
+
+        // Список размеров: принимаем только массив непустых строк.
+        //
+        // Пустой массив игнорируется намеренно: иначе пользователь мог бы
+        // остаться без вариантов выбора в интерфейсе. Удалить все размеры —
+        // это всегда ошибка, а не осознанное действие.
+        if let Some(arr) = v.get("papers").and_then(|x| x.as_array()) {
+            let cleaned: Vec<String> = arr
+                .iter()
+                .filter_map(|x| x.as_str())
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string())
+                .collect();
+
+            if !cleaned.is_empty() {
+                self.papers = cleaned;
+            }
+        }
     }
 
     fn to_value(&self) -> serde_json::Value {
@@ -117,6 +170,7 @@ impl Config {
             "hybrid": self.hybrid,
             "expand": self.expand,
             "running": self.running,
+            "papers": self.papers,
             "theme": self.theme,
             "themeStyle": self.theme_style,
         })
@@ -138,6 +192,17 @@ impl Config {
             hybrid: get_bool("hybrid", false),
             expand: v.get("expand").and_then(|x| x.as_i64()).unwrap_or(500),
             running: get_bool("running", true),
+            papers: v
+                .get("papers")
+                .and_then(|x| x.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|x| x.as_str())
+                        .map(|s| s.to_string())
+                        .collect::<Vec<_>>()
+                })
+                .filter(|v: &Vec<String>| !v.is_empty())
+                .unwrap_or_else(default_papers),
             theme: v.get("theme").and_then(|x| x.as_str()).map(String::from),
             theme_style: v.get("themeStyle").and_then(|x| x.as_str()).map(String::from),
         }
@@ -349,6 +414,7 @@ mod tests {
             hybrid: true,
             expand: 42,
             running: false,
+            papers: default_papers(),
             theme: None,
             theme_style: None,
         };
@@ -366,5 +432,50 @@ mod tests {
         assert!(back.id_num && back.end_line && back.hybrid);
         assert_eq!(back.expand, 42);
         assert!(!back.running);
+    }
+
+    #[test]
+    fn papers_default_when_missing_or_empty() {
+        let mut cfg = Config::default();
+        assert_eq!(cfg.papers().len(), 8);
+
+        // Пустой список заменяется значениями по умолчанию.
+        cfg.papers = vec![];
+        assert_eq!(cfg.papers().len(), 8);
+
+        // Пустой массив в JSON игнорируется — нельзя остаться без вариантов.
+        cfg.papers = vec!["30*20".into()];
+        cfg.apply_json(&json!({ "papers": [] }));
+        assert_eq!(cfg.papers, vec!["30*20".to_string()]);
+    }
+
+    #[test]
+    fn apply_json_accepts_custom_papers() {
+        let mut cfg = Config::default();
+        cfg.apply_json(&json!({ "papers": ["30*20", "100*150", " 55*33 "] }));
+
+        assert_eq!(
+            cfg.papers,
+            vec!["30*20".to_string(), "100*150".to_string(), "55*33".to_string()],
+            "пробелы обрезаются"
+        );
+    }
+
+    #[test]
+    fn apply_json_drops_non_string_papers() {
+        let mut cfg = Config::default();
+        cfg.apply_json(&json!({ "papers": ["30*20", 42, null, ""] }));
+        assert_eq!(cfg.papers, vec!["30*20".to_string()]);
+    }
+
+    #[test]
+    fn papers_survive_json_roundtrip() {
+        let mut cfg = Config::default();
+        cfg.apply_json(&json!({ "papers": ["A", "B"] }));
+
+        let v = cfg.to_json();
+        let mut back = Config::default();
+        back.apply_json(&v);
+        assert_eq!(back.papers, vec!["A".to_string(), "B".to_string()]);
     }
 }

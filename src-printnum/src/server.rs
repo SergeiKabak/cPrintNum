@@ -86,6 +86,15 @@ fn handle(mut request_tiny: tiny_http::Request) {
             let _ = request_tiny.respond(json_response(200, json!({"listPrinters": list})));
         }
 
+        // Размеры этикеток, доступные для выбора.
+        //
+        // Список живёт в config.json, поэтому расширение подхватывает
+        // пользовательские размеры без пересборки.
+        (Method::Get, "/papers") => {
+            let cfg = config::get();
+            let _ = request_tiny.respond(json_response(200, json!({"papers": cfg.papers()})));
+        }
+
         // Текущие настройки печати (принтер, бумага, флаги оформления).
         //
         // Нужно расширению, чтобы показать в окне то же состояние,

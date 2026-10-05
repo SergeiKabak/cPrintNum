@@ -15,6 +15,7 @@
 
 import { useCallback, useEffect, useState } from "preact/hooks";
 import {
+  getPapers,
   getPrinters,
   getSettings,
   saveSettings,
@@ -22,27 +23,30 @@ import {
 } from "@/utils/api";
 import { Button } from "@/components/preact/button";
 
-/** Размеры этикеток — те же, что в десктопном приложении. */
-const PAPERS = [
-  "30*20",
-  "40*30",
-  "43*25",
-  "50*70",
-  "58*40",
-  "60*40",
-  "75*120",
-  "100*150",
-];
+/**
+ * Список размеров этикеток, если приложение недоступно.
+ *
+ * В обычной работе список приходит из `GET /papers` — он живёт в
+ * `config.json`, поэтому добавленный в приложении размер сразу
+ * появляется в расширении. Значения ниже нужны только чтобы показать
+ * хоть что-то, когда связь с приложением отсутствует.
+ */
+const FALLBACK_PAPERS = ["30*20"];
 
 export default function PrintSettingsPanel() {
   const [settings, setSettings] = useState<PrintSettings | null>(null);
   const [printers, setPrinters] = useState<string[]>([]);
+  const [papers, setPapers] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
 
   const load = useCallback(async () => {
-    const [s, p] = await Promise.all([getSettings(), getPrinters()]);
+    const [s, p, pp] = await Promise.all([
+      getSettings(),
+      getPrinters(),
+      getPapers(),
+    ]);
 
     if (!s) {
       setSettings(null);
@@ -53,6 +57,7 @@ export default function PrintSettingsPanel() {
     setError(null);
     setSettings(s);
     setPrinters(p);
+    setPapers(pp.length ? pp : FALLBACK_PAPERS);
   }, []);
 
   useEffect(() => {
@@ -150,14 +155,17 @@ export default function PrintSettingsPanel() {
             className="h-8 w-full rounded-md border border-border bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-ring"
           >
             <option value="">— не выбран —</option>
-            {/* Если сохранённый принтер не найден (отключён), показываем его
-                отдельным пунктом, чтобы выбор не «слетал» при открытии. */}
-            {settings.printer &&
-              !printers.includes(settings.printer) && (
-                <option value={settings.printer}>
-                  {settings.printer} (не найден)
-                </option>
-              )}
+            {/* Сохранённый принтер, отсутствующий в списке.
+                На macOS список всегда пуст (заглушка — печати нет),
+                поэтому пометка «не найден» только запутывала бы:
+                показываем имя принтера как есть. */}
+            {settings.printer && !printers.includes(settings.printer) && (
+              <option value={settings.printer}>
+                {printers.length
+                  ? `${settings.printer} (не найден)`
+                  : settings.printer}
+              </option>
+            )}
             {printers.map((p) => (
               <option key={p} value={p}>
                 {p}
@@ -176,7 +184,13 @@ export default function PrintSettingsPanel() {
             onChange={(e) => patch({ paper: (e.target as HTMLSelectElement).value })}
             className="h-8 w-full rounded-md border border-border bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-ring"
           >
-            {PAPERS.map((p) => (
+            {/* Размер, сохранённый в конфиге, но отсутствующий в списке
+                (например, его убрали из papers) — отдельным пунктом,
+                чтобы текущий выбор не «слетал». */}
+            {settings.paper && !papers.includes(settings.paper) && (
+              <option value={settings.paper}>{settings.paper} (нет в списке)</option>
+            )}
+            {papers.map((p) => (
               <option key={p} value={p}>
                 {p}
               </option>

@@ -95,9 +95,11 @@ fn main() {
     app.set_server_online(true);
     app.set_dry_run(printnum::print::is_dry_run());
     let printers = printer::list_printers();
+    let papers = cfg.papers();
     app.set_printer_index(index_of_strings(&printers, &cfg.printer));
-    app.set_paper_index(index_of(&PAPERS, &cfg.paper));
+    app.set_paper_index(index_of_strings(&papers, &cfg.paper));
     app.set_list_printers(string_model(printers));
+    app.set_list_papers(string_model(papers));
 
     // ---- Колбэки GUI → конфиг ----
     let weak = app.as_weak();
@@ -126,7 +128,11 @@ fn main() {
         let _ = config::update(|c| c.paper = v.to_string());
         if let Some(a) = weak.upgrade() {
             a.set_paper(v.clone());
-            a.set_paper_index(index_of(&PAPERS, &v.to_string()));
+            // Индекс считаем по актуальному списку в UI, а не по константе:
+            // список может быть изменён пользователем в config.json.
+            use slint::Model;
+            let list: Vec<String> = a.get_list_papers().iter().map(|s| s.to_string()).collect();
+            a.set_paper_index(index_of_strings(&list, &v.to_string()));
         }
     });
 
@@ -263,16 +269,6 @@ fn main() {
 fn string_model(items: Vec<String>) -> slint::ModelRc<slint::SharedString> {
     let v: Vec<slint::SharedString> = items.into_iter().map(|s| s.into()).collect();
     slint::ModelRc::new(slint::VecModel::from(v))
-}
-
-/// Фиксированный список размеров этикеток (совместим с прежним фронтендом).
-const PAPERS: [&str; 8] = [
-    "30*20", "40*30", "43*25", "50*70", "58*40", "60*40", "75*120", "100*150",
-];
-
-/// Индекс значения в списке (0, если не найдено).
-fn index_of(items: &[&str], value: &str) -> i32 {
-    items.iter().position(|s| *s == value).unwrap_or(0) as i32
 }
 
 /// Индекс значения в Vec<String>.
