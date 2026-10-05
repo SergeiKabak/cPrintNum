@@ -11,13 +11,16 @@
  * Настройки сохраняются в chrome.storage.local.
  */
 
-import { useState } from "preact/hooks";
+declare const chrome: any;
+
+import { useState, useEffect } from "preact/hooks";
 import { Printer, Barcode, MonitorUp, Settings2 } from "lucide-preact";
 import { barcode128ToSvg } from "@/utils/code128";
 import { Button } from "@/components/preact/button";
 import { sendServer } from "@/utils/api";
 import { useStorageValue } from "@/hooks/useStorageValue";
 import { isNativeAvailable, sendNative } from "@/utils/nativeMessaging";
+import { LAST_LABEL_KEY } from "@/entrypoints/labelCopy.content";
 
 /** Значения по умолчанию. */
 const DEFAULT_TEXT = "";
@@ -41,6 +44,36 @@ export default function BarcodeGenerator() {
   );
   const [showSettings, setShowSettings] = useState(false);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
+
+  // Подхват штрихкода из кнопки «копировать» на странице Ozon.
+  //
+  // Значение кладёт content-script (labelCopy.content.ts) в
+  // chrome.storage.local — окно расширения в момент клика обычно закрыто,
+  // поэтому передача идёт через хранилище, а не напрямую.
+  //
+  // Читаем существующее значение при открытии…
+  useEffect(() => {
+    chrome.storage.local.get([LAST_LABEL_KEY], (result: any) => {
+      const value = result?.[LAST_LABEL_KEY];
+      // Подставляем, только если пользователь ничего не вводил сам.
+      if (typeof value === "string" && value) {
+        setText((prev) => (prev ? prev : value));
+      }
+    });
+
+    // …и следим за новыми копированиями, пока окно открыто.
+    const onChanged = (changes: any, area: string) => {
+      if (area !== "local") return;
+      const value = changes?.[LAST_LABEL_KEY]?.newValue;
+      if (typeof value === "string" && value) {
+        setText(value);
+        setStatus({ kind: "idle" });
+      }
+    };
+
+    chrome.storage.onChanged.addListener(onChanged);
+    return () => chrome.storage.onChanged.removeListener(onChanged);
+  }, []);
 
   // Проверяем валидность и получаем SVG (или ошибку).
   let svg: string | null = null;
