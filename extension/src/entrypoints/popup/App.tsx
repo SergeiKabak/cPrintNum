@@ -1,16 +1,6 @@
 import { useEffect } from "preact/hooks";
-import Hide from "./hide";
 
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/preact/accordion";
 import StatusPrinting from "./statusPrinting";
-import Autoscript from "./autoscript";
-import QrCommands from "./qrCommands";
-import Help from "./Help";
 import BarcodeGenerator from "./BarcodeGenerator";
 
 function App() {
@@ -25,26 +15,6 @@ function App() {
       <StatusPrinting />
 
       <BarcodeGenerator />
-
-      <Accordion
-        type="single"
-        collapsible
-        className="w-full bg-card text-card-foreground shadow-sm overflow-hidden border rounded-xl"
-      >
-        <AccordionItem value="dop-menu" className="border-b-0">
-          <AccordionTrigger className="p-3 text-sm font-semibold hover:no-underline hover:bg-muted/50 transition-colors">
-            Дополнительные возможности
-          </AccordionTrigger>
-          <AccordionContent className="p-3 pt-0 flex flex-col items-center gap-2">
-            <div className="flex flex-col items-center p-2 w-full gap-2">
-              <QrCommands />
-              <Autoscript />
-              <Hide />
-              <Help />
-            </div>
-          </AccordionContent>
-        </AccordionItem>
-      </Accordion>
     </div>
   );
 }
