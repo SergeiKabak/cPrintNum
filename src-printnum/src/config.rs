@@ -67,6 +67,47 @@ impl Default for Config {
 
 // serde нужен snake_case в Rust и camelCase в JSON (совместимость с backend).
 impl Config {
+    /// Публичное представление конфига в формате JSON-совместимого объекта.
+    ///
+    /// Используется HTTP-сервером для `GET /config`,
+    /// чтобы не дублировать список полей.
+    pub fn to_json(&self) -> serde_json::Value {
+        self.to_value()
+    }
+
+    /// Применяет к конфигу пришедшие по HTTP значения.
+    ///
+    /// Меняются только ПРИСУТСТВУЮЩИЕ ключи: то, что не передано,
+    /// остаётся без изменений. Неизвестные ключи игнорируются — так
+    /// старая версия приложения не сломается на новом расширении.
+    ///
+    /// Ключи — camelCase (совместимость с `config.json`).
+    pub fn apply_json(&mut self, v: &serde_json::Value) {
+        if let Some(x) = v.get("printer").and_then(|x| x.as_str()) {
+            self.printer = x.to_string();
+        }
+        if let Some(x) = v.get("paper").and_then(|x| x.as_str()) {
+            self.paper = x.to_string();
+        }
+        if let Some(x) = v.get("idNum").and_then(|x| x.as_bool()) {
+            self.id_num = x;
+        }
+        if let Some(x) = v.get("endLine").and_then(|x| x.as_bool()) {
+            self.end_line = x;
+        }
+        if let Some(x) = v.get("hybrid").and_then(|x| x.as_bool()) {
+            self.hybrid = x;
+        }
+        if let Some(x) = v.get("expand").and_then(|x| x.as_i64()) {
+            // Защита от нуля/отрицательных значений: печать делает
+            // сравнение `номер >= expand`, нулевой порог бессмыслен.
+            self.expand = x.max(1);
+        }
+        if let Some(x) = v.get("running").and_then(|x| x.as_bool()) {
+            self.running = x;
+        }
+    }
+
     fn to_value(&self) -> serde_json::Value {
         serde_json::json!({
             "printer": self.printer,
@@ -228,4 +269,102 @@ fn write_to_disk(cfg: &Config) -> std::io::Result<()> {
     }
     std::fs::rename(&tmp, &path)?;
     Ok(())
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn apply_json_updates_only_present_keys() {
+        let mut cfg = Config {
+            printer: "HP".into(),
+            paper: "40*30".into(),
+            id_num: true,
+            expand: 250,
+            ..Config::default()
+        };
+
+        // Меняем только принтер — остальное должно остаться как было.
+        cfg.apply_json(&json!({ "printer": "Zebra" }));
+
+        assert_eq!(cfg.printer, "Zebra");
+        assert_eq!(cfg.paper, "40*30", "бумага не должна меняться");
+        assert!(cfg.id_num, "idNum не должен меняться");
+        assert_eq!(cfg.expand, 250, "expand не должен меняться");
+    }
+
+    #[test]
+    fn apply_json_ignores_unknown_keys() {
+        let mut cfg = Config::default();
+        let was = cfg.to_json();
+
+        cfg.apply_json(&json!({
+            "unknownField": 123,
+            "another": "x",
+            "printer": "OKI",
+        }));
+
+        assert_eq!(cfg.printer, "OKI");
+        // Всё остальное не тронуто.
+        let now = cfg.to_json();
+        for key in ["paper", "idNum", "endLine", "hybrid", "expand", "running"] {
+            assert_eq!(now[key], was[key], "ключ {key} не должен меняться");
+        }
+    }
+
+    #[test]
+    fn apply_json_rejects_wrong_types() {
+        let mut cfg = Config {
+            hybrid: false,
+            expand: 500,
+            ..Config::default()
+        };
+
+        // Строка вместо bool и строка вместо числа — игнорируются.
+        cfg.apply_json(&json!({ "hybrid": "yes", "expand": "много" }));
+
+        assert!(!cfg.hybrid);
+        assert_eq!(cfg.expand, 500);
+    }
+
+    #[test]
+    fn apply_json_clamps_expand_to_at_least_one() {
+        let mut cfg = Config::default();
+
+        cfg.apply_json(&json!({ "expand": 0 }));
+        assert_eq!(cfg.expand, 1, "нулевой порог бессмыслен");
+
+        cfg.apply_json(&json!({ "expand": -10 }));
+        assert_eq!(cfg.expand, 1, "отрицательный порог тоже");
+    }
+
+    #[test]
+    fn json_roundtrip_keeps_camel_case_keys() {
+        let cfg = Config {
+            printer: "P".into(),
+            paper: "30*20".into(),
+            id_num: true,
+            end_line: true,
+            hybrid: true,
+            expand: 42,
+            running: false,
+            theme: None,
+            theme_style: None,
+        };
+
+        let v = cfg.to_json();
+        // Ключи должны быть в camelCase — как в config.json.
+        assert_eq!(v["idNum"], json!(true));
+        assert_eq!(v["endLine"], json!(true));
+        assert_eq!(v["expand"], json!(42));
+        assert_eq!(v["running"], json!(false));
+
+        let mut back = Config::default();
+        back.apply_json(&v);
+        assert_eq!(back.printer, "P");
+        assert!(back.id_num && back.end_line && back.hybrid);
+        assert_eq!(back.expand, 42);
+        assert!(!back.running);
+    }
 }

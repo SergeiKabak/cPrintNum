@@ -20,9 +20,9 @@ import { useStorageValue } from "@/hooks/useStorageValue";
 import { isNativeAvailable, sendNative } from "@/utils/nativeMessaging";
 
 /** Значения по умолчанию. */
-const DEFAULT_TEXT = "ii18725308927";
+const DEFAULT_TEXT = "";
 const DEFAULT_MODULE_MM = 0.25;
-const DEFAULT_HEIGHT_MM = 10;
+const DEFAULT_HEIGHT_MM = 17;
 
 type Status =
   | { kind: "idle" }
@@ -56,7 +56,7 @@ export default function BarcodeGenerator() {
   /** Печать из браузера: окно с ШК + window.print(). */
   const printInBrowser = () => {
     if (!svg) return;
-    const w = window.open("", "_blank", "width=600,height=400");
+    const w = window.open("", "_blank", "width=200,height=200");
     if (!w) {
       setStatus({ kind: "err", msg: "Браузер заблокировал окно печати" });
       return;

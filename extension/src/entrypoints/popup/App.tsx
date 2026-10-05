@@ -1,6 +1,7 @@
 import { useEffect } from "preact/hooks";
 
 import StatusPrinting from "./statusPrinting";
+import PrintSettingsPanel from "./PrintSettingsPanel";
 import BarcodeGenerator from "./BarcodeGenerator";
 
 function App() {
@@ -13,6 +14,8 @@ function App() {
   return (
     <div className="flex flex-col w-full p-3 items-stretch gap-3">
       <StatusPrinting />
+
+      <PrintSettingsPanel />
 
       <BarcodeGenerator />
     </div>

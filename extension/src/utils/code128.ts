@@ -193,8 +193,8 @@ export function encodeCode128(input: string): Barcode128 {
  */
 export function barcode128ToSvg(
   input: string,
-  moduleMm = 0.25,
-  heightMm = 10,
+  moduleMm: number,
+  heightMm: number,
   showHri = true,
 ): string {
   const { modules, moduleCount } = encodeCode128(input);

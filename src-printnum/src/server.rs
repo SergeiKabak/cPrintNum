@@ -86,6 +86,74 @@ fn handle(mut request_tiny: tiny_http::Request) {
             let _ = request_tiny.respond(json_response(200, json!({"listPrinters": list})));
         }
 
+        // Текущие настройки печати (принтер, бумага, флаги оформления).
+        //
+        // Нужно расширению, чтобы показать в окне то же состояние,
+        // что и в приложении.
+        (Method::Get, "/config") => {
+            let cfg = config::get();
+            let _ = request_tiny.respond(json_response(200, cfg.to_json()));
+        }
+
+        // Изменение настроек печати из расширения.
+        //
+        // Принимает частичный JSON: меняются только переданные ключи.
+        // Неизвестные ключи игнорируются — клиент может быть новее.
+        // При успехе возвращает полный актуальный конфиг.
+        //
+        // ВАЖНО: проверяем, что тело — JSON-объект. Иначе клиент может
+        // случайно затереть настройки мусором (например, послав массив).
+        (Method::Post, "/config") => {
+            let mut body = String::new();
+            let _ = request_tiny.as_reader().read_to_string(&mut body);
+
+            let parsed = match serde_json::from_str::<serde_json::Value>(&body) {
+                Ok(v) if v.is_object() => v,
+                Ok(_) => {
+                    let _ = request_tiny.respond(json_response(
+                        400,
+                        json!({"error": "ожидается JSON-объект"}),
+                    ));
+                    return;
+                }
+                Err(e) => {
+                    let _ = request_tiny.respond(json_response(
+                        400,
+                        json!({"error": format!("некорректный JSON: {e}")}),
+                    ));
+                    return;
+                }
+            };
+
+            let updated = config::update(|c| c.apply_json(&parsed));
+
+            match updated {
+                Ok(cfg) => {
+                    // Сообщаем в лог, что именно поменялось — удобно отлаживать.
+                    println!(
+                        "[config] изменён из расширения: running={}, printer='{}', paper='{}', \
+                         idNum={}, endLine={}, hybrid={}, expand={}",
+                        cfg.running,
+                        cfg.printer,
+                        cfg.paper,
+                        cfg.id_num,
+                        cfg.end_line,
+                        cfg.hybrid,
+                        cfg.expand
+                    );
+
+                    let _ = request_tiny.respond(json_response(200, cfg.to_json()));
+                }
+                Err(e) => {
+                    eprintln!("[config] ошибка сохранения: {e}");
+                    let _ = request_tiny.respond(json_response(
+                        500,
+                        json!({"error": format!("не удалось сохранить настройки: {e}")}),
+                    ));
+                }
+            }
+        }
+
         (Method::Post, "/print-number") => {
             let mut body = String::new();
             let _ = request_tiny.as_reader().read_to_string(&mut body);
