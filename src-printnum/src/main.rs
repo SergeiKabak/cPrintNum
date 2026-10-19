@@ -47,6 +47,19 @@ fn main() {
         return;
     }
 
+    // 0а. Режим TUI: текстовый интерфейс вместо окна настроек.
+    //
+    // Поднимает HTTP-сервер (как и GUI) и открывает меню в консоли.
+    // Нужен для машин без графического интерфейса (или под удалённым
+    // доступом), где Slint/окно недоступны.
+    if printnum::tui::is_tui_requested() {
+        if let Err(e) = printnum::tui::run_server_and_menu() {
+            eprintln!("[tui] ошибка: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
+
     // Разбор аргументов командной строки.
     // --dry-run включает режим эмуляции печати (или PRINTNUM_DRY_RUN=1).
     if std::env::args().any(|a| a == "--dry-run" || a == "-n") {
@@ -176,7 +189,7 @@ fn main() {
     // отклоняет дефис, а номер ячейки имеет вид "500-47".
     let weak = app.as_weak();
     app.on_manual_text_edited(move |raw| {
-        let clean = sanitize_cell_number(&raw);
+        let clean = printnum::cell::sanitize_cell_number(&raw);
         if let Some(a) = weak.upgrade() {
             if a.get_manual_text() != clean {
                 a.set_manual_text(clean.into());
@@ -185,7 +198,7 @@ fn main() {
     });
 
     app.on_print_text(move |text| {
-        let number = sanitize_cell_number(&text);
+        let number = printnum::cell::sanitize_cell_number(&text);
 
         if number.is_empty() {
             eprintln!("[manual] пропуск: пустой номер");
@@ -365,33 +378,3 @@ fn spawn_detached_service() -> std::io::Result<()> {
     Ok(())
 }
 
-/// Приводит введённый вручную номер ячейки к допустимому виду.
-///
-/// Оставляет только ASCII-цифры и дефис (формат номера — например "500-47"
-/// или "КГТ-1" в части цифр), всё прочее отбрасывается.
-/// Пробелы по краям убираются.
-fn sanitize_cell_number(raw: &str) -> String {
-    raw.trim()
-        .chars()
-        .filter(|c| c.is_ascii_digit() || *c == '-')
-        .collect()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::sanitize_cell_number;
-
-    #[test]
-    fn keeps_digits_and_hyphen() {
-        assert_eq!(sanitize_cell_number("500-47"), "500-47");
-        assert_eq!(sanitize_cell_number("123-47"), "123-47");
-    }
-
-    #[test]
-    fn strips_letters_and_spaces() {
-        assert_eq!(sanitize_cell_number("КГТ-1"), "-1");
-        assert_eq!(sanitize_cell_number(" 47 a7 "), "477");
-        assert_eq!(sanitize_cell_number("abc"), "");
-        assert_eq!(sanitize_cell_number(""), "");
-    }
-}

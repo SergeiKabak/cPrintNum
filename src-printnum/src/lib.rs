@@ -16,6 +16,7 @@
 //!   Поддержка macOS/Linux как пользовательской платформы **не заявлена**.
 
 pub mod barcode;
+pub mod cell;
 pub mod config;
 pub mod native_host;
 pub mod print;
@@ -23,3 +24,4 @@ pub mod printer;
 pub mod server;
 pub mod service;
 pub mod settings;
+pub mod tui;
