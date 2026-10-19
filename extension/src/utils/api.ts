@@ -104,3 +104,43 @@ export async function getPrinters(): Promise<string[]> {
     return [];
   }
 }
+
+/** Состояние службы: установлена ли в автозагрузку. */
+export async function getServiceStatus(): Promise<boolean> {
+  try {
+    const res = await sendServer.get(API_BASE, "service");
+    if (!res.ok) return false;
+    const data = await res.json();
+    return data?.installed === true;
+  } catch {
+    return false;
+  }
+}
+
+/** Устанавливает службу в автозагрузку и запускает её. */
+export async function installService(): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const res = await sendServer.post("service/install", {});
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      return { ok: false, error: data?.error || `Ошибка ${res.status}` };
+    }
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "Приложение PrintNum не запущено" };
+  }
+}
+
+/** Удаляет службу из автозагрузки. */
+export async function uninstallService(): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const res = await sendServer.post("service/uninstall", {});
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      return { ok: false, error: data?.error || `Ошибка ${res.status}` };
+    }
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "Приложение PrintNum не запущено" };
+  }
+}

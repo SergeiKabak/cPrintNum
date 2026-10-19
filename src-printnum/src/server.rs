@@ -7,7 +7,7 @@
 //! - `POST /print-number`   → `"OK"` (тело: `{"text": "<номер>"}`)
 //! - `POST /print-barcode`  → `"OK"` (тело: `{"text", "moduleMm", "heightMm"}`)
 
-use crate::{config, printer, settings};
+use crate::{config, printer, service, settings};
 use crate::print;
 
 use serde_json::json;
@@ -27,6 +27,32 @@ pub fn spawn() -> std::io::Result<()> {
                 handle(request);
             }
         })?;
+    Ok(())
+}
+
+/// Запускает службу `--service` в отдельном процессе (без окна консоли).
+///
+/// Используется при установке автозагрузки из расширения: служба
+/// поднимается сразу, чтобы печать работала без перезагрузки.
+fn spawn_detached_service() -> std::io::Result<()> {
+    let exe = std::env::current_exe()?;
+
+    #[cfg(windows)]
+    {
+        // CREATE_NO_WINDOW — чтобы не мигало окно консоли у службы.
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        std::process::Command::new(exe)
+            .arg("--service")
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()?;
+    }
+
+    #[cfg(not(windows))]
+    {
+        std::process::Command::new(exe).arg("--service").spawn()?;
+    }
+
     Ok(())
 }
 
@@ -84,6 +110,53 @@ fn handle(mut request_tiny: tiny_http::Request) {
         (Method::Get, "/listPrinters") => {
             let list = printer::list_printers();
             let _ = request_tiny.respond(json_response(200, json!({"listPrinters": list})));
+        }
+
+        // Состояние службы: установлена ли в автозагрузку.
+        //
+        // Нужно расширению, чтобы показать кнопку «Установить службу»
+        // только когда она ещё не установлена.
+        (Method::Get, "/service") => {
+            let installed = service::is_autostart_installed();
+            let _ = request_tiny.respond(json_response(200, json!({"installed": installed})));
+        }
+
+        // Установка службы в автозагрузку (вызывается из расширения).
+        //
+        // Создаёт `PrintNum.cmd` в Startup и сразу запускает `--service`.
+        // Права администратора не требуются.
+        (Method::Post, "/service/install") => {
+            match service::install_autostart() {
+                Ok(path) => {
+                    // Запускаем службу сразу, чтобы печать работала
+                    // без перезагрузки. Ошибка не фатальна.
+                    let _ = spawn_detached_service();
+
+                    let _ = request_tiny.respond(json_response(200, json!({
+                        "ok": true,
+                        "path": path.display().to_string(),
+                    })));
+                }
+                Err(e) => {
+                    let _ = request_tiny.respond(json_response(500, json!({
+                        "error": format!("ошибка установки: {e}"),
+                    })));
+                }
+            }
+        }
+
+        // Удаление службы из автозагрузки.
+        (Method::Post, "/service/uninstall") => {
+            match service::uninstall_autostart() {
+                Ok(_) => {
+                    let _ = request_tiny.respond(json_response(200, json!({"ok": true})));
+                }
+                Err(e) => {
+                    let _ = request_tiny.respond(json_response(500, json!({
+                        "error": format!("ошибка удаления: {e}"),
+                    })));
+                }
+            }
         }
 
         // Размеры этикеток, доступные для выбора.

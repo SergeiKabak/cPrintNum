@@ -19,6 +19,9 @@ import {
   getPrinters,
   getSettings,
   saveSettings,
+  getServiceStatus,
+  installService,
+  uninstallService,
   type PrintSettings,
 } from "@/utils/api";
 import { Button } from "@/components/preact/button";
@@ -40,13 +43,18 @@ export default function PrintSettingsPanel() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [serviceInstalled, setServiceInstalled] = useState(false);
+  const [serviceBusy, setServiceBusy] = useState(false);
 
   const load = useCallback(async () => {
-    const [s, p, pp] = await Promise.all([
+    const [s, p, pp, svc] = await Promise.all([
       getSettings(),
       getPrinters(),
       getPapers(),
+      getServiceStatus(),
     ]);
+
+    setServiceInstalled(svc);
 
     if (!s) {
       setSettings(null);
@@ -250,6 +258,53 @@ export default function PrintSettingsPanel() {
         >
           Обновить
         </Button>
+
+        {/* Панель управления службой */}
+        <div className="pt-1 border-t border-border/50">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-medium text-muted-foreground">
+              Автозагрузка службы
+            </span>
+            <span
+              className={`text-[10px] font-bold ${
+                serviceInstalled
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : "text-red-600 dark:text-red-400"
+              }`}
+            >
+              {serviceInstalled ? "установлена" : "не установлена"}
+            </span>
+          </div>
+          <Button
+            variant={serviceInstalled ? "destructive" : "outline"}
+            size="sm"
+            className="w-full mt-1.5"
+            disabled={serviceBusy}
+            onClick={async () => {
+              setServiceBusy(true);
+              const result = serviceInstalled
+                ? await uninstallService()
+                : await installService();
+              setServiceBusy(false);
+
+              if (result.ok) {
+                setServiceInstalled(!serviceInstalled);
+                setError(null);
+              } else {
+                setError(result.error || "Ошибка");
+              }
+            }}
+          >
+            {serviceBusy
+              ? "Подождите…"
+              : serviceInstalled
+                ? "Удалить из автозагрузки"
+                : "Установить в автозагрузку"}
+          </Button>
+          <p className="text-[10px] text-muted-foreground mt-1 leading-tight">
+            При автозагрузке служба запускается автоматически при входе в систему. Печать работает без открытого окна приложения.
+          </p>
+        </div>
       </div>
     </div>
   );
