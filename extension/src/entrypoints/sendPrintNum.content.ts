@@ -1,5 +1,5 @@
 import { sendServer } from "@/utils/api";
-import { SELECTORS, workPathNames } from "@/utils/constants";
+import { SELECTORS, CELL_PRINTABLE_RE, workPathNames } from "@/utils/constants";
 import { subscribe } from "@/utils/observer";
 import { registerScannerSimulator, onSimulatedScan } from "@/utils/scannerSimulator";
 
@@ -42,6 +42,10 @@ export default defineContentScript({
       return Array.from(tags)
         .map((tag) => tag.textContent?.trim() || "")
         .filter(Boolean)
+        // Исключаем ячейки с текстом ('Возврат-1', 'Прямой поток-5'):
+        // их нельзя закодировать в Code128 (только ASCII A/B), поэтому
+        // печать такого номера привела бы к пустой/битой этикетке.
+        .filter((text) => CELL_PRINTABLE_RE.test(text))
         .slice(0, 10);
     }
 
@@ -124,6 +128,15 @@ export default defineContentScript({
     // в эмуляторе никуда бы не уходило.
     let lastSimulated: { value: string; at: number } | null = null;
     onSimulatedScan((value) => {
+      // Эмулированное сканирование тоже не должно отправлять
+      // текстовые ячейки: иначе в консоли придётся видеть мусор.
+      if (!CELL_PRINTABLE_RE.test(value)) {
+        console.info(
+          `[PrintNum:scanner] пропущено (текстовая ячейка): "${value}"`,
+        );
+        return;
+      }
+
       console.info(`[PrintNum:scanner] обработка номера: "${value}"`);
 
       // Защита от возможного дублирования с DOM-событием.
