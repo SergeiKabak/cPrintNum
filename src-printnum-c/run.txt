@@ -1,0 +1,1 @@
+export WINEPREFIX=~/.wine-printnum-test && wineserver -k 2>/dev/null; sleep 1; tail -3 ~/.wine-printnum-test/drive_c/users/*/AppData/Roaming/PrintNum/log.txt

@@ -1,0 +1,148 @@
+# PrintNum C версия — Win7 single-file
+
+Минимальная портация PrintNum на C для Windows 7 x64. **Один исходный файл**, **один исполняемый файл (19 KB)**, **ноль CRT зависимостей**.
+
+## Структура
+
+```
+src-printnum-c/
+├── printnum-win7.c     # Единственный исходник (~42 KB)
+├── build.sh            # Скрипт сборки (2 варианта exe)
+└── dist/
+    ├── printnum-win7.exe   # GUI служба
+    ├── printnum-diag.exe   # Консольный диагностический
+    ├── config.json         # Конфиг по умолчанию
+    └── PrintNum-win7.zip   # Готовый архив для переноса на Win7
+```
+
+## Сборка
+
+```bash
+./build.sh
+```
+
+**Результат:**
+- `printnum-win7.exe` — **19 KB**, GUI служба (HTTP-сервер на порту 5000)
+- `printnum-diag.exe` — **19 KB**, консольный диагностический вариант
+
+**Зависимости:** только 6 системных DLL Windows 7:
+```
+GDI32.dll, KERNEL32.dll, SHELL32.dll, USER32.dll, WINSPOOL.DRV, WS2_32.dll
+```
+**CRT зависимостей нет** (`api-ms-win-crt-*` отсутствуют).
+
+## Архитектура
+
+- **Single-file**: весь код в `printnum-win7.c` (HTTP-сервер, JSON-парсер, GDI-печать, конфиг).
+- **Без CRT**: `-nostdlib -e wWinMain`, свои `strlen/memcpy/memset`.
+- **Win7 совместимость**: только системные DLL, которые есть в чистой Win7 SP1.
+
+### Оптимизации для старого железа
+
+| Оптимизация | Эффект |
+|-------------|--------|
+| Автоподбор шрифта — линейная экстраполяция от реперного размера 100 px | 2–3 GDI-вызова вместо ~50 циклов «+1 px» |
+| `BODY_MAX` 4 KB (тела запросов расширения ≤ 1 KB) | −48 KB BSS, −72 KB стека |
+| `Content-Length` парсится в char-буфере без wide-конверсии | −64 KB стека на запрос |
+| Буферы спулера 4 KB, список принтеров до 8 шт. | −36 KB BSS |
+| Кеш пути лога | нет лишних обращений к FS при логировании |
+| `-Os -ffunction-sections -Wl,--gc-sections` | exe 26.6 KB → **18.9 KB** |
+
+**Итого:** resident-память ~176 KB → ~92 KB BSS, стек на запрос ~130 KB → ~20 KB.
+
+> ⚠️ `-fdata-sections` **не использовать**: множество static-буферов в отдельных
+> секциях раздувает PE из-за выравнивания (exe вырастает до 132 KB).
+
+## Использование на Windows 7
+
+1. Распакуйте `dist/PrintNum-win7.zip` в любую папку (например, `C:\PrintNum\`).
+2. Запустите `printnum-win7.exe` (двойной клик) — стартует HTTP-сервер на `127.0.0.1:5000` без окон.
+3. Расширение браузера подключается автоматически (порт 5000 по умолчанию).
+4. Лог пишется в `%APPDATA%\PrintNum\log.txt`.
+
+### Консольный диагностический режим
+```cmd
+printnum-diag.exe
+echo Код выхода: %ERRORLEVEL%
+```
+
+### Одноразовая печать из командной строки
+```cmd
+printnum-win7.exe --print "123-456"
+```
+Печатается **только номер ячейки**: цифры, дефис, пробел + минимум одна цифра.
+`Возврат-1`, `Прямой поток - 5`, штрихкоды `ii...` — отклоняются (exit 1 + лог).
+
+## API (совместим с Rust-версией)
+
+| Метод | Путь | Описание |
+|-------|------|----------|
+| GET | `/` | `{"status": true}` |
+| GET | `/status-printer` | `{"printerOnline": bool}` |
+| GET | `/listPrinters` | `{"listPrinters": [...]}` (до 8) |
+| GET | `/papers` | `{"papers": [...]}` |
+| GET | `/config` | Текущий конфиг |
+| GET | `/service` | `{"installed": bool}` |
+| POST | `/config` | Частичное обновление, возвращает полный конфиг |
+| POST | `/print-number` | Печать `{"text": "123-456"}`; не-номер → `400 not a cell number` |
+| POST | `/service/install` | Автозагрузка + запуск скрытой копии (`CREATE_NO_WINDOW`) |
+| POST | `/service/uninstall` | Удаление из автозагрузки |
+| OPTIONS | `*` | 204 (CORS preflight) |
+
+## Конфиг (`%APPDATA%\PrintNum\config.json`)
+
+```json
+{
+  "printer": "",
+  "paper": "43*25",
+  "idNum": false,
+  "endLine": false,
+  "hybrid": false,
+  "expand": 500,
+  "running": true,
+  "papers": ["43*25","30*20","40*30","50*70","58*40","60*40","75*120","100*150"]
+}
+```
+
+Размер бумаги по умолчанию: **43×25 мм**.
+
+## Сборка на macOS/Linux (кросс-компиляция)
+
+Требуется MinGW-w64:
+```bash
+brew install mingw-w64
+./build.sh
+```
+
+Флаги (см. `build.sh`):
+```bash
+x86_64-w64-mingw32-gcc -municode -Os -s -Wall -static \
+  -nostdlib -e wWinMain -ffreestanding -fno-builtin \
+  -ffunction-sections -Wl,--gc-sections \
+  printnum-win7.c -o printnum-win7.exe \
+  -lgcc -lkernel32 -luser32 -lgdi32 -lwinspool -lws2_32 -lshell32
+```
+
+## Проверено через Wine 11.0 (macOS)
+
+- ✅ Все 11 эндпоинтов отвечают по контракту Rust-версии
+- ✅ `EnumPrintersW` видит принтеры (через CUPS)
+- ✅ Реальная GDI-печать прошла на сетевой принтер (HTTP 200)
+- ✅ Фильтр номеров: `Возврат-1` → 400, `123-456` → печать
+- ✅ Автозагрузка: install/uninstall создают/удаляют `Startup\PrintNum.cmd`
+- ✅ Конфиг персистентен (POST /config → запись на диск)
+
+## Статус
+
+- ✅ HTTP-сервер (Winsock, 127.0.0.1:5000)
+- ✅ GDI-печать текста с автоподбором шрифта (экстраполяция)
+- ✅ JSON-парсер (конфиг + запросы)
+- ✅ Фильтр «только номер ячейки» (как `cell.rs::is_printable` в Rust)
+- ✅ Автозагрузка через Startup-папку + скрытый перезапуск службы
+- ✅ Логирование в `%APPDATA%\PrintNum\log.txt` (с кешем пути)
+- ❌ Штрихкоды Code128 (не нужны)
+- ❌ Эмуляция (dry-run) — только флаг `PRINTNUM_DRY_RUN` для CLI
+
+## Лицензия
+
+MIT

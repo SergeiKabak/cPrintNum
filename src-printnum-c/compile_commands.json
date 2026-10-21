@@ -1,0 +1,7 @@
+[
+  {
+    "directory": "/Users/rayan/development/PrintNum/src-printnum-c",
+    "command": "x86_64-w64-mingw32-gcc -municode -O2 -Wall -static -nostdlib -e wWinMain -ffreestanding -fno-builtin -isystem/opt/homebrew/Cellar/mingw-w64/14.0.0_3/toolchain-x86_64/include printnum-win7.c -o printnum-win7.exe -lgcc -lkernel32 -luser32 -lgdi32 -lwinspool -lws2_32 -lshell32",
+    "file": "/Users/rayan/development/PrintNum/src-printnum-c/printnum-win7.c"
+  }
+]
