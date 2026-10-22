@@ -1,7 +1,22 @@
 import { defineConfig } from "wxt";
 
+// Список entrypoint'ов, которые попадают в сборку. Всё, чего здесь нет,
+// WXT пропускает (файлы остаются в src/entrypoints/, но не собираются).
+// Полный список доступных имён (для возврата в сборку — раскомментировать):
+//   autoscriptBox, autoscriptPackage,
+//   hideBannerAllOrder, hideBannerOrder, hideMenu, hideNotification, hideReturns,
+//   qrIssueAllOrder, qrIssueOrder, qrPayOrder, qrRecommendation, qrReturnOrder
+const INCLUDED_ENTRYPOINTS = [
+  "background",
+  "popup",
+  "sendPrintNum", // печать ячеек (основная функция)
+  "labelCopy",    // подхват ШК из кнопок «копировать»
+];
+
 // See https://wxt.dev/api/config.html
 export default defineConfig({
+  filterEntrypoints: INCLUDED_ENTRYPOINTS,
+
   manifest: {
     permissions: ["storage", "nativeMessaging"],
     action: {},
@@ -26,6 +41,8 @@ export default defineConfig({
     },
     build: {
       target: "es2022" as const,
+      // Отключаем inline-полифилл modulepreload (CSP в MV3 блокирует inline-скрипты).
+      modulePreload: { polyfill: false },
     },
     resolve: {
       alias: {

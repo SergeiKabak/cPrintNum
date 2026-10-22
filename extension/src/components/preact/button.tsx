@@ -2,7 +2,7 @@
  * Кнопка на Preact (замена Radix `@radix-ui/react-slot`-кнопки).
  *
  * Поддерживает варианты оформления, используемые в popup:
- * `default`, `ghost`, `secondary`, `outline`.
+ * `default`, `ghost`, `secondary`, `outline`, `destructive`.
  */
 
 import type { ComponentChildren, JSX } from "preact";
@@ -12,7 +12,8 @@ export type ButtonVariant =
   | "default"
   | "ghost"
   | "secondary"
-  | "outline";
+  | "outline"
+  | "destructive";
 
 export type ButtonSize = "default" | "sm" | "lg" | "icon";
 
@@ -29,6 +30,7 @@ const VARIANTS: Record<ButtonVariant, string> = {
   ghost: "hover:bg-muted/40 text-foreground",
   secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
   outline: "border border-border bg-background hover:bg-muted/40",
+  destructive: "bg-red-500 text-white hover:bg-red-500/90",
 };
 
 const SIZES: Record<ButtonSize, string> = {

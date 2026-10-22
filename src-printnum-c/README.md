@@ -1,6 +1,6 @@
 # PrintNum C версия — Win7 single-file
 
-Минимальная портация PrintNum на C для Windows 7 x64. **Один исходный файл**, **один исполняемый файл (19 KB)**, **ноль CRT зависимостей**.
+Минимальная портация PrintNum на C для Windows 7 x64. **Один исходный файл**, **один исполняемый файл (22 KB)**, **ноль CRT зависимостей**.
 
 ## Структура
 
@@ -22,8 +22,8 @@ src-printnum-c/
 ```
 
 **Результат:**
-- `printnum-win7.exe` — **19 KB**, GUI служба (HTTP-сервер на порту 5000)
-- `printnum-diag.exe` — **19 KB**, консольный диагностический вариант
+- `printnum-win7.exe` — **22 KB**, GUI служба (HTTP-сервер на порту 5000)
+- `printnum-diag.exe` — **22 KB**, консольный диагностический вариант
 
 **Зависимости:** только 6 системных DLL Windows 7:
 ```
@@ -85,6 +85,7 @@ printnum-win7.exe --print "123-456"
 | GET | `/service` | `{"installed": bool}` |
 | POST | `/config` | Частичное обновление, возвращает полный конфиг |
 | POST | `/print-number` | Печать `{"text": "123-456"}`; не-номер → `400 not a cell number` |
+| POST | `/print-barcode` | Печать Code128 `{"text":"ii123456789","moduleMm":0.25,"heightMm":17}` |
 | POST | `/service/install` | Автозагрузка + запуск скрытой копии (`CREATE_NO_WINDOW`) |
 | POST | `/service/uninstall` | Удаление из автозагрузки |
 | OPTIONS | `*` | 204 (CORS preflight) |
@@ -128,6 +129,7 @@ x86_64-w64-mingw32-gcc -municode -Os -s -Wall -static \
 - ✅ Все 11 эндпоинтов отвечают по контракту Rust-версии
 - ✅ `EnumPrintersW` видит принтеры (через CUPS)
 - ✅ Реальная GDI-печать прошла на сетевой принтер (HTTP 200)
+- ✅ Code128 совпадает с тест-векторами Rust (1234→57, A→46, ii18725308927→145 модулей)
 - ✅ Фильтр номеров: `Возврат-1` → 400, `123-456` → печать
 - ✅ Автозагрузка: install/uninstall создают/удаляют `Startup\PrintNum.cmd`
 - ✅ Конфиг персистентен (POST /config → запись на диск)
@@ -140,7 +142,7 @@ x86_64-w64-mingw32-gcc -municode -Os -s -Wall -static \
 - ✅ Фильтр «только номер ячейки» (как `cell.rs::is_printable` в Rust)
 - ✅ Автозагрузка через Startup-папку + скрытый перезапуск службы
 - ✅ Логирование в `%APPDATA%\PrintNum\log.txt` (с кешем пути)
-- ❌ Штрихкоды Code128 (не нужны)
+- ✅ Штрихкоды Code128 (порт barcode.rs: Auto B/C, PatBlt + HRI-текст)
 - ❌ Эмуляция (dry-run) — только флаг `PRINTNUM_DRY_RUN` для CLI
 
 ## Лицензия

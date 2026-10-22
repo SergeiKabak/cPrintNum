@@ -14,6 +14,7 @@
 //   GET  /service           -> {"installed": bool}
 //   POST /config            -> частичный JSON, возвращает полный конфиг
 //   POST /print-number      -> "OK"  (тело: {"text": "..."})
+//   POST /print-barcode     -> "OK"  (тело: {"text", "moduleMm", "heightMm"})
 //   POST /service/install   -> {"ok": true, "path": "..."}
 //   POST /service/uninstall -> {"ok": true}
 //   OPTIONS *               -> 204 (CORS preflight)
@@ -285,6 +286,29 @@ static BOOL json_long(const wchar_t *json, const wchar_t *key, long *out) {
     if (*p == L'"') p++;                       // значение в кавычках тоже берём
     if (*p < L'0' || *p > L'9') return FALSE;
     *out = (long)stoi(p);
+    return TRUE;
+}
+
+// Дробное значение (moduleMm, heightMm): [-]digits[.digits]
+static BOOL json_double(const wchar_t *json, const wchar_t *key, double *out) {
+    const wchar_t *p = json_key(json, key);
+    if (!p) return FALSE;
+    if (*p == L'"') p++;
+    BOOL neg = FALSE, any = FALSE;
+    double v = 0.0, frac = 0.1;
+    if (*p == L'-') { neg = TRUE; p++; }
+    while (*p >= L'0' && *p <= L'9') { v = v * 10.0 + (double)(*p - L'0'); any = TRUE; p++; }
+    if (*p == L'.') {
+        p++;
+        while (*p >= L'0' && *p <= L'9') {
+            v += (double)(*p - L'0') * frac;
+            frac *= 0.1;
+            any = TRUE;
+            p++;
+        }
+    }
+    if (!any) return FALSE;
+    *out = neg ? -v : v;
     return TRUE;
 }
 
@@ -627,6 +651,126 @@ static void prepare_label_data(const wchar_t *text, const Config *c, LabelData *
 }
 
 // ============================================================
+// Штрихкоды Code128 (порт barcode.rs: Auto B/C)
+// ============================================================
+
+// Паттерны 0..105: по 6 чисел — ширины чередующихся штрихов/пробелов.
+static const unsigned char PATTERNS[106][6] = {
+    {2,1,2,2,2,2},{2,2,2,1,2,2},{2,2,2,2,2,1},{1,2,1,2,2,3},
+    {1,2,1,3,2,2},{1,3,1,2,2,2},{1,2,2,2,1,3},{1,2,2,3,1,2},
+    {1,3,2,2,1,2},{2,2,1,2,1,3},{2,2,1,3,1,2},{2,3,1,2,1,2},
+    {1,1,2,2,3,2},{1,2,2,1,3,2},{1,2,2,2,3,1},{1,1,3,2,2,2},
+    {1,2,3,1,2,2},{1,2,3,2,2,1},{2,2,3,2,1,1},{2,2,1,1,3,2},
+    {2,2,1,2,3,1},{2,1,3,2,1,2},{2,2,3,1,1,2},{3,1,2,1,3,1},
+    {3,1,1,2,2,2},{3,2,1,1,2,2},{3,2,1,2,2,1},{3,1,2,2,1,2},
+    {3,2,2,1,1,2},{3,2,2,2,1,1},{2,1,2,1,2,3},{2,1,2,3,2,1},
+    {2,3,2,1,2,1},{1,1,1,3,2,3},{1,3,1,1,2,3},{1,3,1,3,2,1},
+    {1,1,2,3,1,3},{1,3,2,1,1,3},{1,3,2,3,1,1},{2,1,1,3,1,3},
+    {2,3,1,1,1,3},{2,3,1,3,1,1},{1,1,2,1,3,3},{1,1,2,3,3,1},
+    {1,3,2,1,3,1},{1,1,3,1,2,3},{1,1,3,3,2,1},{1,3,3,1,2,1},
+    {3,1,3,1,2,1},{2,1,1,3,3,1},{2,3,1,1,3,1},{2,1,3,1,1,3},
+    {2,1,3,3,1,1},{2,1,3,1,3,1},{3,1,1,1,2,3},{3,1,1,3,2,1},
+    {3,3,1,1,2,1},{3,1,2,1,1,3},{3,1,2,3,1,1},{3,3,2,1,1,1},
+    {3,1,4,1,1,1},{2,2,1,4,1,1},{4,3,1,1,1,1},{1,1,1,2,2,4},
+    {1,1,1,4,2,2},{1,2,1,1,2,4},{1,2,1,4,2,1},{1,4,1,1,2,2},
+    {1,4,1,2,2,1},{1,1,2,2,1,4},{1,1,2,4,1,2},{1,2,2,1,1,4},
+    {1,2,2,4,1,1},{1,4,2,1,1,2},{1,4,2,2,1,1},{2,4,1,2,1,1},
+    {2,2,1,1,1,4},{4,1,3,1,1,1},{2,4,1,1,1,2},{1,3,4,1,1,1},
+    {1,1,1,2,4,2},{1,2,1,1,4,2},{1,2,1,2,4,1},{1,1,4,2,1,2},
+    {1,2,4,1,1,2},{1,2,4,2,1,1},{4,1,1,2,1,2},{4,2,1,1,1,2},
+    {4,2,1,2,1,1},{2,1,2,1,4,1},{2,1,4,1,2,1},{4,1,2,1,2,1},
+    {1,1,1,1,4,3},{1,1,1,3,4,1},{1,3,1,1,4,1},{1,1,4,1,1,3},
+    {1,1,4,3,1,1},{4,1,1,1,1,3},{4,1,1,3,1,1},{1,1,3,1,4,1},
+    {1,1,4,1,3,1},{3,1,1,1,4,1},{4,1,1,1,3,1},{2,1,1,4,1,2},
+    {2,1,1,2,1,4},{2,1,1,2,3,2},
+};
+static const unsigned char STOP_PATTERN[7] = {2,3,3,1,1,1,2};
+
+#define BC_START_B 104
+#define BC_START_C 105
+#define BC_CODE_B  100
+#define BC_CODE_C  99
+#define BC_MAX_TEXT 64          // ii + 11 цифр — с большим запасом
+#define BC_MAX_MOD  1024        // (1 + 64 + 1) * 11 + 13 = 739 максимум
+
+typedef struct {
+    unsigned char modules[BC_MAX_MOD];  // 1 = штрих, 0 = пробел
+    int count;
+} Barcode128;
+
+static BOOL bc_isdig(char c) { return c >= '0' && c <= '9'; }
+
+static int bc_leading_digits(const char *s, int len, int pos) {
+    int n = 0;
+    while (pos + n < len && bc_isdig(s[pos + n])) n++;
+    return n;
+}
+
+// Кодирует ASCII-строку (32..127) в Code128: C для цифровых пар, B для остального.
+static BOOL encode_code128(const char *s, Barcode128 *out) {
+    int len = 0;
+    while (s[len]) len++;
+    if (len == 0 || len > BC_MAX_TEXT) return FALSE;
+    for (int i = 0; i < len; i++)
+        if ((unsigned char)s[i] < 32 || (unsigned char)s[i] > 127) return FALSE;
+
+    unsigned char codes[BC_MAX_TEXT + 8];
+    int nc = 0, pos = 0;
+
+    // Стартовый набор: C — если строка начинается с 4+ цифр, иначе B.
+    BOOL cur_c = bc_leading_digits(s, len, 0) >= 4;
+    codes[nc++] = cur_c ? BC_START_C : BC_START_B;
+
+    while (pos < len) {
+        if (cur_c) {
+            if (pos + 1 < len && bc_isdig(s[pos]) && bc_isdig(s[pos + 1])) {
+                codes[nc++] = (unsigned char)((s[pos] - '0') * 10 + (s[pos + 1] - '0'));
+                pos += 2;
+            } else {
+                codes[nc++] = BC_CODE_B;
+                cur_c = FALSE;
+            }
+        } else {
+            int run = bc_leading_digits(s, len, pos);
+            BOOL at_end = (pos + run >= len);
+            if (run >= 4 && (at_end || run % 2 == 0)) {
+                codes[nc++] = BC_CODE_C;
+                cur_c = TRUE;
+                continue;
+            }
+            codes[nc++] = (unsigned char)(s[pos] - 32);
+            pos++;
+        }
+    }
+
+    // Контрольная сумма: start + Σ(value_i * i), mod 103.
+    unsigned int sum = codes[0];
+    for (int i = 1; i < nc; i++) sum += (unsigned int)codes[i] * (unsigned int)i;
+    codes[nc++] = (unsigned char)(sum % 103);
+
+    // Разворачиваем коды в модули (каждый паттерн начинается со штриха).
+    out->count = 0;
+    for (int i = 0; i < nc; i++) {
+        const unsigned char *pat = PATTERNS[codes[i]];
+        BOOL bar = TRUE;
+        for (int w = 0; w < 6; w++) {
+            for (int k = 0; k < pat[w]; k++)
+                out->modules[out->count++] = (unsigned char)bar;
+            bar = !bar;
+        }
+    }
+    {
+        BOOL bar = TRUE;
+        for (int w = 0; w < 7; w++) {
+            for (int k = 0; k < STOP_PATTERN[w]; k++)
+                out->modules[out->count++] = (unsigned char)bar;
+            bar = !bar;
+        }
+    }
+    return TRUE;
+}
+
+// ============================================================
 // GDI-печать (аналог print.rs)
 // ============================================================
 
@@ -800,6 +944,121 @@ static BOOL print_text(const wchar_t *text, const Config *c) {
         log_line(L"ОШИБКА печати: draw_label вернул FALSE");
     }
     return ok;
+}
+
+// Отрисовка Code128: белый фон, полоски через PatBlt, HRI-текст под ШК.
+static void draw_barcode(HDC hdc, const Barcode128 *bc, const wchar_t *text,
+                         double module_mm, double height_mm) {
+    int dpi_x = GetDeviceCaps(hdc, LOGPIXELSX);
+    int dpi_y = GetDeviceCaps(hdc, LOGPIXELSY);
+
+    int module_px = (int)(module_mm / 25.4 * dpi_x + 0.5);
+    if (module_px < 1) module_px = 1;
+    int bars_h = (int)(height_mm / 25.4 * dpi_y + 0.5);
+    if (bars_h < 1) bars_h = 1;
+
+    // Тихая зона: 10 модулей с каждой стороны (по стандарту).
+    int quiet = module_px * 10;
+    int total_w = module_px * bc->count + quiet * 2;
+
+    // Компоновка: ШК сверху, текст (HRI) снизу, отступ 1 мм.
+    int text_h = (int)(bars_h * 0.35);
+    int gap = (int)(dpi_y / 25.4);
+    int total_h = bars_h + gap + text_h;
+
+    PatBlt(hdc, 0, 0, total_w, total_h, WHITENESS);
+
+    int x = quiet;
+    for (int i = 0; i < bc->count; ) {
+        if (bc->modules[i]) {
+            int run = 1;
+            while (i + run < bc->count && bc->modules[i + run]) run++;
+            PatBlt(hdc, x, 0, module_px * run, bars_h, BLACKNESS);
+            x += module_px * run;
+            i += run;
+        } else {
+            x += module_px;
+            i++;
+        }
+    }
+
+    // HRI-текст по центру под штрихкодом.
+    if (text_h > 4) {
+        HFONT f = make_font(text_h, FW_NORMAL, FALSE);
+        HGDIOBJ old = SelectObject(hdc, f);
+        int tw, th;
+        text_extent(hdc, text, &tw, &th);
+        TextOutW(hdc, (total_w - tw) / 2, bars_h + gap + (text_h - th) / 2,
+                 text, slen(text));
+        SelectObject(hdc, old);
+        DeleteObject(f);
+    }
+}
+
+// Печать штрихкода Code128 (аналог print::print_barcode).
+static BOOL print_barcode(const wchar_t *text, double module_mm, double height_mm,
+                          const Config *c) {
+    // В ASCII для кодирования (Code128B: только 32..127).
+    char ascii[BC_MAX_TEXT + 1];
+    int i = 0;
+    for (; text[i] && i < BC_MAX_TEXT; i++) {
+        if (text[i] < 32 || text[i] > 127) {
+            log_line(L"ОШИБКА ШК: не-ASCII символ в тексте");
+            return FALSE;
+        }
+        ascii[i] = (char)text[i];
+    }
+    ascii[i] = 0;
+
+    Barcode128 bc;
+    if (!encode_code128(ascii, &bc)) {
+        log_line(L"ОШИБКА ШК: не удалось закодировать текст");
+        return FALSE;
+    }
+
+    HDC hdc = CreateDCW(c->printer, c->printer, NULL, NULL);
+    if (!hdc) {
+        wchar_t m[320];
+        scpy(m, 320, L"ОШИБКА ШК: CreateDCW не удался для принтера ");
+        scat(m, 320, c->printer);
+        log_line(m);
+        return FALSE;
+    }
+
+    static wchar_t doc[300];
+    doc[0] = 0;
+    scat(doc, 300, L"Штрихкод: ");
+    scat(doc, 300, text);
+
+    DOCINFOW di;
+    i = 0;
+    while (i < (int)sizeof(di)) ((unsigned char *)&di)[i++] = 0;
+    di.cbSize = sizeof(DOCINFOW);
+    di.lpszDocName = doc;
+
+    if (StartDocW(hdc, &di) <= 0) {
+        log_line(L"ОШИБКА ШК: StartDocW не удался");
+        DeleteDC(hdc);
+        return FALSE;
+    }
+    if (StartPage(hdc) <= 0) {
+        log_line(L"ОШИБКА ШК: StartPage не удался");
+        AbortDoc(hdc);
+        DeleteDC(hdc);
+        return FALSE;
+    }
+
+    draw_barcode(hdc, &bc, text, module_mm, height_mm);
+
+    EndPage(hdc);
+    EndDoc(hdc);
+    DeleteDC(hdc);
+
+    wchar_t m[320];
+    scpy(m, 320, L"Печать ШК выполнена: ");
+    scat(m, 320, text);
+    log_line(m);
+    return TRUE;
 }
 
 // ============================================================
@@ -1073,6 +1332,35 @@ static void handle_request(SOCKET s, Request *r) {
 
             if (print_text(clean, &g_cfg)) send_text(s, 200, "OK");
             else send_text(s, 500, "print failed");
+            return;
+        }
+        if (sascii(r->path, "/print-barcode")) {
+            wchar_t text[BC_MAX_TEXT + 1];
+            if (!json_str(r->body, L"text", text, BC_MAX_TEXT + 1) || !text[0]) {
+                send_text(s, 400, "no text");
+                return;
+            }
+            // Только ASCII 32..127 (Code128B) — кириллица отклоняется.
+            BOOL ascii_ok = TRUE;
+            for (int i = 0; text[i]; i++)
+                if (text[i] < 32 || text[i] > 127) { ascii_ok = FALSE; break; }
+            if (!ascii_ok) { send_text(s, 400, "non-ascii"); return; }
+
+            // Параметры ШК с дефолтами (module_mm как в Rust, height_mm=17).
+            double module_mm = 0.25, height_mm = 17.0;
+            json_double(r->body, L"moduleMm", &module_mm);
+            json_double(r->body, L"heightMm", &height_mm);
+            if (module_mm < 0.1) module_mm = 0.1;
+            if (height_mm < 1.0) height_mm = 1.0;
+
+            if (!g_cfg.running) { send_text(s, 503, "stopped"); return; }
+            if (!g_cfg.printer[0]) { send_text(s, 503, "no printer"); return; }
+            if (!status_printer(g_cfg.printer)) { send_text(s, 503, "printer offline"); return; }
+
+            if (print_barcode(text, module_mm, height_mm, &g_cfg))
+                send_text(s, 200, "OK");
+            else
+                send_text(s, 500, "print failed");
             return;
         }
         if (sascii(r->path, "/service/install")) {
