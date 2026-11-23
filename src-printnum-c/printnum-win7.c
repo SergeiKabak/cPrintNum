@@ -2586,8 +2586,8 @@ static BOOL demo_qr_label_render(const wchar_t *text, const wchar_t *path, const
     SetBkMode(hdc, TRANSPARENT);
 
     // QR как можно крупнее и ближе к краям; центр — плотно между ними.
-    int margin_x = 6;
-    int module_px = 3;                       // QR v3: 37 модулей * 3 px = 111 px
+    int margin_x = 4;
+    int module_px = 2;                       // QR v3: 37 модулей * 2 px = 74 px
     int qr_side = (qr.qr.size + 8) * module_px;
     int left_x = margin_x;
     int right_x = w - margin_x - qr_side;
@@ -2607,13 +2607,13 @@ static BOOL demo_qr_label_render(const wchar_t *text, const wchar_t *path, const
     suffix[k] = 0;
 
     // Плотная центральная область между QR.
-    int center_left = left_x + qr_side + 4;
-    int center_right = right_x - 4;
+    int center_left = left_x + qr_side + 2;
+    int center_right = right_x - 2;
     int center_w = center_right - center_left;
     int cx = (center_left + center_right) / 2;
 
     // Автоподбор кегля под ширину центра (суффикс крупнее и жирный).
-    int prefix_size = 24;
+    int prefix_size = 32;
     {
         HFONT ft = make_font(prefix_size, FW_NORMAL, FALSE);
         HGDIOBJ ot = SelectObject(hdc, ft);
@@ -2630,7 +2630,7 @@ static BOOL demo_qr_label_render(const wchar_t *text, const wchar_t *path, const
             DeleteObject(ft);
         }
     }
-    int suffix_size = 40;
+    int suffix_size = 48;
     {
         HFONT ft = make_font(suffix_size, FW_BOLD, FALSE);
         HGDIOBJ ot = SelectObject(hdc, ft);
