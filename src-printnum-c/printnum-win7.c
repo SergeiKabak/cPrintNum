@@ -2587,7 +2587,7 @@ static BOOL demo_qr_label_render(const wchar_t *text, const wchar_t *path, const
 
     // QR как можно крупнее и ближе к краям; центр — плотно между ними.
     int margin_x = 4;
-    int module_px = 2;                       // QR v3: 37 модулей * 2 px = 74 px
+    int module_px = 3;                       // QR v3: 37 модулей * 3 px = 111 px
     int qr_side = (qr.qr.size + 8) * module_px;
     int left_x = margin_x;
     int right_x = w - margin_x - qr_side;
