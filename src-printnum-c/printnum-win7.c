@@ -2585,9 +2585,21 @@ static BOOL demo_qr_label_render(const wchar_t *text, const wchar_t *path, const
     PatBlt(hdc, 0, 0, w, h, WHITENESS);
     SetBkMode(hdc, TRANSPARENT);
 
+    // Рамка наклейки 43x25 мм (для наглядности границ).
+    {
+        HPEN pen = CreatePen(PS_SOLID, 1, RGB(0, 0, 0));
+        HGDIOBJ op = SelectObject(hdc, pen);
+        HGDIOBJ ob = SelectObject(hdc, GetStockObject(NULL_BRUSH));
+        Rectangle(hdc, 0, 0, w, h);
+        SelectObject(hdc, ob);
+        SelectObject(hdc, op);
+        DeleteObject(pen);
+    }
+
     // QR как можно крупнее и ближе к краям; центр — плотно между ними.
     int margin_x = 4;
     int module_px = 3;                       // QR v3: 37 модулей * 3 px = 111 px
+    int gap_between = 1;
     int qr_side = (qr.qr.size + 8) * module_px;
     int left_x = margin_x;
     int right_x = w - margin_x - qr_side;
@@ -2607,8 +2619,8 @@ static BOOL demo_qr_label_render(const wchar_t *text, const wchar_t *path, const
     suffix[k] = 0;
 
     // Плотная центральная область между QR.
-    int center_left = left_x + qr_side + 2;
-    int center_right = right_x - 2;
+    int center_left = left_x + qr_side + gap_between;
+    int center_right = right_x - gap_between;
     int center_w = center_right - center_left;
     int cx = (center_left + center_right) / 2;
 
