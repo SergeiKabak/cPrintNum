@@ -140,6 +140,10 @@ typedef struct {
     BOOL    id_num;
     BOOL    end_line;
     BOOL    hybrid;
+    BOOL    checker;        // шахматная заливка цифры (экономия термоголовки)
+    long    checker_mm_x10; // размер клетки шахматки, 0.1 мм (10 = 1.0 мм)
+    BOOL    outline;        // сплошная обводка по контуру цифры
+    long    outline_mm_x10; // толщина обводки, 0.1 мм (5 = 0.5 мм)
     long    expand;
     BOOL    running;
     wchar_t papers[MAX_PAPERS][32];
@@ -154,6 +158,10 @@ static void cfg_defaults(Config *c) {
     c->id_num = FALSE;
     c->end_line = FALSE;
     c->hybrid = FALSE;
+    c->checker = FALSE;          // по умолчанию сплошная заливка (как раньше)
+    c->checker_mm_x10 = 10;      // 1.0 мм клетка шахматки
+    c->outline = TRUE;           // обводка по контуру включена
+    c->outline_mm_x10 = 5;       // 0.5 мм тонкая линия
     c->expand = 500;
     c->running = TRUE;
     static const wchar_t *def[] = {
@@ -360,6 +368,16 @@ static void cfg_load(void) {
     json_bool(json, L"idNum",   &g_cfg.id_num);
     json_bool(json, L"endLine", &g_cfg.end_line);
     json_bool(json, L"hybrid",  &g_cfg.hybrid);
+    json_bool(json, L"checker", &g_cfg.checker);
+    {
+        long v = g_cfg.checker_mm_x10;
+        if (json_long(json, L"checkerMm", &v)) g_cfg.checker_mm_x10 = v < 1 ? 1 : v;
+    }
+    json_bool(json, L"outline", &g_cfg.outline);
+    {
+        long v = g_cfg.outline_mm_x10;
+        if (json_long(json, L"outlineMm", &v)) g_cfg.outline_mm_x10 = v < 1 ? 1 : v;
+    }
     json_bool(json, L"running", &g_cfg.running);
     {
         long e = g_cfg.expand;
@@ -385,6 +403,16 @@ static void cfg_to_json(Config *c, wchar_t *out, int cap) {
     scat(out, cap, c->end_line ? L"true" : L"false");
     scat(out, cap, L",\"hybrid\":");
     scat(out, cap, c->hybrid ? L"true" : L"false");
+    scat(out, cap, L",\"checker\":");
+    scat(out, cap, c->checker ? L"true" : L"false");
+    itos(c->checker_mm_x10, num, 32);
+    scat(out, cap, L",\"checkerMm\":");
+    scat(out, cap, num);
+    scat(out, cap, L",\"outline\":");
+    scat(out, cap, c->outline ? L"true" : L"false");
+    itos(c->outline_mm_x10, num, 32);
+    scat(out, cap, L",\"outlineMm\":");
+    scat(out, cap, num);
     itos(c->expand, num, 32);
     scat(out, cap, L",\"expand\":");
     scat(out, cap, num);
@@ -410,6 +438,16 @@ static void cfg_apply_json(const wchar_t *body) {
     json_bool(body, L"idNum",   &g_cfg.id_num);
     json_bool(body, L"endLine", &g_cfg.end_line);
     json_bool(body, L"hybrid",  &g_cfg.hybrid);
+    json_bool(body, L"checker", &g_cfg.checker);
+    {
+        long v = g_cfg.checker_mm_x10;
+        if (json_long(body, L"checkerMm", &v)) g_cfg.checker_mm_x10 = v < 1 ? 1 : v;
+    }
+    json_bool(body, L"outline", &g_cfg.outline);
+    {
+        long v = g_cfg.outline_mm_x10;
+        if (json_long(body, L"outlineMm", &v)) g_cfg.outline_mm_x10 = v < 1 ? 1 : v;
+    }
     json_bool(body, L"running", &g_cfg.running);
     {
         long e;
@@ -832,13 +870,21 @@ static int draw_header(HDC hdc, const wchar_t *text, const Sizes *s, BOOL force_
     return y + th;
 }
 
+// Параметры размещения основного текста (нужны для обводки и шахматки).
+typedef struct {
+    int x, y;          // левый верхний угол текста
+    int w, h;          // размер текста в пикселях
+    int size;          // размер шрифта
+    int weight;        // FW_NORMAL / FW_BOLD
+} TextLayout;
+
 // Центральный текст с автоподбором размера.
 // Текст масштабируется почти линейно по размеру шрифта, поэтому вместо цикла
 // «+1 px» (50+ GDI-вызовов) делаем одно измерение при реперном размере 100 px
 // и линейную экстраполяцию, затем один контрольный проход с коррекцией вниз
 // (метрики шрифта не идеально линейны).
 static void draw_main_text(HDC hdc, const wchar_t *text, const Sizes *s,
-                           int y_start, BOOL underline, BOOL bold) {
+                           int y_start, BOOL underline, BOOL bold, TextLayout *out) {
     int avail_h = s->height_px - y_start - s->margin_y;
     int weight = bold ? FW_BOLD : FW_NORMAL;
 
@@ -857,6 +903,8 @@ static void draw_main_text(HDC hdc, const wchar_t *text, const Sizes *s,
     }
     if (size < 6) size = 6;
 
+    if (out) { out->x = 0; out->y = y_start; out->w = 0; out->h = 0; out->size = size; out->weight = weight; }
+
     for (;;) {
         HFONT f2 = make_font(size, weight, underline);
         old = SelectObject(hdc, f2);
@@ -866,6 +914,7 @@ static void draw_main_text(HDC hdc, const wchar_t *text, const Sizes *s,
             int x = (s->width_px - w) / 2;
             int y = y_start + (avail_h - h) / 2;
             TextOutW(hdc, x, y, text, slen(text));
+            if (out) { out->x = x; out->y = y; out->w = w; out->h = h; out->size = size; out->weight = weight; }
             SelectObject(hdc, old);
             DeleteObject(f2);
             return;
@@ -874,6 +923,122 @@ static void draw_main_text(HDC hdc, const wchar_t *text, const Sizes *s,
         DeleteObject(f2);
         if (--size < 6) return;
     }
+}
+
+// Шахматная заливка + сплошная обводка по рельефу цифры.
+// Рисуем цифру в память, находим граничные пиксели (сосед с белым) —
+// они остаются чёрными (сплошной контур), а внутренние пиксели
+// превращаются в шахматку. Контур точно повторяет форму глифа, включая
+// низ цифры 4, и не выходит за границы.
+static void apply_checker_with_outline(HDC hdc, const wchar_t *text,
+                                       const TextLayout *tl, const Sizes *s,
+                                       int y_start, const Config *c) {
+    if (!tl || tl->w < 1 || tl->h < 1 || !s) return;
+
+    // Работаем со ВСЕЙ этикеткой — иначе часть текста за пределами tl
+    // остаётся сплошной (второй '0' и точка в "100.").
+    int w = s->width_px, h = s->height_px;
+    HDC mem = CreateCompatibleDC(hdc);
+    if (!mem) return;
+    HBITMAP bmp = CreateCompatibleBitmap(mem, w, h);
+    if (!bmp) { DeleteDC(mem); return; }
+    HGDIOBJ old = SelectObject(mem, bmp);
+    PatBlt(mem, 0, 0, w, h, WHITENESS);
+
+    // Рисуем текст на те же координаты, что и на основном HDC.
+    HFONT f = make_font(tl->size, tl->weight, FALSE);
+    HGDIOBJ oldf = SelectObject(mem, f);
+    TextOutW(mem, tl->x, tl->y, text, slen(text));
+    SelectObject(mem, oldf);
+    DeleteObject(f);
+
+    // Читаем пиксели (24-bit, top-down).
+    BITMAPINFO bi;
+    int z = 0;
+    while (z < (int)sizeof(bi)) ((BYTE *)&bi)[z++] = 0;
+    bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bi.bmiHeader.biWidth = w;
+    bi.bmiHeader.biHeight = -h;
+    bi.bmiHeader.biPlanes = 1;
+    bi.bmiHeader.biBitCount = 24;
+    bi.bmiHeader.biCompression = BI_RGB;
+    int stride = (w * 3 + 3) & ~3;
+    BYTE *bits = (BYTE *)HeapAlloc(GetProcessHeap(), 0, (size_t)stride * h);
+    if (!bits) { SelectObject(mem, old); DeleteObject(bmp); DeleteDC(mem); return; }
+    int got = GetDIBits(mem, bmp, 0, h, bits, &bi, DIB_RGB_COLORS);
+
+    if (got) {
+        int dpi = GetDeviceCaps(hdc, LOGPIXELSX);
+        int cell = (int)((c->checker_mm_x10 / 10.0) / 25.4 * dpi + 0.5);
+        if (cell < 1) cell = 1;
+        int pen = (int)((c->outline_mm_x10 / 10.0) / 25.4 * dpi + 0.5);
+        if (pen < 1) pen = 1;
+
+        // Карта чёрных пикселей.
+        BYTE *black = (BYTE *)HeapAlloc(GetProcessHeap(), 0, (size_t)w * h);
+        if (black) {
+            for (int y = 0; y < h; y++) {
+                for (int x = 0; x < w; x++) {
+                    BYTE *px = bits + (size_t)y * stride + (size_t)x * 3;
+                    black[y * w + x] = (*px < 128) ? 1 : 0;
+                }
+            }
+
+            // Граничные пиксели: чёрный, рядом (в радиусе pen) есть белый.
+            BYTE *edge = (BYTE *)HeapAlloc(GetProcessHeap(), 0, (size_t)w * h);
+            if (edge) {
+                for (int y = 0; y < h; y++) {
+                    for (int x = 0; x < w; x++) {
+                        size_t idx = (size_t)y * w + x;
+                        edge[idx] = 0;
+                        if (!black[idx]) continue;
+                        int is_edge = 0;
+                        for (int dy = -pen; dy <= pen && !is_edge; dy++) {
+                            int yy = y + dy;
+                            if (yy < 0 || yy >= h) { is_edge = 1; break; }
+                            for (int dx = -pen; dx <= pen; dx++) {
+                                int xx = x + dx;
+                                if (xx < 0 || xx >= w || !black[(size_t)yy * w + xx]) {
+                                    is_edge = 1;
+                                    break;
+                                }
+                            }
+                        }
+                        edge[idx] = (BYTE)is_edge;
+                    }
+                }
+
+                // Итог: контур чёрный, внутренние пиксели — шахматка.
+                for (int y = 0; y < h; y++) {
+                    for (int x = 0; x < w; x++) {
+                        size_t idx = (size_t)y * w + x;
+                        BYTE *px = bits + (size_t)y * stride + (size_t)x * 3;
+                        if (!black[idx]) continue;
+                        if (edge[idx]) {
+                            px[0] = px[1] = px[2] = 0;      // сплошной контур
+                        } else {
+                            int cx = x / cell, cy = y / cell;
+                            if (((cx + cy) & 1) == 0) {
+                                px[0] = px[1] = px[2] = 255; // пропуск
+                            }
+                        }
+                    }
+                }
+                SetDIBits(mem, bmp, 0, h, bits, &bi, DIB_RGB_COLORS);
+                HeapFree(GetProcessHeap(), 0, edge);
+            }
+            HeapFree(GetProcessHeap(), 0, black);
+        }
+    }
+
+    HeapFree(GetProcessHeap(), 0, bits);
+
+    // Переносим результат на исходный HDC (вся этикетка).
+    BitBlt(hdc, 0, 0, w, h, mem, 0, 0, SRCCOPY);
+
+    SelectObject(mem, old);
+    DeleteObject(bmp);
+    DeleteDC(mem);
 }
 
 static BOOL draw_label(HDC hdc, const Config *c, const LabelData *d) {
@@ -885,7 +1050,23 @@ static BOOL draw_label(HDC hdc, const Config *c, const LabelData *d) {
     if (d->show_header && d->header_text[0])
         y_start = draw_header(hdc, d->header_text, &s, d->force_left_header);
 
-    draw_main_text(hdc, d->main_text, &s, y_start, d->is_underlined, d->is_bold);
+    TextLayout tl;
+    draw_main_text(hdc, d->main_text, &s, y_start, d->is_underlined, d->is_bold, &tl);
+
+    if (c->checker && tl.w > 0 && tl.h > 0) {
+        if (c->outline) {
+            apply_checker_with_outline(hdc, d->main_text, &tl, &s, y_start, c);
+        } else {
+            int dpi_x = GetDeviceCaps(hdc, LOGPIXELSX);
+            int cell = (int)((c->checker_mm_x10 / 10.0) / 25.4 * dpi_x + 0.5);
+            if (cell < 1) cell = 1;
+            for (int y = tl.y; y < tl.y + tl.h; y += cell) {
+                for (int x = tl.x; x < tl.x + tl.w; x += cell) {
+                    PatBlt(hdc, x, y, cell, cell, WHITENESS);
+                }
+            }
+        }
+    }
     return TRUE;
 }
 
@@ -1453,6 +1634,149 @@ static void run_server(void) {
 }
 
 // ============================================================
+// Демо: рендер этикетки в файл без принтера (--demo-file)
+// ============================================================
+
+// Запись 8-битного grayscale BMP.
+static BOOL demo_bmp_save(const wchar_t *path, const BYTE *gray, int w, int h) {
+    int row_bytes = (w + 3) & ~3;
+    int image_size = row_bytes * h;
+    int dib_size = 40 + 256 * 4;
+    int file_size = 14 + dib_size + image_size;
+
+    BYTE *buf = (BYTE *)HeapAlloc(GetProcessHeap(), 0, file_size);
+    if (!buf) return FALSE;
+    for (int i = 0; i < file_size; i++) buf[i] = 0;
+
+    BYTE *p = buf;
+    p[0] = 'B'; p[1] = 'M';
+    *(DWORD *)(p + 2) = (DWORD)file_size;
+    *(DWORD *)(p + 10) = (DWORD)(14 + dib_size);
+    p += 14;
+    *(DWORD *)(p + 0) = 40;
+    *(LONG *)(p + 4) = w;
+    *(LONG *)(p + 8) = -h;   // top-down
+    *(WORD *)(p + 12) = 1;
+    *(WORD *)(p + 14) = 8;   // 8-bit grayscale
+    *(DWORD *)(p + 20) = (DWORD)image_size;
+    *(DWORD *)(p + 32) = 256;
+    p += 40;
+    for (int i = 0; i < 256; i++) {
+        p[0] = (BYTE)i; p[1] = (BYTE)i; p[2] = (BYTE)i; p[3] = 0;
+        p += 4;
+    }
+    for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) *p++ = gray[(size_t)y * w + x];
+        int pad = row_bytes - w;
+        while (pad-- > 0) *p++ = 0;
+    }
+
+    HANDLE hf = CreateFileW(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
+                            FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hf == INVALID_HANDLE_VALUE) {
+        HeapFree(GetProcessHeap(), 0, buf);
+        return FALSE;
+    }
+    DWORD wrote = 0;
+    BOOL ok = WriteFile(hf, buf, file_size, &wrote, NULL);
+    CloseHandle(hf);
+    HeapFree(GetProcessHeap(), 0, buf);
+    return ok;
+}
+
+// Рендерит номер ячейки в BMP через те же GDI-функции, что и реальная печать.
+static BOOL demo_render_bmp(const wchar_t *text, const wchar_t *path, const Config *c) {
+    const int dpi = 203;
+    int w = (int)(43.0 / 25.4 * dpi + 0.5);   // 344
+    int h = (int)(25.0 / 25.4 * dpi + 0.5);   // 200
+
+    HDC hdc = CreateCompatibleDC(NULL);
+    if (!hdc) return FALSE;
+    HBITMAP hbm = CreateCompatibleBitmap(hdc, w, h);
+    if (!hbm) { DeleteDC(hdc); return FALSE; }
+    HGDIOBJ old = SelectObject(hdc, hbm);
+    PatBlt(hdc, 0, 0, w, h, WHITENESS);
+
+    // Те же размеры и подготовка данных, что в print_text/draw_label.
+    Sizes s;
+    s.width_px = w;
+    s.height_px = h;
+    s.margin_x = (int)(w * 0.05);
+    s.margin_y = (int)(h * 0.05);
+    s.max_allowed_w = w - s.margin_x * 2;
+
+    LabelData d;
+    prepare_label_data(text, c, &d);
+
+    SetBkMode(hdc, TRANSPARENT);
+    int y_start = s.margin_y;
+    if (d.show_header && d.header_text[0])
+        y_start = draw_header(hdc, d.header_text, &s, d.force_left_header);
+    TextLayout tl;
+    draw_main_text(hdc, d.main_text, &s, y_start, d.is_underlined, d.is_bold, &tl);
+    if (c->checker && tl.w > 0 && tl.h > 0) {
+        if (c->outline) {
+            apply_checker_with_outline(hdc, d.main_text, &tl, &s, y_start, c);
+        } else {
+            int cell = (int)((c->checker_mm_x10 / 10.0) / 25.4 * 203 + 0.5);
+            if (cell < 1) cell = 1;
+            for (int y = tl.y; y < tl.y + tl.h; y += cell) {
+                for (int x = tl.x; x < tl.x + tl.w; x += cell) {
+                    PatBlt(hdc, x, y, cell, cell, WHITENESS);
+                }
+            }
+        }
+    }
+
+    // Считываем пиксели обратно (bottom-up DIB → top-down строками).
+    BITMAPINFO bi;
+    int z = 0;
+    while (z < (int)sizeof(bi)) ((BYTE *)&bi)[z++] = 0;
+    bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bi.bmiHeader.biWidth = w;
+    bi.bmiHeader.biHeight = -h;
+    bi.bmiHeader.biPlanes = 1;
+    bi.bmiHeader.biBitCount = 24;
+    bi.bmiHeader.biCompression = BI_RGB;
+
+    BYTE *bits = (BYTE *)HeapAlloc(GetProcessHeap(), 0, (size_t)w * h * 3);
+    BYTE *gray = (BYTE *)HeapAlloc(GetProcessHeap(), 0, (size_t)w * h);
+    if (!bits || !gray) {
+        if (bits) HeapFree(GetProcessHeap(), 0, bits);
+        if (gray) HeapFree(GetProcessHeap(), 0, gray);
+        SelectObject(hdc, old); DeleteObject(hbm); DeleteDC(hdc);
+        return FALSE;
+    }
+
+    int got = GetDIBits(hdc, hbm, 0, h, bits, &bi, DIB_RGB_COLORS);
+    if (got) {
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                BYTE *px = bits + ((size_t)y * w + x) * 3;
+                gray[(size_t)y * w + x] =
+                    (BYTE)((30 * px[0] + 59 * px[1] + 11 * px[2]) / 100);
+            }
+        }
+    } else {
+        for (size_t i = 0; i < (size_t)w * h; i++) gray[i] = 255;
+    }
+
+    SelectObject(hdc, old);
+    DeleteObject(hbm);
+    DeleteDC(hdc);
+
+    BOOL ok = demo_bmp_save(path, gray, w, h);
+    HeapFree(GetProcessHeap(), 0, bits);
+    HeapFree(GetProcessHeap(), 0, gray);
+    return ok;
+}
+
+// Демо-рендер в BMP (единственный поддерживаемый формат).
+static BOOL demo_file(const wchar_t *text, const wchar_t *path, const Config *c) {
+    return demo_render_bmp(text, path, c);
+}
+
+// ============================================================
 // Точка входа
 // ============================================================
 
@@ -1477,16 +1801,49 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR cmdline, int show) 
     int argc = 0;
     LPWSTR *argv = CommandLineToArgvW(GetCommandLineW(), &argc);
 
+    static wchar_t arg_print[256], arg_demo_text[256], arg_demo_path[MAX_PATH];
     const wchar_t *print_arg = NULL;
+    const wchar_t *demo_text = NULL, *demo_path = NULL;
 
     if (argv) {
         for (int i = 1; i < argc; i++) {
-            if (seq(argv[i], L"--print") && i + 1 < argc) print_arg = argv[++i];
+            if (seq(argv[i], L"--print") && i + 1 < argc) {
+                scpy(arg_print, 256, argv[++i]);
+                print_arg = arg_print;
+            } else if (seq(argv[i], L"--demo-file") && i + 2 < argc) {
+                scpy(arg_demo_text, 256, argv[++i]);
+                scpy(arg_demo_path, MAX_PATH, argv[++i]);
+                demo_text = arg_demo_text;
+                demo_path = arg_demo_path;
+            }
         }
         LocalFree(argv);
     }
 
     cfg_load();
+
+    // Демо-режим: отрисовать номер ячейки в BMP-файл без принтера.
+    if (demo_text && demo_path) {
+        BOOL has_digit = FALSE, ok_chars = demo_text[0] != 0;
+        for (int i = 0; demo_text[i] && ok_chars; i++) {
+            wchar_t ch = demo_text[i];
+            if (ch >= L'0' && ch <= L'9') has_digit = TRUE;
+            else if (ch != L'-' && ch != L' ') ok_chars = FALSE;
+        }
+        if (!ok_chars || !has_digit) {
+            log_line(L"ОТКАЗ демо: не номер ячейки");
+            return 1;
+        }
+        if (demo_file(demo_text, demo_path, &g_cfg)) {
+            wchar_t m[MAX_PATH + 64];
+            scpy(m, MAX_PATH + 64, L"Демо-этикетка сохранена: ");
+            scat(m, MAX_PATH + 64, demo_path);
+            log_line(m);
+            return 0;
+        }
+        log_line(L"ОШИБКА демо: не удалось сохранить файл");
+        return 1;
+    }
 
     // По умолчанию (без аргументов или с --service) — чистый режим службы:
     // HTTP-сервер без окон и консоли. Одноразовая печать — только по флагам.
