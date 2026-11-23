@@ -1246,6 +1246,9 @@ static BOOL print_barcode(const wchar_t *text, double module_mm, double height_m
 // HTTP-сервер (Winsock)
 // ============================================================
 
+// Печать комбинированной этикетки (QR слева/справа + значение по центру).
+static BOOL print_qr_label(const wchar_t *text, const Config *c);
+
 // Отправка ответа с CORS-заголовками. body — UTF-8.
 static void send_response(SOCKET s, int status, const char *ctype,
                           const char *body, int body_len) {
@@ -1537,6 +1540,15 @@ static void handle_request(SOCKET s, Request *r) {
             if (!g_cfg.running) { send_text(s, 503, "stopped"); return; }
             if (!g_cfg.printer[0]) { send_text(s, 503, "no printer"); return; }
             if (!status_printer(g_cfg.printer)) { send_text(s, 503, "printer offline"); return; }
+
+            // "qr": true — комбинированная этикетка (QR слева/справа + значение по центру).
+            BOOL qr_mode = FALSE;
+            json_bool(r->body, L"qr", &qr_mode);
+            if (qr_mode) {
+                if (print_qr_label(text, &g_cfg)) send_text(s, 200, "OK");
+                else send_text(s, 500, "print failed");
+                return;
+            }
 
             if (print_barcode(text, module_mm, height_mm, &g_cfg))
                 send_text(s, 200, "OK");
@@ -2533,7 +2545,7 @@ static BOOL pn_qr_encode(const char *ascii, PnQrImage *out) {
 }
 
 // Рисует QR в (x,y) с заданным размером модуля; добавляет тихую зону 4 модуля.
-static void demo_draw_qr(HDC hdc, PnQrImage *img, int x, int y, int module_px) {
+static void draw_qr(HDC hdc, PnQrImage *img, int x, int y, int module_px) {
     int side = (img->qr.size + 8) * module_px;
     PatBlt(hdc, x, y, side, side, WHITENESS);
     for (int my = 0; my < img->qr.size; my++) {
@@ -2547,7 +2559,7 @@ static void demo_draw_qr(HDC hdc, PnQrImage *img, int x, int y, int module_px) {
 }
 
 // Центрированный текст.
-static void demo_center_text(HDC hdc, const wchar_t *text, int cx, int y, int weight, int size) {
+static void center_text(HDC hdc, const wchar_t *text, int cx, int y, int weight, int size) {
     HFONT f = make_font(size, weight, FALSE);
     HGDIOBJ old = SelectObject(hdc, f);
     int tw, th;
@@ -2557,45 +2569,31 @@ static void demo_center_text(HDC hdc, const wchar_t *text, int cx, int y, int we
     DeleteObject(f);
 }
 
-// Рендерит комбинированную этикетку 43x25 мм @ 203 dpi (344x200) в BMP.
-// text — полное значение, например "ii19382868529".
-// Последние 4 символа печатаются жирно на новой строке.
-static BOOL demo_qr_label_render(const wchar_t *text, const wchar_t *path, const Config *c) {
-    (void)c;
-
+// Ядро отрисовки комбинированной этикетки: QR слева/справа + значение по центру.
+// w,h — размеры этикетки в px; module_px/margin_x/gap_between/prefix_size/suffix_size — в px.
+static void draw_qr_label_core(HDC hdc, const wchar_t *text, int w, int h,
+                               int module_px, int margin_x, int gap_between,
+                               int prefix_size, int suffix_size) {
     // ASCII-преобразование для QR.
     char ascii[256];
     int n = 0;
     for (; text[n] && n < 255; n++) {
-        if (text[n] < 32 || text[n] > 127) return FALSE;
+        if (text[n] < 32 || text[n] > 127) return;
         ascii[n] = (char)text[n];
     }
     ascii[n] = 0;
-    if (n < 1) return FALSE;
+    if (n < 1) return;
 
     PnQrImage qr;
-    if (!pn_qr_encode(ascii, &qr)) return FALSE;
+    if (!pn_qr_encode(ascii, &qr)) return;
 
-    const int w = 344, h = 200;
-    HDC hdc = CreateCompatibleDC(NULL);
-    if (!hdc) return FALSE;
-    HBITMAP hbm = CreateCompatibleBitmap(hdc, w, h);
-    if (!hbm) { DeleteDC(hdc); return FALSE; }
-    HGDIOBJ old = SelectObject(hdc, hbm);
-    PatBlt(hdc, 0, 0, w, h, WHITENESS);
-    SetBkMode(hdc, TRANSPARENT);
-
-    // QR как можно крупнее и ближе к краям; центр — плотно между ними.
-    int margin_x = 4;
-    int module_px = 3;                       // QR v3: 37 модулей * 3 px = 111 px
-    int gap_between = 1;
     int qr_side = (qr.qr.size + 8) * module_px;
     int left_x = margin_x;
     int right_x = w - margin_x - qr_side;
     int qr_y = (h - qr_side) / 2;
 
-    demo_draw_qr(hdc, &qr, left_x, qr_y, module_px);
-    demo_draw_qr(hdc, &qr, right_x, qr_y, module_px);
+    draw_qr(hdc, &qr, left_x, qr_y, module_px);
+    draw_qr(hdc, &qr, right_x, qr_y, module_px);
 
     // Разбиваем значение: всё, кроме последних 4 символов, + последние 4.
     int split = n > 4 ? n - 4 : 0;
@@ -2614,7 +2612,6 @@ static BOOL demo_qr_label_render(const wchar_t *text, const wchar_t *path, const
     int cx = (center_left + center_right) / 2;
 
     // Автоподбор кегля под ширину центра (суффикс крупнее и жирный).
-    int prefix_size = 32;
     {
         HFONT ft = make_font(prefix_size, FW_NORMAL, FALSE);
         HGDIOBJ ot = SelectObject(hdc, ft);
@@ -2631,7 +2628,6 @@ static BOOL demo_qr_label_render(const wchar_t *text, const wchar_t *path, const
             DeleteObject(ft);
         }
     }
-    int suffix_size = 48;
     {
         HFONT ft = make_font(suffix_size, FW_BOLD, FALSE);
         HGDIOBJ ot = SelectObject(hdc, ft);
@@ -2668,8 +2664,25 @@ static BOOL demo_qr_label_render(const wchar_t *text, const wchar_t *path, const
     int total_h = ph + line_gap + sh;
     int y0 = (h - total_h) / 2;
 
-    demo_center_text(hdc, prefix, cx, y0, FW_NORMAL, prefix_size);
-    demo_center_text(hdc, suffix, cx, y0 + ph + line_gap, FW_BOLD, suffix_size);
+    center_text(hdc, prefix, cx, y0, FW_NORMAL, prefix_size);
+    center_text(hdc, suffix, cx, y0 + ph + line_gap, FW_BOLD, suffix_size);
+}
+
+// Рендерит комбинированную этикетку 43x25 мм @ 203 dpi (344x200) в BMP.
+// text — полное значение, например "ii19382868529".
+static BOOL demo_qr_label_render(const wchar_t *text, const wchar_t *path, const Config *c) {
+    (void)c;
+
+    const int w = 344, h = 200;
+    HDC hdc = CreateCompatibleDC(NULL);
+    if (!hdc) return FALSE;
+    HBITMAP hbm = CreateCompatibleBitmap(hdc, w, h);
+    if (!hbm) { DeleteDC(hdc); return FALSE; }
+    HGDIOBJ old = SelectObject(hdc, hbm);
+    PatBlt(hdc, 0, 0, w, h, WHITENESS);
+    SetBkMode(hdc, TRANSPARENT);
+
+    draw_qr_label_core(hdc, text, w, h, 3, 4, 1, 32, 48);
 
     // Считываем пиксели и сохраняем BMP.
     BITMAPINFO bi;
@@ -2712,6 +2725,77 @@ static BOOL demo_qr_label_render(const wchar_t *text, const wchar_t *path, const
     HeapFree(GetProcessHeap(), 0, bits);
     HeapFree(GetProcessHeap(), 0, gray);
     return ok;
+}
+
+// Печать комбинированной этикетки (QR слева/справа + значение по центру) на принтер.
+static BOOL print_qr_label(const wchar_t *text, const Config *c) {
+    if (!c->printer[0]) {
+        log_line(L"ОШИБКА QR-этикетки: принтер не выбран");
+        return FALSE;
+    }
+
+    HDC hdc = CreateDCW(c->printer, c->printer, NULL, NULL);
+    if (!hdc) {
+        wchar_t m[320];
+        scpy(m, 320, L"ОШИБКА QR-этикетки: CreateDCW не удался для ");
+        scat(m, 320, c->printer);
+        log_line(m);
+        return FALSE;
+    }
+
+    Sizes s;
+    if (!calc_sizes(hdc, c->paper, &s)) {
+        log_line(L"ОШИБКА QR-этикетки: неверный размер бумаги");
+        DeleteDC(hdc);
+        return FALSE;
+    }
+
+    // Физические размеры в px (совпадают с демо при 203 dpi).
+    int dpi_x = GetDeviceCaps(hdc, LOGPIXELSX);
+    int dpi_y = GetDeviceCaps(hdc, LOGPIXELSY);
+    int module_px = (int)(14.0 / 37 / 25.4 * dpi_x + 0.5);   // QR 14 мм
+    if (module_px < 1) module_px = 1;
+    int margin_x = (int)(0.5 / 25.4 * dpi_x + 0.5);          // 0.5 мм
+    int gap_between = (int)(0.125 / 25.4 * dpi_x + 0.5);     // 0.125 мм
+    int prefix_size = (int)(4.0 / 25.4 * dpi_y + 0.5);       // 4 мм
+    int suffix_size = (int)(6.0 / 25.4 * dpi_y + 0.5);       // 6 мм
+
+    static wchar_t doc[300];
+    doc[0] = 0;
+    scat(doc, 300, L"QR-этикетка: ");
+    scat(doc, 300, text);
+
+    DOCINFOW di;
+    int i = 0;
+    while (i < (int)sizeof(di)) ((unsigned char *)&di)[i++] = 0;
+    di.cbSize = sizeof(DOCINFOW);
+    di.lpszDocName = doc;
+
+    if (StartDocW(hdc, &di) <= 0) {
+        log_line(L"ОШИБКА QR-этикетки: StartDocW не удался");
+        DeleteDC(hdc);
+        return FALSE;
+    }
+    if (StartPage(hdc) <= 0) {
+        log_line(L"ОШИБКА QR-этикетки: StartPage не удался");
+        AbortDoc(hdc);
+        DeleteDC(hdc);
+        return FALSE;
+    }
+
+    SetBkMode(hdc, TRANSPARENT);
+    draw_qr_label_core(hdc, text, s.width_px, s.height_px,
+                       module_px, margin_x, gap_between, prefix_size, suffix_size);
+
+    EndPage(hdc);
+    EndDoc(hdc);
+    DeleteDC(hdc);
+
+    wchar_t m[320];
+    scpy(m, 320, L"Печать QR-этикетки выполнена: ");
+    scat(m, 320, text);
+    log_line(m);
+    return TRUE;
 }
 
 // ============================================================

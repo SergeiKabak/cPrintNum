@@ -155,7 +155,7 @@ printnum-win7.exe --print "123-456"
 | GET | `/service` | `{"installed": bool}` |
 | POST | `/config` | Частичное обновление, возвращает полный конфиг |
 | POST | `/print-number` | Печать `{"text": "123-456"}`; не-номер → `400 not a cell number` |
-| POST | `/print-barcode` | Печать Code128 `{"text":"ii123456789","moduleMm":0.25,"heightMm":17}` |
+| POST | `/print-barcode` | Печать Code128 `{"text":"ii123456789","moduleMm":0.25,"heightMm":17}`; с `"qr":true` — комбинированная этикетка: QR слева/справа + значение по центру (последние 4 символа жирно на новой строке) |
 | POST | `/service/install` | Автозагрузка + запуск скрытой копии (`CREATE_NO_WINDOW`) |
 | POST | `/service/uninstall` | Удаление из автозагрузки |
 | OPTIONS | `*` | 204 (CORS preflight) |
