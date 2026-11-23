@@ -31,6 +31,78 @@ GDI32.dll, KERNEL32.dll, SHELL32.dll, USER32.dll, WINSPOOL.DRV, WS2_32.dll
 ```
 **CRT зависимостей нет** (`api-ms-win-crt-*` отсутствуют).
 
+### Зачем нужна каждая DLL
+
+Программа собрана без C-рантайма (`-nostdlib -e wWinMain`), поэтому все операции — от работы с файлами до рисования — идут напрямую через системные API Windows. Ниже — роль каждой DLL и конкретные функции, которые из неё используются.
+
+#### GDI32.dll — отрисовка этикетки
+
+Графический subsystem Windows. Через неё рисуется содержимое этикетки:
+- `CreateFontW` — шрифт Arial с автоподбором размера (`make_font`).
+- `GetTextExtentPoint32W` — измерение ширины/высоты текста для центрирования и подбора кегля.
+- `TextOutW` — вывод номера ячейки и колонтитула.
+- `CreateCompatibleDC` / `CreateCompatibleBitmap` / `SelectObject` / `DeleteObject` — памятный DC для шахматной заливки (`apply_checker_with_outline`).
+- `GetDIBits` / `SetDIBits` — чтение и запись пикселей глифа: поиск граничных пикселей (сплошной контур) и превращение внутренних в шахматку.
+- `PatBlt` — заливка белым (фон, пропуски шахматки), `BitBlt` — перенос готового изображения на DC принтера.
+- `GetDeviceCaps` — получение DPI (`LOGPIXELSX`, `LOGPIXELSY`) для перевода миллиметров в пиксели и размеров клетки 1 мм / линии 0.5 мм.
+- `SetBkMode` — прозрачный фон текста.
+- `StartDocW` / `StartPage` / `EndPage` / `EndDoc` / `AbortDoc` / `CreateDCW` — управление печатной страницей (DC создаётся здесь же, хотя принтер открывается через WINSPOOL).
+
+Без GDI32 невозможно нарисовать ни номер, ни шахматку, ни демо-BMP.
+
+#### KERNEL32.dll — ядро системы: файлы, память, процесс, время
+
+Базовые системные сервисы, которые заменяют缺失ную CRT:
+- `CreateFileW` / `ReadFile` / `WriteFile` / `CloseHandle` — чтение и запись `config.json`, лог-файла, демо-BMP.
+- `CreateDirectoryW` / `GetFileAttributesW` / `DeleteFileW` — создание `%APPDATA%\PrintNum`, установка/удаление автозагрузки.
+- `GetEnvironmentVariableW` — получение `%APPDATA%` и флага `PRINTNUM_DRY_RUN`.
+- `GetModuleFileNameW` — путь к自己的 exe для автозапуска и `CreateProcessW`.
+- `CreateProcessW` — запуск скрытой копии службы (`--service`, `CREATE_NO_WINDOW`).
+- `GetProcessHeap` / `HeapAlloc` / `HeapFree` — выделение памяти вместо `malloc/free` (CRT нет).
+- `GetLocalTime` — метки времени в логе.
+- `MultiByteToWideChar` / `WideCharToMultiByte` — преобразование UTF-8 ↔ UTF-16 (HTTP-тело, JSON, конфиг).
+- `GetCommandLineW` — получение исходной командной строки (передаётся в `CommandLineToArgvW` из SHELL32).
+- `LocalFree` — освобождение массива `argv`; **внимание**: после этого указатели недействительны, поэтому строки копируются в статические буферы до вызова.
+
+#### SHELL32.dll — разбор командной строки
+
+Используется ровно одной функцией:
+- `CommandLineToArgvW` — разбирает строку от `GetCommandLineW()` на аргументы (`--print "45"`, `--demo-file "45" out.bmp`). Живёт в SHELL32, поэтому без неё CLI-флаги не работают.
+
+Освобождает полученный массив `LocalFree` — уже из KERNEL32.
+
+#### USER32.dll — форматирование строк
+
+Несмотря на то что служба работает без окон, USER32 нужна только для двух функций форматирования:
+- `wsprintfW` — форматирование wide-строк (Запись JSON, лог, сообщения об ошибках, имена документов). Заменяет `swprintf` из CRT, которого нет.
+- `wsprintfA` — форматирование узких (UTF-8) строк, например HTTP-заголовков в `send_response`.
+
+Точка входа `wWinMain` сама по себе не требует импорта из USER32 — достаточно флага `-municode` при сборке.
+
+#### WINSPOOL.DRV — драйвер спулера печати
+
+Ключевая DLL для печати. Через неё программа взаимодействует с принтером:
+- `OpenPrinterW` / `ClosePrinter` — открытие принтера по имени из конфига.
+- `GetPrinterW` (level 2) — чтение `PRINTER_INFO_2`, статуса (`PRINTER_STATUS_ERROR`, `OFFLINE`, `PAPER_JAM`, `PAPER_OUT`) и атрибута `WORK_OFFLINE` для проверки «принтер в сети».
+- `EnumPrintersW` (level 4) — получение списка локальных и сетевых принтеров для `GET /listPrinters`.
+- `CreateDCW` — создание контекста устройства принтера (реализован в GDI32, но работает только вместе с драйвером спулера); именно на нём рисуется этикетка.
+- Управление страницей (`StartDocW`, `StartPage`, `EndPage`, `EndDoc`) — также в GDI32, но передаётся драйверу спулера.
+
+Без WINSPOOL.DRV программа не сможет ни увидеть принтеры, ни открыть их, ни проверить статус.
+
+#### WS2_32.dll — Winsock, HTTP-сервер
+
+Сетевой слой. На нём работает встроенный HTTP-сервер на `127.0.0.1:5000`, через который браузерное расширение управляет печатью:
+- `WSAStartup` / `WSACleanup` — инициализация Winsock 2.2.
+- `socket` / `bind` / `listen` / `accept` / `closesocket` — слушающий сокет на loopback с `SO_REUSEADDR` (быстрый рестарт службы).
+- `recv` / `send` — чтение HTTP-запросов и отправка ответов (JSON/CORS).
+- `htons` / `htonl` — преобразование порта и адреса в сетевой порядок байтов.
+- `setsockopt` — включение `SO_REUSEADDR`.
+
+Все 11 эндпоинтов (`/`, `/status-printer`, `/listPrinters`, `/papers`, `/config`, `/service`, `/print-number`, `/print-barcode`, `/service/install`, `/service/uninstall`, `OPTIONS`) работают поверх WS2_32.
+
+> **Зачем это важно:** каждая из этих DLL входит в состав Windows 7 SP1, поэтому архив переносится на чистую машину без установки Runtime, .NET или Visual C++ Redistributable. Именно отсутствие `api-ms-win-crt-*` и делает возможной работу на Win7 без дополнительных компонентов.
+
 ## Архитектура
 
 - **Single-file**: весь код в `printnum-win7.c` (HTTP-сервер, JSON-парсер, GDI-печать, конфиг).
