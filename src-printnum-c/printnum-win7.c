@@ -2585,8 +2585,9 @@ static BOOL demo_qr_label_render(const wchar_t *text, const wchar_t *path, const
     PatBlt(hdc, 0, 0, w, h, WHITENESS);
     SetBkMode(hdc, TRANSPARENT);
 
-    int margin_x = (int)(w * 0.05);      // 17
-    int module_px = 2;
+    // QR как можно крупнее и ближе к краям; центр — плотно между ними.
+    int margin_x = 6;
+    int module_px = 3;                       // QR v3: 37 модулей * 3 px = 111 px
     int qr_side = (qr.qr.size + 8) * module_px;
     int left_x = margin_x;
     int right_x = w - margin_x - qr_side;
@@ -2605,14 +2606,49 @@ static BOOL demo_qr_label_render(const wchar_t *text, const wchar_t *path, const
     for (int i = split; i < n && k < 255; i++) suffix[k++] = text[i];
     suffix[k] = 0;
 
-    // Центр области между QR.
-    int center_left = left_x + qr_side + 6;
-    int center_right = right_x - 6;
+    // Плотная центральная область между QR.
+    int center_left = left_x + qr_side + 4;
+    int center_right = right_x - 4;
+    int center_w = center_right - center_left;
     int cx = (center_left + center_right) / 2;
 
-    int prefix_size = 22;
-    int suffix_size = 32;
-    int line_gap = 4;
+    // Автоподбор кегля под ширину центра (суффикс крупнее и жирный).
+    int prefix_size = 24;
+    {
+        HFONT ft = make_font(prefix_size, FW_NORMAL, FALSE);
+        HGDIOBJ ot = SelectObject(hdc, ft);
+        int tw, th;
+        text_extent(hdc, prefix, &tw, &th);
+        SelectObject(hdc, ot);
+        DeleteObject(ft);
+        while (prefix_size > 8 && tw > center_w) {
+            prefix_size--;
+            ft = make_font(prefix_size, FW_NORMAL, FALSE);
+            ot = SelectObject(hdc, ft);
+            text_extent(hdc, prefix, &tw, &th);
+            SelectObject(hdc, ot);
+            DeleteObject(ft);
+        }
+    }
+    int suffix_size = 40;
+    {
+        HFONT ft = make_font(suffix_size, FW_BOLD, FALSE);
+        HGDIOBJ ot = SelectObject(hdc, ft);
+        int tw, th;
+        text_extent(hdc, suffix, &tw, &th);
+        SelectObject(hdc, ot);
+        DeleteObject(ft);
+        while (suffix_size > 10 && tw > center_w) {
+            suffix_size--;
+            ft = make_font(suffix_size, FW_BOLD, FALSE);
+            ot = SelectObject(hdc, ft);
+            text_extent(hdc, suffix, &tw, &th);
+            SelectObject(hdc, ot);
+            DeleteObject(ft);
+        }
+    }
+
+    int line_gap = 2;
 
     // Измеряем суммарную высоту и центрируем по вертикали.
     int pw, ph, sw, sh;
