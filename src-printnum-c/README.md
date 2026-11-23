@@ -52,11 +52,11 @@ GDI32.dll, KERNEL32.dll, SHELL32.dll, USER32.dll, WINSPOOL.DRV, WS2_32.dll
 
 #### KERNEL32.dll — ядро системы: файлы, память, процесс, время
 
-Базовые системные сервисы, которые заменяют缺失ную CRT:
+Базовые системные сервисы, которые заменяют отсутствующую CRT:
 - `CreateFileW` / `ReadFile` / `WriteFile` / `CloseHandle` — чтение и запись `config.json`, лог-файла, демо-BMP.
 - `CreateDirectoryW` / `GetFileAttributesW` / `DeleteFileW` — создание `%APPDATA%\PrintNum`, установка/удаление автозагрузки.
 - `GetEnvironmentVariableW` — получение `%APPDATA%` и флага `PRINTNUM_DRY_RUN`.
-- `GetModuleFileNameW` — путь к自己的 exe для автозапуска и `CreateProcessW`.
+- `GetModuleFileNameW` — путь к собственному exe для автозапуска и `CreateProcessW`.
 - `CreateProcessW` — запуск скрытой копии службы (`--service`, `CREATE_NO_WINDOW`).
 - `GetProcessHeap` / `HeapAlloc` / `HeapFree` — выделение памяти вместо `malloc/free` (CRT нет).
 - `GetLocalTime` — метки времени в логе.
