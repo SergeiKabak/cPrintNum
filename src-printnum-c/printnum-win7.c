@@ -2368,8 +2368,12 @@ static void draw_qr_label_core(HDC hdc, const wchar_t *text, int w, int h,
     draw_qr(hdc, &qr, right_x, qr_y, module_px);
 
     // Плотная центральная область между QR.
-    int center_left = left_x + qr_side + gap_between;
-    int center_right = right_x - gap_between;
+    // Текст начинается через 2 модуля от края символа (вдвое меньше
+    // стандартной тихой зоны в 4 модуля) — визуальный зазор сокращён.
+    int quiet_px = 4 * module_px;             // тихая зона символа
+    int text_gap = 2 * module_px + gap_between;
+    int center_left = left_x + quiet_px + qr.qr.size * module_px + text_gap;
+    int center_right = right_x + quiet_px - text_gap;
     int center_w = center_right - center_left;
     int cx = (center_left + center_right) / 2;
 
