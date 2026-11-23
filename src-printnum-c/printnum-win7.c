@@ -1634,6 +1634,1050 @@ static void run_server(void) {
 }
 
 // ============================================================
+// ============================================================
+// QR-код (порт ricmoo/QRCode, MIT: Richard Moore / Project Nayuki)
+// Адаптирован под no-CRT single-file: локальные целочисленные типы и helpers.
+// ============================================================
+
+typedef unsigned char  pnqr_u8;
+typedef unsigned short pnqr_u16;
+typedef unsigned int   pnqr_u32;
+typedef signed char    pnqr_s8;
+typedef signed short   pnqr_s16;
+typedef signed int     pnqr_s32;
+#define PNQR_INT32_MAX 2147483647
+
+#define MODE_NUMERIC        0
+#define MODE_ALPHANUMERIC   1
+#define MODE_BYTE           2
+#define ECC_LOW             0
+#define ECC_MEDIUM          1
+#define ECC_QUARTILE        2
+#define ECC_HIGH            3
+#ifndef LOCK_VERSION
+#define LOCK_VERSION        0
+#endif
+
+typedef struct PnQr {
+    pnqr_u8 version;
+    pnqr_u8 size;
+    pnqr_u8 ecc;
+    pnqr_u8 mode;
+    pnqr_u8 mask;
+    pnqr_u8 *modules;
+} PnQr;
+
+static int pnqr_abs(int v) { return v < 0 ? -v : v; }
+static int pnqr_max(int a, int b) { return a > b ? a : b; }
+static void pnqr_memset(void *d, int c, size_t n) {
+    unsigned char *p = (unsigned char *)d;
+    while (n--) *p++ = (unsigned char)c;
+}
+static void pnqr_memcpy(void *d, const void *s, size_t n) {
+    unsigned char *dp = (unsigned char *)d;
+    const unsigned char *sp = (const unsigned char *)s;
+    while (n--) *dp++ = *sp++;
+}
+static size_t pnqr_strlen(const char *s) {
+    const char *p = s;
+    while (*p) p++;
+    return (size_t)(p - s);
+}
+
+
+#if LOCK_VERSION == 0
+
+static const pnqr_u16 NUM_ERROR_CORRECTION_CODEWORDS[4][40] = {
+    // 1,  2,  3,  4,  5,   6,   7,   8,   9,  10,  11,  12,  13,  14,  15,  16,  17,  18,  19,  20,  21,  22,  23,  24,   25,   26,   27,   28,   29,   30,   31,   32,   33,   34,   35,   36,   37,   38,   39,   40    Error correction level
+    { 10, 16, 26, 36, 48,  64,  72,  88, 110, 130, 150, 176, 198, 216, 240, 280, 308, 338, 364, 416, 442, 476, 504, 560,  588,  644,  700,  728,  784,  812,  868,  924,  980, 1036, 1064, 1120, 1204, 1260, 1316, 1372},  // Medium
+    {  7, 10, 15, 20, 26,  36,  40,  48,  60,  72,  80,  96, 104, 120, 132, 144, 168, 180, 196, 224, 224, 252, 270, 300,  312,  336,  360,  390,  420,  450,  480,  510,  540,  570,  570,  600,  630,  660,  720,  750},  // Low
+    { 17, 28, 44, 64, 88, 112, 130, 156, 192, 224, 264, 308, 352, 384, 432, 480, 532, 588, 650, 700, 750, 816, 900, 960, 1050, 1110, 1200, 1260, 1350, 1440, 1530, 1620, 1710, 1800, 1890, 1980, 2100, 2220, 2310, 2430},  // High
+    { 13, 22, 36, 52, 72,  96, 108, 132, 160, 192, 224, 260, 288, 320, 360, 408, 448, 504, 546, 600, 644, 690, 750, 810,  870,  952, 1020, 1050, 1140, 1200, 1290, 1350, 1440, 1530, 1590, 1680, 1770, 1860, 1950, 2040},  // Quartile
+};
+
+static const pnqr_u8 NUM_ERROR_CORRECTION_BLOCKS[4][40] = {
+    // Version: (note that index 0 is for padding, and is set to an illegal value)
+    // 1, 2, 3, 4, 5, 6, 7, 8, 9,10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40    Error correction level
+    {  1, 1, 1, 2, 2, 4, 4, 4, 5, 5,  5,  8,  9,  9, 10, 10, 11, 13, 14, 16, 17, 17, 18, 20, 21, 23, 25, 26, 28, 29, 31, 33, 35, 37, 38, 40, 43, 45, 47, 49},  // Medium
+    {  1, 1, 1, 1, 1, 2, 2, 2, 2, 4,  4,  4,  4,  4,  6,  6,  6,  6,  7,  8,  8,  9,  9, 10, 12, 12, 12, 13, 14, 15, 16, 17, 18, 19, 19, 20, 21, 22, 24, 25},  // Low
+    {  1, 1, 2, 4, 4, 4, 5, 6, 8, 8, 11, 11, 16, 16, 18, 16, 19, 21, 25, 25, 25, 34, 30, 32, 35, 37, 40, 42, 45, 48, 51, 54, 57, 60, 63, 66, 70, 74, 77, 81},  // High
+    {  1, 1, 2, 2, 4, 4, 6, 6, 8, 8,  8, 10, 12, 16, 12, 17, 16, 18, 21, 20, 23, 23, 25, 27, 29, 34, 34, 35, 38, 40, 43, 45, 48, 51, 53, 56, 59, 62, 65, 68},  // Quartile
+};
+
+static const pnqr_u16 NUM_RAW_DATA_MODULES[40] = {
+    //  1,   2,   3,   4,    5,    6,    7,    8,    9,   10,   11,   12,   13,   14,   15,   16,   17,
+      208, 359, 567, 807, 1079, 1383, 1568, 1936, 2336, 2768, 3232, 3728, 4256, 4651, 5243, 5867, 6523,
+    //   18,   19,   20,   21,    22,    23,    24,    25,   26,    27,     28,    29,    30,    31,
+       7211, 7931, 8683, 9252, 10068, 10916, 11796, 12708, 13652, 14628, 15371, 16411, 17483, 18587,
+    //    32,    33,    34,    35,    36,    37,    38,    39,    40
+       19723, 20891, 22091, 23008, 24272, 25568, 26896, 28256, 29648
+};
+
+// @TODO: Put other LOCK_VERSIONS here
+#elif LOCK_VERSION == 3
+
+static const pnqr_s16 NUM_ERROR_CORRECTION_CODEWORDS[4] = {
+    26, 15, 44, 36
+};
+
+static const pnqr_s8 NUM_ERROR_CORRECTION_BLOCKS[4] = {
+    1, 1, 2, 2
+};
+
+static const pnqr_u16 NUM_RAW_DATA_MODULES = 567;
+
+#else
+
+#error Unsupported LOCK_VERSION (add it...)
+
+#endif
+
+
+/*
+static int pnqr_abs(int value) {
+    if (value < 0) { return -value; }
+    return value;
+}
+*/
+
+
+
+static pnqr_s8 getAlphanumeric(char c) {
+    
+    if (c >= '0' && c <= '9') { return (c - '0'); }
+    if (c >= 'A' && c <= 'Z') { return (c - 'A' + 10); }
+    
+    switch (c) {
+        case ' ': return 36;
+        case '$': return 37;
+        case '%': return 38;
+        case '*': return 39;
+        case '+': return 40;
+        case '-': return 41;
+        case '.': return 42;
+        case '/': return 43;
+        case ':': return 44;
+    }
+    
+    return -1;
+}
+
+static pnqr_u8 isAlphanumeric(const char *text, pnqr_u16 length) {
+    while (length != 0) {
+        if (getAlphanumeric(text[--length]) == -1) { return 0; }
+    }
+    return 1;
+}
+
+
+static pnqr_u8 isNumeric(const char *text, pnqr_u16 length) {
+    while (length != 0) {
+        char c = text[--length];
+        if (c < '0' || c > '9') { return 0; }
+    }
+    return 1;
+}
+
+
+
+// We store the following tightly packed (less 8) in modeInfo
+//               <=9  <=26  <= 40
+// NUMERIC      ( 10,   12,    14);
+// ALPHANUMERIC (  9,   11,    13);
+// BYTE         (  8,   16,    16);
+static char getModeBits(pnqr_u8 version, pnqr_u8 mode) {
+    // Note: We use 15 instead of 16; since 15 doesn't exist and we cannot store 16 (8 + 8) in 3 bits
+    // hex(int("".join(reversed([('00' + bin(x - 8)[2:])[-3:] for x in [10, 9, 8, 12, 11, 15, 14, 13, 15]])), 2))
+    unsigned int modeInfo = 0x7bbb80a;
+    
+#if LOCK_VERSION == 0 || LOCK_VERSION > 9
+    if (version > 9) { modeInfo >>= 9; }
+#endif
+    
+#if LOCK_VERSION == 0 || LOCK_VERSION > 26
+    if (version > 26) { modeInfo >>= 9; }
+#endif
+    
+    char result = 8 + ((modeInfo >> (3 * mode)) & 0x07);
+    if (result == 15) { result = 16; }
+    
+    return result;
+}
+
+
+
+typedef struct BitBucket {
+    pnqr_u32 bitOffsetOrWidth;
+    pnqr_u16 capacityBytes;
+    pnqr_u8 *data;
+} BitBucket;
+
+/*
+void bb_dump(BitBucket *bitBuffer) {
+    printf("Buffer: ");
+    for (pnqr_u32 i = 0; i < bitBuffer->capacityBytes; i++) {
+        printf("%02x", bitBuffer->data[i]);
+        if ((i % 4) == 3) { printf(" "); }
+    }
+    printf("\n");
+}
+*/
+
+static pnqr_u16 bb_getGridSizeBytes(pnqr_u8 size) {
+    return (((size * size) + 7) / 8);
+}
+
+static pnqr_u16 bb_getBufferSizeBytes(pnqr_u32 bits) {
+    return ((bits + 7) / 8);
+}
+
+static void bb_initBuffer(BitBucket *bitBuffer, pnqr_u8 *data, pnqr_s32 capacityBytes) {
+    bitBuffer->bitOffsetOrWidth = 0;
+    bitBuffer->capacityBytes = capacityBytes;
+    bitBuffer->data = data;
+    
+    pnqr_memset(data, 0, bitBuffer->capacityBytes);
+}
+
+static void bb_initGrid(BitBucket *bitGrid, pnqr_u8 *data, pnqr_u8 size) {
+    bitGrid->bitOffsetOrWidth = size;
+    bitGrid->capacityBytes = bb_getGridSizeBytes(size);
+    bitGrid->data = data;
+
+    pnqr_memset(data, 0, bitGrid->capacityBytes);
+}
+
+static void bb_appendBits(BitBucket *bitBuffer, pnqr_u32 val, pnqr_u8 length) {
+    pnqr_u32 offset = bitBuffer->bitOffsetOrWidth;
+    for (pnqr_s8 i = length - 1; i >= 0; i--, offset++) {
+        bitBuffer->data[offset >> 3] |= ((val >> i) & 1) << (7 - (offset & 7));
+    }
+    bitBuffer->bitOffsetOrWidth = offset;
+}
+/*
+void bb_setBits(BitBucket *bitBuffer, pnqr_u32 val, int offset, pnqr_u8 length) {
+    for (pnqr_s8 i = length - 1; i >= 0; i--, offset++) {
+        bitBuffer->data[offset >> 3] |= ((val >> i) & 1) << (7 - (offset & 7));
+    }
+}
+*/
+static void bb_setBit(BitBucket *bitGrid, pnqr_u8 x, pnqr_u8 y, pnqr_u8 on) {
+    pnqr_u32 offset = y * bitGrid->bitOffsetOrWidth + x;
+    pnqr_u8 mask = 1 << (7 - (offset & 0x07));
+    if (on) {
+        bitGrid->data[offset >> 3] |= mask;
+    } else {
+        bitGrid->data[offset >> 3] &= ~mask;
+    }
+}
+
+static void bb_invertBit(BitBucket *bitGrid, pnqr_u8 x, pnqr_u8 y, pnqr_u8 invert) {
+    pnqr_u32 offset = y * bitGrid->bitOffsetOrWidth + x;
+    pnqr_u8 mask = 1 << (7 - (offset & 0x07));
+    pnqr_u8 on = ((bitGrid->data[offset >> 3] & (1 << (7 - (offset & 0x07)))) != 0);
+    if (on ^ invert) {
+        bitGrid->data[offset >> 3] |= mask;
+    } else {
+        bitGrid->data[offset >> 3] &= ~mask;
+    }
+}
+
+static pnqr_u8 bb_getBit(BitBucket *bitGrid, pnqr_u8 x, pnqr_u8 y) {
+    pnqr_u32 offset = y * bitGrid->bitOffsetOrWidth + x;
+    return (bitGrid->data[offset >> 3] & (1 << (7 - (offset & 0x07)))) != 0;
+}
+
+
+
+// XORs the data modules in this QR Code with the given mask pattern. Due to XOR's mathematical
+// properties, calling applyMask(m) twice with the same value is equivalent to no change at all.
+// This means it is possible to apply a mask, undo it, and try another mask. Note that a final
+// well-formed QR Code symbol needs exactly one mask applied (not zero, not two, etc.).
+static void applyMask(BitBucket *modules, BitBucket *isFunction, pnqr_u8 mask) {
+    pnqr_u8 size = modules->bitOffsetOrWidth;
+    
+    for (pnqr_u8 y = 0; y < size; y++) {
+        for (pnqr_u8 x = 0; x < size; x++) {
+            if (bb_getBit(isFunction, x, y)) { continue; }
+            
+            pnqr_u8 invert = 0;
+            switch (mask) {
+                case 0:  invert = (x + y) % 2 == 0;                    break;
+                case 1:  invert = y % 2 == 0;                          break;
+                case 2:  invert = x % 3 == 0;                          break;
+                case 3:  invert = (x + y) % 3 == 0;                    break;
+                case 4:  invert = (x / 3 + y / 2) % 2 == 0;            break;
+                case 5:  invert = x * y % 2 + x * y % 3 == 0;          break;
+                case 6:  invert = (x * y % 2 + x * y % 3) % 2 == 0;    break;
+                case 7:  invert = ((x + y) % 2 + x * y % 3) % 2 == 0;  break;
+            }
+            bb_invertBit(modules, x, y, invert);
+        }
+    }
+}
+
+static void setFunctionModule(BitBucket *modules, BitBucket *isFunction, pnqr_u8 x, pnqr_u8 y, pnqr_u8 on) {
+    bb_setBit(modules, x, y, on);
+    bb_setBit(isFunction, x, y, 1);
+}
+
+// Draws a 9*9 finder pattern including the border separator, with the center module at (x, y).
+static void drawFinderPattern(BitBucket *modules, BitBucket *isFunction, pnqr_u8 x, pnqr_u8 y) {
+    pnqr_u8 size = modules->bitOffsetOrWidth;
+
+    for (pnqr_s8 i = -4; i <= 4; i++) {
+        for (pnqr_s8 j = -4; j <= 4; j++) {
+            pnqr_u8 dist = pnqr_max(pnqr_abs(i), pnqr_abs(j));  // Chebyshev/infinity norm
+            pnqr_s16 xx = x + j, yy = y + i;
+            if (0 <= xx && xx < size && 0 <= yy && yy < size) {
+                setFunctionModule(modules, isFunction, xx, yy, dist != 2 && dist != 4);
+            }
+        }
+    }
+}
+
+// Draws a 5*5 alignment pattern, with the center module at (x, y).
+static void drawAlignmentPattern(BitBucket *modules, BitBucket *isFunction, pnqr_u8 x, pnqr_u8 y) {
+    for (pnqr_s8 i = -2; i <= 2; i++) {
+        for (pnqr_s8 j = -2; j <= 2; j++) {
+            setFunctionModule(modules, isFunction, x + j, y + i, pnqr_max(pnqr_abs(i), pnqr_abs(j)) != 1);
+        }
+    }
+}
+
+// Draws two copies of the format bits (with its own error correction code)
+// based on the given mask and this object's error correction level field.
+static void drawFormatBits(BitBucket *modules, BitBucket *isFunction, pnqr_u8 ecc, pnqr_u8 mask) {
+    
+    pnqr_u8 size = modules->bitOffsetOrWidth;
+
+    // Calculate error correction code and pack bits
+    pnqr_u32 data = ecc << 3 | mask;  // errCorrLvl is uint2, mask is uint3
+    pnqr_u32 rem = data;
+    for (int i = 0; i < 10; i++) {
+        rem = (rem << 1) ^ ((rem >> 9) * 0x537);
+    }
+    
+    data = data << 10 | rem;
+    data ^= 0x5412;  // uint15
+    
+    // Draw first copy
+    for (pnqr_u8 i = 0; i <= 5; i++) {
+        setFunctionModule(modules, isFunction, 8, i, ((data >> i) & 1) != 0);
+    }
+    
+    setFunctionModule(modules, isFunction, 8, 7, ((data >> 6) & 1) != 0);
+    setFunctionModule(modules, isFunction, 8, 8, ((data >> 7) & 1) != 0);
+    setFunctionModule(modules, isFunction, 7, 8, ((data >> 8) & 1) != 0);
+    
+    for (pnqr_s8 i = 9; i < 15; i++) {
+        setFunctionModule(modules, isFunction, 14 - i, 8, ((data >> i) & 1) != 0);
+    }
+    
+    // Draw second copy
+    for (pnqr_s8 i = 0; i <= 7; i++) {
+        setFunctionModule(modules, isFunction, size - 1 - i, 8, ((data >> i) & 1) != 0);
+    }
+    
+    for (pnqr_s8 i = 8; i < 15; i++) {
+        setFunctionModule(modules, isFunction, 8, size - 15 + i, ((data >> i) & 1) != 0);
+    }
+    
+    setFunctionModule(modules, isFunction, 8, size - 8, 1);
+}
+
+
+// Draws two copies of the version bits (with its own error correction code),
+// based on this object's version field (which only has an effect for 7 <= version <= 40).
+static void drawVersion(BitBucket *modules, BitBucket *isFunction, pnqr_u8 version) {
+    
+    pnqr_s8 size = modules->bitOffsetOrWidth;
+
+#if LOCK_VERSION != 0 && LOCK_VERSION < 7
+    return;
+    
+#else
+    if (version < 7) { return; }
+    
+    // Calculate error correction code and pack bits
+    pnqr_u32 rem = version;  // version is uint6, in the range [7, 40]
+    for (pnqr_u8 i = 0; i < 12; i++) {
+        rem = (rem << 1) ^ ((rem >> 11) * 0x1F25);
+    }
+    
+    pnqr_u32 data = version << 12 | rem;  // uint18
+    
+    // Draw two copies
+    for (pnqr_u8 i = 0; i < 18; i++) {
+        pnqr_u8 bit = ((data >> i) & 1) != 0;
+        pnqr_u8 a = size - 11 + i % 3, b = i / 3;
+        setFunctionModule(modules, isFunction, a, b, bit);
+        setFunctionModule(modules, isFunction, b, a, bit);
+    }
+    
+#endif
+}
+
+static void drawFunctionPatterns(BitBucket *modules, BitBucket *isFunction, pnqr_u8 version, pnqr_u8 ecc) {
+    
+    pnqr_u8 size = modules->bitOffsetOrWidth;
+
+    // Draw the horizontal and vertical timing patterns
+    for (pnqr_u8 i = 0; i < size; i++) {
+        setFunctionModule(modules, isFunction, 6, i, i % 2 == 0);
+        setFunctionModule(modules, isFunction, i, 6, i % 2 == 0);
+    }
+    
+    // Draw 3 finder patterns (all corners except bottom right; overwrites some timing modules)
+    drawFinderPattern(modules, isFunction, 3, 3);
+    drawFinderPattern(modules, isFunction, size - 4, 3);
+    drawFinderPattern(modules, isFunction, 3, size - 4);
+    
+#if LOCK_VERSION == 0 || LOCK_VERSION > 1
+
+    if (version > 1) {
+
+        // Draw the numerous alignment patterns
+        
+        pnqr_u8 alignCount = version / 7 + 2;
+        pnqr_u8 step;
+        if (version != 32) {
+            step = (version * 4 + alignCount * 2 + 1) / (2 * alignCount - 2) * 2;  // ceil((size - 13) / (2*numAlign - 2)) * 2
+        } else { // C-C-C-Combo breaker!
+            step = 26;
+        }
+        
+        pnqr_u8 alignPositionIndex = alignCount - 1;
+        pnqr_u8 alignPosition[alignCount];
+        
+        alignPosition[0] = 6;
+        
+        pnqr_u8 size = version * 4 + 17;
+        for (pnqr_u8 i = 0, pos = size - 7; i < alignCount - 1; i++, pos -= step) {
+            alignPosition[alignPositionIndex--] = pos;
+        }
+        
+        for (pnqr_u8 i = 0; i < alignCount; i++) {
+            for (pnqr_u8 j = 0; j < alignCount; j++) {
+                if ((i == 0 && j == 0) || (i == 0 && j == alignCount - 1) || (i == alignCount - 1 && j == 0)) {
+                    continue;  // Skip the three finder corners
+                } else {
+                    drawAlignmentPattern(modules, isFunction, alignPosition[i], alignPosition[j]);
+                }
+            }
+        }
+    }
+    
+#endif
+    
+    // Draw configuration data
+    drawFormatBits(modules, isFunction, ecc, 0);  // Dummy mask value; overwritten later in the constructor
+    drawVersion(modules, isFunction, version);
+}
+
+
+// Draws the given sequence of 8-bit codewords (data and error correction) onto the entire
+// data area of this QR Code symbol. Function modules need to be marked off before this is called.
+static void drawCodewords(BitBucket *modules, BitBucket *isFunction, BitBucket *codewords) {
+    
+    pnqr_u32 bitLength = codewords->bitOffsetOrWidth;
+    pnqr_u8 *data = codewords->data;
+    
+    pnqr_u8 size = modules->bitOffsetOrWidth;
+    
+    // Bit index into the data
+    pnqr_u32 i = 0;
+    
+    // Do the funny zigzag scan
+    for (pnqr_s16 right = size - 1; right >= 1; right -= 2) {  // Index of right column in each column pair
+        if (right == 6) { right = 5; }
+        
+        for (pnqr_u8 vert = 0; vert < size; vert++) {  // Vertical counter
+            for (int j = 0; j < 2; j++) {
+                pnqr_u8 x = right - j;  // Actual x coordinate
+                pnqr_u8 upwards = ((right & 2) == 0) ^ (x < 6);
+                pnqr_u8 y = upwards ? size - 1 - vert : vert;  // Actual y coordinate
+                if (!bb_getBit(isFunction, x, y) && i < bitLength) {
+                    bb_setBit(modules, x, y, ((data[i >> 3] >> (7 - (i & 7))) & 1) != 0);
+                    i++;
+                }
+                // If there are any remainder bits (0 to 7), they are already
+                // set to 0/0/white when the grid of modules was initialized
+            }
+        }
+    }
+}
+
+
+
+
+#define PENALTY_N1      3
+#define PENALTY_N2      3
+#define PENALTY_N3     40
+#define PENALTY_N4     10
+
+// Calculates and returns the penalty score based on state of this QR Code's current modules.
+// This is used by the automatic mask choice algorithm to find the mask pattern that yields the lowest score.
+// @TODO: This can be optimized by working with the bytes instead of bits.
+static pnqr_u32 getPenaltyScore(BitBucket *modules) {
+    pnqr_u32 result = 0;
+    
+    pnqr_u8 size = modules->bitOffsetOrWidth;
+    
+    // Adjacent modules in row having same color
+    for (pnqr_u8 y = 0; y < size; y++) {
+        
+        pnqr_u8 colorX = bb_getBit(modules, 0, y);
+        for (pnqr_u8 x = 1, runX = 1; x < size; x++) {
+            pnqr_u8 cx = bb_getBit(modules, x, y);
+            if (cx != colorX) {
+                colorX = cx;
+                runX = 1;
+                
+            } else {
+                runX++;
+                if (runX == 5) {
+                    result += PENALTY_N1;
+                } else if (runX > 5) {
+                    result++;
+                }
+            }
+        }
+    }
+    
+    // Adjacent modules in column having same color
+    for (pnqr_u8 x = 0; x < size; x++) {
+        pnqr_u8 colorY = bb_getBit(modules, x, 0);
+        for (pnqr_u8 y = 1, runY = 1; y < size; y++) {
+            pnqr_u8 cy = bb_getBit(modules, x, y);
+            if (cy != colorY) {
+                colorY = cy;
+                runY = 1;
+            } else {
+                runY++;
+                if (runY == 5) {
+                    result += PENALTY_N1;
+                } else if (runY > 5) {
+                    result++;
+                }
+            }
+        }
+    }
+    
+    pnqr_u16 black = 0;
+    for (pnqr_u8 y = 0; y < size; y++) {
+        pnqr_u16 bitsRow = 0, bitsCol = 0;
+        for (pnqr_u8 x = 0; x < size; x++) {
+            pnqr_u8 color = bb_getBit(modules, x, y);
+
+            // 2*2 blocks of modules having same color
+            if (x > 0 && y > 0) {
+                pnqr_u8 colorUL = bb_getBit(modules, x - 1, y - 1);
+                pnqr_u8 colorUR = bb_getBit(modules, x, y - 1);
+                pnqr_u8 colorL = bb_getBit(modules, x - 1, y);
+                if (color == colorUL && color == colorUR && color == colorL) {
+                    result += PENALTY_N2;
+                }
+            }
+
+            // Finder-like pattern in rows and columns
+            bitsRow = ((bitsRow << 1) & 0x7FF) | color;
+            bitsCol = ((bitsCol << 1) & 0x7FF) | bb_getBit(modules, y, x);
+
+            // Needs 11 bits accumulated
+            if (x >= 10) {
+                if (bitsRow == 0x05D || bitsRow == 0x5D0) {
+                    result += PENALTY_N3;
+                }
+                if (bitsCol == 0x05D || bitsCol == 0x5D0) {
+                    result += PENALTY_N3;
+                }
+            }
+
+            // Balance of black and white modules
+            if (color) { black++; }
+        }
+    }
+
+    // Find smallest k such that (45-5k)% <= dark/total <= (55+5k)%
+    pnqr_u16 total = size * size;
+    for (pnqr_u16 k = 0; black * 20 < (9 - k) * total || black * 20 > (11 + k) * total; k++) {
+        result += PENALTY_N4;
+    }
+    
+    return result;
+}
+
+
+
+static pnqr_u8 rs_multiply(pnqr_u8 x, pnqr_u8 y) {
+    // Russian peasant multiplication
+    // See: https://en.wikipedia.org/wiki/Ancient_Egyptian_multiplication
+    pnqr_u16 z = 0;
+    for (pnqr_s8 i = 7; i >= 0; i--) {
+        z = (z << 1) ^ ((z >> 7) * 0x11D);
+        z ^= ((y >> i) & 1) * x;
+    }
+    return z;
+}
+
+static void rs_init(pnqr_u8 degree, pnqr_u8 *coeff) {
+    pnqr_memset(coeff, 0, degree);
+    coeff[degree - 1] = 1;
+    
+    // Compute the product polynomial (x - r^0) * (x - r^1) * (x - r^2) * ... * (x - r^{degree-1}),
+    // drop the highest term, and store the rest of the coefficients in order of descending powers.
+    // Note that r = 0x02, which is a generator element of this field GF(2^8/0x11D).
+    pnqr_u16 root = 1;
+    for (pnqr_u8 i = 0; i < degree; i++) {
+        // Multiply the current product by (x - r^i)
+        for (pnqr_u8 j = 0; j < degree; j++) {
+            coeff[j] = rs_multiply(coeff[j], root);
+            if (j + 1 < degree) {
+                coeff[j] ^= coeff[j + 1];
+            }
+        }
+        root = (root << 1) ^ ((root >> 7) * 0x11D);  // Multiply by 0x02 mod GF(2^8/0x11D)
+    }
+}
+
+static void rs_getRemainder(pnqr_u8 degree, pnqr_u8 *coeff, pnqr_u8 *data, pnqr_u8 length, pnqr_u8 *result, pnqr_u8 stride) {
+    // Compute the remainder by performing polynomial division
+    
+    //for (pnqr_u8 i = 0; i < degree; i++) { result[] = 0; }
+    //pnqr_memset(result, 0, degree);
+    
+    for (pnqr_u8 i = 0; i < length; i++) {
+        pnqr_u8 factor = data[i] ^ result[0];
+        for (pnqr_u8 j = 1; j < degree; j++) {
+            result[(j - 1) * stride] = result[j * stride];
+        }
+        result[(degree - 1) * stride] = 0;
+        
+        for (pnqr_u8 j = 0; j < degree; j++) {
+            result[j * stride] ^= rs_multiply(coeff[j], factor);
+        }
+    }
+}
+
+
+
+
+static pnqr_s8 encodeDataCodewords(BitBucket *dataCodewords, const pnqr_u8 *text, pnqr_u16 length, pnqr_u8 version) {
+    pnqr_s8 mode = MODE_BYTE;
+    
+    if (isNumeric((char*)text, length)) {
+        mode = MODE_NUMERIC;
+        bb_appendBits(dataCodewords, 1 << MODE_NUMERIC, 4);
+        bb_appendBits(dataCodewords, length, getModeBits(version, MODE_NUMERIC));
+
+        pnqr_u16 accumData = 0;
+        pnqr_u8 accumCount = 0;
+        for (pnqr_u16 i = 0; i < length; i++) {
+            accumData = accumData * 10 + ((char)(text[i]) - '0');
+            accumCount++;
+            if (accumCount == 3) {
+                bb_appendBits(dataCodewords, accumData, 10);
+                accumData = 0;
+                accumCount = 0;
+            }
+        }
+        
+        // 1 or 2 digits remaining
+        if (accumCount > 0) {
+            bb_appendBits(dataCodewords, accumData, accumCount * 3 + 1);
+        }
+        
+    } else if (isAlphanumeric((char*)text, length)) {
+        mode = MODE_ALPHANUMERIC;
+        bb_appendBits(dataCodewords, 1 << MODE_ALPHANUMERIC, 4);
+        bb_appendBits(dataCodewords, length, getModeBits(version, MODE_ALPHANUMERIC));
+
+        pnqr_u16 accumData = 0;
+        pnqr_u8 accumCount = 0;
+        for (pnqr_u16 i = 0; i  < length; i++) {
+            accumData = accumData * 45 + getAlphanumeric((char)(text[i]));
+            accumCount++;
+            if (accumCount == 2) {
+                bb_appendBits(dataCodewords, accumData, 11);
+                accumData = 0;
+                accumCount = 0;
+            }
+        }
+        
+        // 1 character remaining
+        if (accumCount > 0) {
+            bb_appendBits(dataCodewords, accumData, 6);
+        }
+        
+    } else {
+        bb_appendBits(dataCodewords, 1 << MODE_BYTE, 4);
+        bb_appendBits(dataCodewords, length, getModeBits(version, MODE_BYTE));
+        for (pnqr_u16 i = 0; i < length; i++) {
+            bb_appendBits(dataCodewords, (char)(text[i]), 8);
+        }
+    }
+    
+    //bb_setBits(dataCodewords, length, 4, getModeBits(version, mode));
+    
+    return mode;
+}
+
+static void performErrorCorrection(pnqr_u8 version, pnqr_u8 ecc, BitBucket *data) {
+    
+    // See: http://www.thonky.com/qr-code-tutorial/structure-final-message
+    
+#if LOCK_VERSION == 0
+    pnqr_u8 numBlocks = NUM_ERROR_CORRECTION_BLOCKS[ecc][version - 1];
+    pnqr_u16 totalEcc = NUM_ERROR_CORRECTION_CODEWORDS[ecc][version - 1];
+    pnqr_u16 moduleCount = NUM_RAW_DATA_MODULES[version - 1];
+#else
+    pnqr_u8 numBlocks = NUM_ERROR_CORRECTION_BLOCKS[ecc];
+    pnqr_u16 totalEcc = NUM_ERROR_CORRECTION_CODEWORDS[ecc];
+    pnqr_u16 moduleCount = NUM_RAW_DATA_MODULES;
+#endif
+    
+    pnqr_u8 blockEccLen = totalEcc / numBlocks;
+    pnqr_u8 numShortBlocks = numBlocks - moduleCount / 8 % numBlocks;
+    pnqr_u8 shortBlockLen = moduleCount / 8 / numBlocks;
+    
+    pnqr_u8 shortDataBlockLen = shortBlockLen - blockEccLen;
+    
+    pnqr_u8 result[data->capacityBytes];
+    pnqr_memset(result, 0, sizeof(result));
+    
+    pnqr_u8 coeff[blockEccLen];
+    rs_init(blockEccLen, coeff);
+    
+    pnqr_u16 offset = 0;
+    pnqr_u8 *dataBytes = data->data;
+    
+    
+    // Interleave all short blocks
+    for (pnqr_u8 i = 0; i < shortDataBlockLen; i++) {
+        pnqr_u16 index = i;
+        pnqr_u8 stride = shortDataBlockLen;
+        for (pnqr_u8 blockNum = 0; blockNum < numBlocks; blockNum++) {
+            result[offset++] = dataBytes[index];
+            
+#if LOCK_VERSION == 0 || LOCK_VERSION >= 5
+            if (blockNum == numShortBlocks) { stride++; }
+#endif
+            index += stride;
+        }
+    }
+    
+    // Version less than 5 only have short blocks
+#if LOCK_VERSION == 0 || LOCK_VERSION >= 5
+    {
+        // Interleave long blocks
+        pnqr_u16 index = shortDataBlockLen * (numShortBlocks + 1);
+        pnqr_u8 stride = shortDataBlockLen;
+        for (pnqr_u8 blockNum = 0; blockNum < numBlocks - numShortBlocks; blockNum++) {
+            result[offset++] = dataBytes[index];
+            
+            if (blockNum == 0) { stride++; }
+            index += stride;
+        }
+    }
+#endif
+    
+    // Add all ecc blocks, interleaved
+    pnqr_u8 blockSize = shortDataBlockLen;
+    for (pnqr_u8 blockNum = 0; blockNum < numBlocks; blockNum++) {
+        
+#if LOCK_VERSION == 0 || LOCK_VERSION >= 5
+        if (blockNum == numShortBlocks) { blockSize++; }
+#endif
+        rs_getRemainder(blockEccLen, coeff, dataBytes, blockSize, &result[offset + blockNum], numBlocks);
+        dataBytes += blockSize;
+    }
+    
+    pnqr_memcpy(data->data, result, data->capacityBytes);
+    data->bitOffsetOrWidth = moduleCount;
+}
+
+// We store the Format bits tightly packed into a single byte (each of the 4 modes is 2 bits)
+// The format bits can be determined by ECC_FORMAT_BITS >> (2 * ecc)
+static const pnqr_u8 ECC_FORMAT_BITS = (0x02 << 6) | (0x03 << 4) | (0x00 << 2) | (0x01 << 0);
+
+
+
+pnqr_u16 pnqr_getBufferSize(pnqr_u8 version) {
+    return bb_getGridSizeBytes(4 * version + 17);
+}
+
+// @TODO: Return error if data is too big.
+pnqr_s8 pnqr_initBytes(PnQr *qr, pnqr_u8 *modules, pnqr_u8 version, pnqr_u8 ecc, pnqr_u8 *data, pnqr_u16 length) {
+    pnqr_u8 size = version * 4 + 17;
+    qr->version = version;
+    qr->size = size;
+    qr->ecc = ecc;
+    qr->modules = modules;
+    
+    pnqr_u8 eccFormatBits = (ECC_FORMAT_BITS >> (2 * ecc)) & 0x03;
+    
+#if LOCK_VERSION == 0
+    pnqr_u16 moduleCount = NUM_RAW_DATA_MODULES[version - 1];
+    pnqr_u16 dataCapacity = moduleCount / 8 - NUM_ERROR_CORRECTION_CODEWORDS[eccFormatBits][version - 1];
+#else
+    version = LOCK_VERSION;
+    pnqr_u16 moduleCount = NUM_RAW_DATA_MODULES;
+    pnqr_u16 dataCapacity = moduleCount / 8 - NUM_ERROR_CORRECTION_CODEWORDS[eccFormatBits];
+#endif
+    
+    struct BitBucket codewords;
+    pnqr_u8 codewordBytes[bb_getBufferSizeBytes(moduleCount)];
+    bb_initBuffer(&codewords, codewordBytes, (pnqr_s32)sizeof(codewordBytes));
+    
+    // Place the data code words into the buffer
+    pnqr_s8 mode = encodeDataCodewords(&codewords, data, length, version);
+    
+    if (mode < 0) { return -1; }
+    qr->mode = mode;
+    
+    // Add terminator and pad up to a byte if applicable
+    pnqr_u32 padding = (dataCapacity * 8) - codewords.bitOffsetOrWidth;
+    if (padding > 4) { padding = 4; }
+    bb_appendBits(&codewords, 0, padding);
+    bb_appendBits(&codewords, 0, (8 - codewords.bitOffsetOrWidth % 8) % 8);
+
+    // Pad with alternate bytes until data capacity is reached
+    for (pnqr_u8 padByte = 0xEC; codewords.bitOffsetOrWidth < (dataCapacity * 8); padByte ^= 0xEC ^ 0x11) {
+        bb_appendBits(&codewords, padByte, 8);
+    }
+
+    BitBucket modulesGrid;
+    bb_initGrid(&modulesGrid, modules, size);
+    
+    BitBucket isFunctionGrid;
+    pnqr_u8 isFunctionGridBytes[bb_getGridSizeBytes(size)];
+    bb_initGrid(&isFunctionGrid, isFunctionGridBytes, size);
+    
+    // Draw function patterns, draw all codewords, do masking
+    drawFunctionPatterns(&modulesGrid, &isFunctionGrid, version, eccFormatBits);
+    performErrorCorrection(version, eccFormatBits, &codewords);
+    drawCodewords(&modulesGrid, &isFunctionGrid, &codewords);
+    
+    // Find the best (lowest penalty) mask
+    pnqr_u8 mask = 0;
+    pnqr_s32 minPenalty = PNQR_INT32_MAX;
+    for (pnqr_u8 i = 0; i < 8; i++) {
+        drawFormatBits(&modulesGrid, &isFunctionGrid, eccFormatBits, i);
+        applyMask(&modulesGrid, &isFunctionGrid, i);
+        int penalty = getPenaltyScore(&modulesGrid);
+        if (penalty < minPenalty) {
+            mask = i;
+            minPenalty = penalty;
+        }
+        applyMask(&modulesGrid, &isFunctionGrid, i);  // Undoes the mask due to XOR
+    }
+    
+    qr->mask = mask;
+    
+    // Overwrite old format bits
+    drawFormatBits(&modulesGrid, &isFunctionGrid, eccFormatBits, mask);
+    
+    // Apply the final choice of mask
+    applyMask(&modulesGrid, &isFunctionGrid, mask);
+
+    return 0;
+}
+
+pnqr_s8 pnqr_initText(PnQr *qr, pnqr_u8 *modules, pnqr_u8 version, pnqr_u8 ecc, const char *data) {
+    return pnqr_initBytes(qr, modules, version, ecc, (pnqr_u8*)data, pnqr_strlen(data));
+}
+
+pnqr_u8 pnqr_getModule(PnQr *qr, pnqr_u8 x, pnqr_u8 y) {
+    if (x < 0 || x >= qr->size || y < 0 || y >= qr->size) {
+        return 0;
+    }
+
+    pnqr_u32 offset = y * qr->size + x;
+    return (qr->modules[offset >> 3] & (1 << (7 - (offset & 0x07)))) != 0;
+}
+
+/*
+pnqr_u8 qrcode_getHexLength(PnQr *qrcode) {
+    return ((qr->size * qr->size) + 7) / 4;
+}
+
+void qrcode_getHex(PnQr *qr, char *result) {
+    
+}
+*/
+
+// ============================================================
+// ============================================================
+// Комбинированная этикетка: QR слева + значение по центру + QR справа
+// ============================================================
+
+#define PNQR_DEMO_VERSION  3
+#define PNQR_DEMO_ECC      ECC_MEDIUM
+
+// demo_bmp_save определён ниже в секции демо-рендера.
+static BOOL demo_bmp_save(const wchar_t *path, const BYTE *gray, int w, int h);
+
+typedef struct {
+    PnQr    qr;
+    pnqr_u8 bits[106];   // qrcode_getBufferSize(3) = ceil(29*29/8)
+} PnQrImage;
+
+// Кодирует ASCII-строку в QR (version 3, ECC Medium).
+static BOOL pn_qr_encode(const char *ascii, PnQrImage *out) {
+    int len = (int)pnqr_strlen(ascii);
+    if (len < 1 || len > 40) return FALSE;   // v3-M byte capacity = 42
+    pnqr_s8 rc = pnqr_initBytes(&out->qr, out->bits, PNQR_DEMO_VERSION,
+                                PNQR_DEMO_ECC, (pnqr_u8 *)ascii, (pnqr_u16)len);
+    return rc == 0;
+}
+
+// Рисует QR в (x,y) с заданным размером модуля; добавляет тихую зону 4 модуля.
+static void demo_draw_qr(HDC hdc, PnQrImage *img, int x, int y, int module_px) {
+    int side = (img->qr.size + 8) * module_px;
+    PatBlt(hdc, x, y, side, side, WHITENESS);
+    for (int my = 0; my < img->qr.size; my++) {
+        for (int mx = 0; mx < img->qr.size; mx++) {
+            if (pnqr_getModule(&img->qr, (pnqr_u8)mx, (pnqr_u8)my)) {
+                PatBlt(hdc, x + (mx + 4) * module_px, y + (my + 4) * module_px,
+                       module_px, module_px, BLACKNESS);
+            }
+        }
+    }
+}
+
+// Центрированный текст.
+static void demo_center_text(HDC hdc, const wchar_t *text, int cx, int y, int weight, int size) {
+    HFONT f = make_font(size, weight, FALSE);
+    HGDIOBJ old = SelectObject(hdc, f);
+    int tw, th;
+    text_extent(hdc, text, &tw, &th);
+    TextOutW(hdc, cx - tw / 2, y, text, slen(text));
+    SelectObject(hdc, old);
+    DeleteObject(f);
+}
+
+// Рендерит комбинированную этикетку 43x25 мм @ 203 dpi (344x200) в BMP.
+// text — полное значение, например "ii19382868529".
+// Последние 4 символа печатаются жирно на новой строке.
+static BOOL demo_qr_label_render(const wchar_t *text, const wchar_t *path, const Config *c) {
+    (void)c;
+
+    // ASCII-преобразование для QR.
+    char ascii[256];
+    int n = 0;
+    for (; text[n] && n < 255; n++) {
+        if (text[n] < 32 || text[n] > 127) return FALSE;
+        ascii[n] = (char)text[n];
+    }
+    ascii[n] = 0;
+    if (n < 1) return FALSE;
+
+    PnQrImage qr;
+    if (!pn_qr_encode(ascii, &qr)) return FALSE;
+
+    const int w = 344, h = 200;
+    HDC hdc = CreateCompatibleDC(NULL);
+    if (!hdc) return FALSE;
+    HBITMAP hbm = CreateCompatibleBitmap(hdc, w, h);
+    if (!hbm) { DeleteDC(hdc); return FALSE; }
+    HGDIOBJ old = SelectObject(hdc, hbm);
+    PatBlt(hdc, 0, 0, w, h, WHITENESS);
+    SetBkMode(hdc, TRANSPARENT);
+
+    int margin_x = (int)(w * 0.05);      // 17
+    int module_px = 2;
+    int qr_side = (qr.qr.size + 8) * module_px;
+    int left_x = margin_x;
+    int right_x = w - margin_x - qr_side;
+    int qr_y = (h - qr_side) / 2;
+
+    demo_draw_qr(hdc, &qr, left_x, qr_y, module_px);
+    demo_draw_qr(hdc, &qr, right_x, qr_y, module_px);
+
+    // Разбиваем значение: всё, кроме последних 4 символов, + последние 4.
+    int split = n > 4 ? n - 4 : 0;
+    wchar_t prefix[256], suffix[256];
+    int k = 0;
+    for (int i = 0; i < split && k < 255; i++) prefix[k++] = text[i];
+    prefix[k] = 0;
+    k = 0;
+    for (int i = split; i < n && k < 255; i++) suffix[k++] = text[i];
+    suffix[k] = 0;
+
+    // Центр области между QR.
+    int center_left = left_x + qr_side + 6;
+    int center_right = right_x - 6;
+    int cx = (center_left + center_right) / 2;
+
+    int prefix_size = 22;
+    int suffix_size = 32;
+    int line_gap = 4;
+
+    // Измеряем суммарную высоту и центрируем по вертикали.
+    int pw, ph, sw, sh;
+    HFONT f1 = make_font(prefix_size, FW_NORMAL, FALSE);
+    HGDIOBJ o1 = SelectObject(hdc, f1);
+    text_extent(hdc, prefix, &pw, &ph);
+    SelectObject(hdc, o1);
+    DeleteObject(f1);
+
+    HFONT f2 = make_font(suffix_size, FW_BOLD, FALSE);
+    HGDIOBJ o2 = SelectObject(hdc, f2);
+    text_extent(hdc, suffix, &sw, &sh);
+    SelectObject(hdc, o2);
+    DeleteObject(f2);
+
+    int total_h = ph + line_gap + sh;
+    int y0 = (h - total_h) / 2;
+
+    demo_center_text(hdc, prefix, cx, y0, FW_NORMAL, prefix_size);
+    demo_center_text(hdc, suffix, cx, y0 + ph + line_gap, FW_BOLD, suffix_size);
+
+    // Считываем пиксели и сохраняем BMP.
+    BITMAPINFO bi;
+    int z = 0;
+    while (z < (int)sizeof(bi)) ((BYTE *)&bi)[z++] = 0;
+    bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bi.bmiHeader.biWidth = w;
+    bi.bmiHeader.biHeight = -h;
+    bi.bmiHeader.biPlanes = 1;
+    bi.bmiHeader.biBitCount = 24;
+    bi.bmiHeader.biCompression = BI_RGB;
+
+    BYTE *bits = (BYTE *)HeapAlloc(GetProcessHeap(), 0, (size_t)w * h * 3);
+    BYTE *gray = (BYTE *)HeapAlloc(GetProcessHeap(), 0, (size_t)w * h);
+    if (!bits || !gray) {
+        if (bits) HeapFree(GetProcessHeap(), 0, bits);
+        if (gray) HeapFree(GetProcessHeap(), 0, gray);
+        SelectObject(hdc, old); DeleteObject(hbm); DeleteDC(hdc);
+        return FALSE;
+    }
+
+    int got = GetDIBits(hdc, hbm, 0, h, bits, &bi, DIB_RGB_COLORS);
+    if (got) {
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                BYTE *px = bits + ((size_t)y * w + x) * 3;
+                gray[(size_t)y * w + x] =
+                    (BYTE)((30 * px[0] + 59 * px[1] + 11 * px[2]) / 100);
+            }
+        }
+    } else {
+        for (size_t i = 0; i < (size_t)w * h; i++) gray[i] = 255;
+    }
+
+    SelectObject(hdc, old);
+    DeleteObject(hbm);
+    DeleteDC(hdc);
+
+    BOOL ok = demo_bmp_save(path, gray, w, h);
+    HeapFree(GetProcessHeap(), 0, bits);
+    HeapFree(GetProcessHeap(), 0, gray);
+    return ok;
+}
+
+// ============================================================
 // Демо: рендер этикетки в файл без принтера (--demo-file)
 // ============================================================
 
@@ -1802,8 +2846,10 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR cmdline, int show) 
     LPWSTR *argv = CommandLineToArgvW(GetCommandLineW(), &argc);
 
     static wchar_t arg_print[256], arg_demo_text[256], arg_demo_path[MAX_PATH];
+    static wchar_t arg_qr_text[256], arg_qr_path[MAX_PATH];
     const wchar_t *print_arg = NULL;
     const wchar_t *demo_text = NULL, *demo_path = NULL;
+    const wchar_t *qr_text = NULL, *qr_path = NULL;
 
     if (argv) {
         for (int i = 1; i < argc; i++) {
@@ -1815,12 +2861,30 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR cmdline, int show) 
                 scpy(arg_demo_path, MAX_PATH, argv[++i]);
                 demo_text = arg_demo_text;
                 demo_path = arg_demo_path;
+            } else if (seq(argv[i], L"--demo-qr") && i + 2 < argc) {
+                scpy(arg_qr_text, 256, argv[++i]);
+                scpy(arg_qr_path, MAX_PATH, argv[++i]);
+                qr_text = arg_qr_text;
+                qr_path = arg_qr_path;
             }
         }
         LocalFree(argv);
     }
 
     cfg_load();
+
+    // Демо-режим: QR по бокам + значение по центру (последние 4 символа жирно).
+    if (qr_text && qr_path) {
+        if (demo_qr_label_render(qr_text, qr_path, &g_cfg)) {
+            wchar_t m[MAX_PATH + 64];
+            scpy(m, MAX_PATH + 64, L"QR-этикетка сохранена: ");
+            scat(m, MAX_PATH + 64, qr_path);
+            log_line(m);
+            return 0;
+        }
+        log_line(L"ОШИБКА демо QR: не удалось сохранить файл");
+        return 1;
+    }
 
     // Демо-режим: отрисовать номер ячейки в BMP-файл без принтера.
     if (demo_text && demo_path) {
