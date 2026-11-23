@@ -2247,22 +2247,48 @@ void qrcode_getHex(PnQr *qr, char *result) {
 // Комбинированная этикетка: QR слева + значение по центру + QR справа
 // ============================================================
 
-#define PNQR_DEMO_VERSION  3
-#define PNQR_DEMO_ECC      ECC_MEDIUM
+#define PNQR_DEMO_ECC      ECC_MEDIUM   // качество: M (~15%)
+#define PNQR_MAX_VERSION   10           // до 57x57 модулей — с запасом, без большого стека
+#define PNQR_MAX_BYTES     ((4 * PNQR_MAX_VERSION + 17) * (4 * PNQR_MAX_VERSION + 17) / 8 + 1)
 
 // demo_bmp_save определён ниже в секции демо-рендера.
 static BOOL demo_bmp_save(const wchar_t *path, const BYTE *gray, int w, int h);
 
 typedef struct {
     PnQr    qr;
-    pnqr_u8 bits[106];   // qrcode_getBufferSize(3) = ceil(29*29/8)
+    pnqr_u8 bits[PNQR_MAX_BYTES];
 } PnQrImage;
 
-// Кодирует ASCII-строку в QR (version 3, ECC Medium).
+// Форматные биты уровня ECC: M=00, L=01, H=10, Q=11.
+static pnqr_u8 pnqr_fmt_bits(pnqr_u8 ecc) {
+    return (pnqr_u8)((ECC_FORMAT_BITS >> (2 * ecc)) & 0x03);
+}
+
+// Сколько байт данных влезает в (version, ecc) в байтовом режиме.
+static int pnqr_byte_capacity(int version, pnqr_u8 ecc) {
+    int module_count = NUM_RAW_DATA_MODULES[version - 1];
+    int data_cw = module_count / 8 - NUM_ERROR_CORRECTION_CODEWORDS[pnqr_fmt_bits(ecc)][version - 1];
+    int mode_bits = version <= 9 ? 8 : 16;
+    long long bits = (long long)data_cw * 8 - 4 - mode_bits;
+    if (bits < 0) return 0;
+    return (int)(bits / 8);
+}
+
+// Минимальная версия, вмещающая len байт в байтовом режиме.
+// 0 — не помещается ни в одну поддерживаемую версию.
+static int pn_qr_min_version(int len, pnqr_u8 ecc) {
+    for (int v = 1; v <= PNQR_MAX_VERSION; v++)
+        if (len <= pnqr_byte_capacity(v, ecc)) return v;
+    return 0;
+}
+
+// Кодирует ASCII-строку в QR: минимальная подходящая версия, ECC Medium.
 static BOOL pn_qr_encode(const char *ascii, PnQrImage *out) {
     int len = (int)pnqr_strlen(ascii);
-    if (len < 1 || len > 40) return FALSE;   // v3-M byte capacity = 42
-    pnqr_s8 rc = pnqr_initBytes(&out->qr, out->bits, PNQR_DEMO_VERSION,
+    if (len < 1) return FALSE;
+    int version = pn_qr_min_version(len, PNQR_DEMO_ECC);
+    if (version < 1) return FALSE;   // слишком длинное значение
+    pnqr_s8 rc = pnqr_initBytes(&out->qr, out->bits, (pnqr_u8)version,
                                 PNQR_DEMO_ECC, (pnqr_u8 *)ascii, (pnqr_u16)len);
     return rc == 0;
 }
@@ -2310,14 +2336,6 @@ static void draw_qr_label_core(HDC hdc, const wchar_t *text, int w, int h,
     PnQrImage qr;
     if (!pn_qr_encode(ascii, &qr)) return;
 
-    int qr_side = (qr.qr.size + 8) * module_px;
-    int left_x = margin_x;
-    int right_x = w - margin_x - qr_side;
-    int qr_y = (h - qr_side) / 2;
-
-    draw_qr(hdc, &qr, left_x, qr_y, module_px);
-    draw_qr(hdc, &qr, right_x, qr_y, module_px);
-
     // Разбиваем значение: всё, кроме последних 4 символов, + последние 4.
     int split = n > 4 ? n - 4 : 0;
     wchar_t prefix[256], suffix[256];
@@ -2327,6 +2345,27 @@ static void draw_qr_label_core(HDC hdc, const wchar_t *text, int w, int h,
     k = 0;
     for (int i = split; i < n && k < 255; i++) suffix[k++] = text[i];
     suffix[k] = 0;
+
+    // Автоподбор размера модуля: QR максимально крупный, но оставляем
+    // минимум места под текст (текст затем авто-сжимается под остаток).
+    int qr_modules = qr.qr.size + 8;          // + тихая зона
+    if (module_px <= 0) {
+        const int min_text_w = 88;
+        int avail_w = w - 2 * margin_x - min_text_w;
+        int avail_h = h - 4;                  // небольшой вертикальный запас
+        int by_w = avail_w / (2 * qr_modules);
+        int by_h = avail_h / qr_modules;
+        module_px = by_w < by_h ? by_w : by_h;
+        if (module_px < 1) module_px = 1;
+    }
+
+    int qr_side = qr_modules * module_px;
+    int left_x = margin_x;
+    int right_x = w - margin_x - qr_side;
+    int qr_y = (h - qr_side) / 2;
+
+    draw_qr(hdc, &qr, left_x, qr_y, module_px);
+    draw_qr(hdc, &qr, right_x, qr_y, module_px);
 
     // Плотная центральная область между QR.
     int center_left = left_x + qr_side + gap_between;
@@ -2405,7 +2444,7 @@ static BOOL demo_qr_label_render(const wchar_t *text, const wchar_t *path, const
     PatBlt(hdc, 0, 0, w, h, WHITENESS);
     SetBkMode(hdc, TRANSPARENT);
 
-    draw_qr_label_core(hdc, text, w, h, 3, 4, 1, 32, 48);
+    draw_qr_label_core(hdc, text, w, h, 0 /* авто */, 4, 1, 32, 48);
 
     // Считываем пиксели и сохраняем BMP.
     BITMAPINFO bi;
@@ -2476,8 +2515,7 @@ static BOOL print_qr_label(const wchar_t *text, const Config *c) {
     // Физические размеры в px (совпадают с демо при 203 dpi).
     int dpi_x = GetDeviceCaps(hdc, LOGPIXELSX);
     int dpi_y = GetDeviceCaps(hdc, LOGPIXELSY);
-    int module_px = (int)(14.0 / 37 / 25.4 * dpi_x + 0.5);   // QR 14 мм
-    if (module_px < 1) module_px = 1;
+    int module_px = 0;   // авто-подбор под размер этикетки
     int margin_x = (int)(0.5 / 25.4 * dpi_x + 0.5);          // 0.5 мм
     int gap_between = (int)(0.125 / 25.4 * dpi_x + 0.5);     // 0.125 мм
     int prefix_size = (int)(4.0 / 25.4 * dpi_y + 0.5);       // 4 мм
