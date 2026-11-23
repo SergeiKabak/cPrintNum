@@ -2,6 +2,7 @@ import { useEffect } from "preact/hooks";
 
 import StatusPrinting from "./statusPrinting";
 import PrintSettingsPanel from "./PrintSettingsPanel";
+import AutoPrintPanel from "./AutoPrintPanel";
 import BarcodeGenerator from "./BarcodeGenerator";
 
 function App() {
@@ -16,6 +17,8 @@ function App() {
       <StatusPrinting />
 
       <PrintSettingsPanel />
+
+      <AutoPrintPanel />
 
       <BarcodeGenerator />
     </div>

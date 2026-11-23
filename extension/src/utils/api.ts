@@ -42,6 +42,11 @@ export type PrintSettings = {
   expand: number;
   running: boolean;
   papers: string[];
+  /**
+   * Возможности backend'а. Например, `shelf-dash` — поддержка полок `-88`.
+   * У старых версий PrintNum поля нет.
+   */
+  features?: string[];
 };
 
 /** Читает текущие настройки из приложения. Возвращает null, если оно недоступно. */

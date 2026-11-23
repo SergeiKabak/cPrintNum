@@ -1,31 +1,35 @@
 /**
- * Генератор штрихкодов Code128 в popup.
+ * Превью и печать комбинированной QR-этикетки PrintNum.
  *
- * Возможности:
- * - ручной ввод текста ШК;
- * - настройка параметров: высота полосок, ширина модуля, показ текста (HRI);
- * - предпросмотр (SVG);
- * - печать из браузера (окно с ШК + window.print());
- * - печать через приложение PrintNum (Win32 GDI).
+ * C-служба (`POST /print-barcode`) печатает:
+ *   [QR]  ii1938286  [QR]
+ *           8529
  *
- * Настройки сохраняются в chrome.storage.local.
+ * Здесь тот же макет строится в SVG: QR слева/справа, значение по центру,
+ * последние 4 символа — жирным на новой строке. Превью обновляется по мере
+ * ввода и учитывает размер этикетки из `GET /config` (`paper`).
+ *
+ * Печать:
+ * - «Печать через PrintNum» — отправляет текст в C-службу (native/HTTP);
+ * - «Печать из браузера» — печатает тот же SVG через `window.print()`.
  */
 
 declare const chrome: any;
 
-import { useState, useEffect } from "preact/hooks";
-import { Printer, Barcode, MonitorUp, Settings2 } from "lucide-preact";
-import { barcode128ToSvg } from "@/utils/code128";
+import { useEffect, useMemo, useState } from "preact/hooks";
+import { Barcode, MonitorUp, Printer } from "lucide-preact";
 import { Button } from "@/components/preact/button";
-import { sendServer } from "@/utils/api";
-import { useStorageValue } from "@/hooks/useStorageValue";
+import { getSettings, sendServer } from "@/utils/api";
 import { isNativeAvailable, sendNative } from "@/utils/nativeMessaging";
 import { LAST_LABEL_KEY } from "@/entrypoints/labelCopy.content";
+import {
+  buildQrLabelSvg,
+  createCanvasTextMeasurer,
+  parsePaperSize,
+} from "@/utils/qrLabel";
 
-/** Значения по умолчанию. */
-const DEFAULT_TEXT = "";
-const DEFAULT_MODULE_MM = 0.25;
-const DEFAULT_HEIGHT_MM = 17;
+/** Пример, который показываем, пока поле пустое. */
+const SAMPLE_TEXT = "ii19382868529";
 
 type Status =
   | { kind: "idle" }
@@ -33,25 +37,32 @@ type Status =
   | { kind: "err"; msg: string };
 
 export default function BarcodeGenerator() {
-  const [text, setText] = useState(DEFAULT_TEXT);
-  const [moduleMm, setModuleMm] = useStorageValue<number>(
-    "barcodeModuleMm",
-    DEFAULT_MODULE_MM,
-  );
-  const [heightMm, setHeightMm] = useStorageValue<number>(
-    "barcodeHeightMm",
-    DEFAULT_HEIGHT_MM,
-  );
-  const [showSettings, setShowSettings] = useState(false);
+  const [text, setText] = useState("");
   const [status, setStatus] = useState<Status>({ kind: "idle" });
+
+  // Размер этикетки берём из C-службы; без неё — 43×25 мм.
+  const [paper, setPaper] = useState(() => parsePaperSize(undefined));
+
+  useEffect(() => {
+    let alive = true;
+
+    getSettings().then((settings) => {
+      if (alive && settings) setPaper(parsePaperSize(settings.paper));
+    });
+
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // Точная подгонка текста по ширине (canvas), как GDI в C-службе.
+  const measureText = useMemo(() => createCanvasTextMeasurer(), []);
 
   // Подхват штрихкода из кнопки «копировать» на странице Ozon.
   //
   // Значение кладёт content-script (labelCopy.content.ts) в
   // chrome.storage.local — окно расширения в момент клика обычно закрыто,
   // поэтому передача идёт через хранилище, а не напрямую.
-  //
-  // Читаем существующее значение при открытии…
   useEffect(() => {
     chrome.storage.local.get([LAST_LABEL_KEY], (result: any) => {
       const value = result?.[LAST_LABEL_KEY];
@@ -75,28 +86,41 @@ export default function BarcodeGenerator() {
     return () => chrome.storage.onChanged.removeListener(onChanged);
   }, []);
 
-  // Проверяем валидность и получаем SVG (или ошибку).
+  const trimmed = text.trim();
+  const isSample = !trimmed;
+  const previewText = trimmed || SAMPLE_TEXT;
+
+  // Строим SVG (или показываем ошибку для не-ASCII/пустого значения).
   let svg: string | null = null;
   let error: string | null = null;
-  if (text.trim()) {
-    try {
-      svg = barcode128ToSvg(text.trim(), moduleMm, heightMm);
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    }
+
+  try {
+    svg = buildQrLabelSvg(previewText, {
+      widthMm: paper.widthMm,
+      heightMm: paper.heightMm,
+      measureText,
+    }).svg;
+  } catch (e) {
+    error = e instanceof Error ? e.message : String(e);
   }
 
-  /** Печать из браузера: окно с ШК + window.print(). */
+  const canPrint = !!svg && !error && !isSample;
+
+  /** Печать из браузера: окно с тем же SVG + window.print(). */
   const printInBrowser = () => {
-    if (!svg) return;
-    const w = window.open("", "_blank", "width=200,height=200");
+    if (!svg || !canPrint) return;
+
+    const w = window.open("", "_blank", "width=480,height=320");
     if (!w) {
       setStatus({ kind: "err", msg: "Браузер заблокировал окно печати" });
       return;
     }
+
     w.document.write(
-      `<!doctype html><html><head><meta charset="utf-8"><title>Штрихкод</title>` +
-        `<style>@page{margin:5mm}body{margin:0;display:flex;justify-content:center}svg{max-width:100%}</style>` +
+      `<!doctype html><html><head><meta charset="utf-8"><title>QR-этикетка</title>` +
+        `<style>@page{size:${paper.widthMm}mm ${paper.heightMm}mm;margin:0}` +
+        `html,body{margin:0;padding:0;background:#fff}` +
+        `svg{display:block;width:${paper.widthMm}mm;height:${paper.heightMm}mm}</style>` +
         `</head><body>${svg}<script>window.onload=()=>{window.print();}` +
         `window.onafterprint=()=>window.close();<\/script></body></html>`,
     );
@@ -104,21 +128,23 @@ export default function BarcodeGenerator() {
     setStatus({ kind: "ok", msg: "Открыто окно печати браузера" });
   };
 
-  /** Печать через приложение PrintNum.
-   * Сначала пробует native messaging (без порта), затем HTTP. */
+  /** Печать через приложение PrintNum: native messaging, затем HTTP. */
   const printViaPrintNum = async () => {
-    if (!svg) return;
+    if (!svg || !canPrint) return;
     setStatus({ kind: "idle" });
 
     // 1. Native messaging (если зарегистрирован host).
     if (isNativeAvailable()) {
       try {
-        const r = await sendNative<{ status: string; reason?: string; error?: string }>({
+        const r = await sendNative<{
+          status: string;
+          reason?: string;
+          error?: string;
+        }>({
           command: "print-barcode",
-          text: text.trim(),
-          heightMm,
-          moduleMm,
+          text: trimmed,
         });
+
         if (r?.status === "ok") {
           setStatus({ kind: "ok", msg: "Отправлено в PrintNum (native)" });
           return;
@@ -133,13 +159,9 @@ export default function BarcodeGenerator() {
       }
     }
 
-    // 2. HTTP (если приложение запущено с сервером).
+    // 2. HTTP (C-служба на 127.0.0.1:5000).
     try {
-      const res = await sendServer.post("print-barcode", {
-        text: text.trim(),
-        heightMm,
-        moduleMm,
-      });
+      const res = await sendServer.post("print-barcode", { text: trimmed });
       setStatus(
         res.ok
           ? { kind: "ok", msg: "Отправлено в PrintNum" }
@@ -159,46 +181,14 @@ export default function BarcodeGenerator() {
       <div className="px-3 py-2.5 bg-muted/30 border-b border-border flex items-center gap-2 select-none">
         <Barcode class="h-4 w-4 text-emerald-600 dark:text-emerald-500 shrink-0" />
         <span className="text-sm font-bold tracking-tight flex-1 truncate leading-none">
-          Штрихкод Code128
+          QR-этикетка ii
         </span>
-        <button
-          type="button"
-          title="Настройки штрихкода"
-          onClick={() => setShowSettings((v) => !v)}
-          className={`shrink-0 flex items-center justify-center h-6 w-6 rounded-md transition-colors ${
-            showSettings
-              ? "bg-accent text-accent-foreground"
-              : "text-muted-foreground hover:bg-muted/60"
-          }`}
-        >
-          <Settings2 class="h-4 w-4" />
-        </button>
+        <span className="text-[10px] text-muted-foreground shrink-0">
+          {paper.widthMm}×{paper.heightMm} мм
+        </span>
       </div>
 
-      {/* Раздел ввода (отступ 16px вокруг: p-4) */}
       <div className="p-4 flex flex-col gap-3">
-        {/* Настройки (по кнопке) */}
-        {showSettings && (
-          <div className="flex flex-col gap-2 rounded-lg border border-border bg-muted/20 p-4">
-            <NumberField
-              label="Высота полосок (мм)"
-              value={heightMm}
-              min={3}
-              max={50}
-              step={1}
-              onChange={setHeightMm}
-            />
-            <NumberField
-              label="Ширина модуля (мм)"
-              value={moduleMm}
-              min={0.1}
-              max={1}
-              step={0.05}
-              onChange={setModuleMm}
-            />
-          </div>
-        )}
-
         {/* Ввод текста */}
         <label className="flex flex-col gap-1">
           <span className="text-[11px] font-medium text-muted-foreground">
@@ -216,12 +206,12 @@ export default function BarcodeGenerator() {
           />
         </label>
 
-        {/* Предпросмотр */}
-        <div className="flex items-center justify-center rounded-lg border border-dashed border-border bg-white p-2 min-h-16 overflow-x-auto">
+        {/* Превью */}
+        <div className="relative flex items-center justify-center rounded-lg border border-dashed border-border bg-white p-2 min-h-16 overflow-hidden">
           {svg ? (
             <div
-              className="[&>svg]:h-auto [&>svg]:max-w-full [&>svg]:w-auto"
-              // svg сгенерирован нами, вставка безопасна
+              className="w-full [&>svg]:block [&>svg]:h-auto [&>svg]:w-full"
+              // SVG сгенерирован нами по фиксированной геометрии — вставка безопасна
               dangerouslySetInnerHTML={{ __html: svg }}
             />
           ) : (
@@ -229,7 +219,18 @@ export default function BarcodeGenerator() {
               {error ? `Ошибка: ${error}` : "Введите текст"}
             </span>
           )}
+
+          {isSample && svg && (
+            <span className="absolute right-2 top-2 rounded bg-black/5 px-1.5 py-0.5 text-[9px] text-muted-foreground">
+              пример
+            </span>
+          )}
         </div>
+
+        <span className="text-[10px] text-muted-foreground">
+          QR слева и справа, последние 4 цифры — жирным. Печать выполняется
+          приложением PrintNum.
+        </span>
 
         {/* Кнопки печати */}
         <div className="flex flex-col gap-1.5">
@@ -237,7 +238,7 @@ export default function BarcodeGenerator() {
             variant="default"
             size="sm"
             className="w-full"
-            disabled={!svg}
+            disabled={!canPrint}
             onClick={printViaPrintNum}
           >
             <Printer class="h-4 w-4 shrink-0" />
@@ -248,7 +249,7 @@ export default function BarcodeGenerator() {
             variant="outline"
             size="sm"
             className="w-full"
-            disabled={!svg}
+            disabled={!canPrint}
             onClick={printInBrowser}
           >
             <MonitorUp class="h-4 w-4 shrink-0" />
@@ -270,44 +271,5 @@ export default function BarcodeGenerator() {
         )}
       </div>
     </div>
-  );
-}
-
-/** Числовое поле с подписью. */
-function NumberField({
-  label,
-  value,
-  min,
-  max,
-  step,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  onChange: (v: number) => void;
-}) {
-  return (
-    <label className="flex items-center justify-between gap-2">
-      <span className="text-[11px] font-medium text-muted-foreground">
-        {label}
-      </span>
-      <input
-        type="number"
-        value={value}
-        min={min}
-        max={max}
-        step={step}
-        onInput={(e) => {
-          const raw = parseFloat((e.target as HTMLInputElement).value);
-          if (!Number.isNaN(raw)) {
-            onChange(Math.min(max, Math.max(min, raw)));
-          }
-        }}
-        className="h-7 w-20 rounded-md border border-border bg-background px-2 text-xs text-right outline-none focus:ring-2 focus:ring-ring"
-      />
-    </label>
   );
 }

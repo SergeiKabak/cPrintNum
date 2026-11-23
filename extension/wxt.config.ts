@@ -11,6 +11,7 @@ const INCLUDED_ENTRYPOINTS = [
   "popup",
   "sendPrintNum", // печать ячеек (основная функция)
   "labelCopy",    // подхват ШК из кнопок «копировать»
+  "pageHook",     // MAIN-world перехват ответов Ozon (инъекция из background)
 ];
 
 // See https://wxt.dev/api/config.html
@@ -18,12 +19,18 @@ export default defineConfig({
   filterEntrypoints: INCLUDED_ENTRYPOINTS,
 
   manifest: {
-    permissions: ["storage", "nativeMessaging"],
+    permissions: ["storage", "nativeMessaging", "scripting"],
     action: {},
     name: "PrintNum - Печать Ячеек (Ozon)",
     description:
       "Полезные инструменты для turbo-pvz.ozon.ru: печать ячеек, автоскрипты, удобная автоматизация по QR-кодам и другое.",
-    host_permissions: ["http://localhost/*", "http://127.0.0.1/*"],
+    host_permissions: [
+      "http://localhost/*",
+      "http://127.0.0.1/*",
+      // Нужно для chrome.scripting.executeScript({ world: "MAIN" })
+      // и инъекции pageHook на страницы Ozon.
+      "https://turbo-pvz.ozon.ru/*",
+    ],
   },
 
   srcDir: "src",

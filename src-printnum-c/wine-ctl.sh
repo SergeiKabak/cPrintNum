@@ -176,13 +176,30 @@ cmd_test() {
     t "GET /status-printer"  200 GET  /status-printer
     t "GET /service"         200 GET  /service
     t "POST /config"         200 POST /config '{"paper":"43*25"}'
+
+    # Полка (-88) должна пройти валидацию /print-number и упереться
+    # в проверку готовности, а не в 400. Поэтому временно выключаем службу.
+    t "config running=false" 200 POST /config '{"running":false}'
+    t "shelf -88 (валидна)"  503 POST /print-number '{"text":"-88"}'
+    t "config running=true"  200 POST /config '{"running":true}'
+
     t "print Возврат-1"      400 POST /print-number '{"text":"Возврат-1"}'
     t "print Прямой поток-5" 400 POST /print-number '{"text":"Прямой поток - 5"}'
     t "print ii-штрихкод"    400 POST /print-number '{"text":"ii18725308927"}'
     t "print ---"            400 POST /print-number '{"text":"---"}'
     t "print пусто"          400 POST /print-number '{"text":""}'
+    t "shelf --"             400 POST /print-number '{"text":"--"}'
+    t "shelf -"              400 POST /print-number '{"text":"-"}'
+    t "shelf -8a"            400 POST /print-number '{"text":"-8a"}'
     t "OPTIONS preflight"    204 OPTIONS /config
     t "404"                  404 GET  /nonexistent
+
+    # Возможности API: расширение проверяет их перед печатью полок.
+    if curl -s -m 5 "http://127.0.0.1:$PORT/config" | grep -q '"shelf-dash"'; then
+        printf "  ✅ %-26s\n" "features shelf-dash"; pass=$((pass+1))
+    else
+        printf "  ❌ %-26s\n" "features shelf-dash"; fail=$((fail+1))
+    fi
     echo ""
     echo "Итого: $pass passed, $fail failed"
     [ "$fail" -eq 0 ]

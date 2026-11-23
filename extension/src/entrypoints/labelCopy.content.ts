@@ -33,7 +33,7 @@
  * # Фильтрация
  *
  * В `chrome.storage.local` попадают только значения формата штрихкода
- * (`ii` + 10-11 цифр, см. [`LABEL_BARCODE_RE`]). Клик по кнопке рядом
+ * (`ii` + 9–14 цифр, см. [`LABEL_BARCODE_RE`]). Клик по кнопке рядом
  * с названием товара или номером отправления ничего не меняет.
  */
 
@@ -51,7 +51,7 @@ export default defineContentScript({
    * @param event Событие клика (фаза перехвата).
    * @returns Найденный штрихкод либо `null`.
    */
-  main() {
+  main(ctx) {
     /**
      * Достаёт скопированное значение из блока кнопки.
      *
@@ -80,7 +80,12 @@ export default defineContentScript({
 
     // Фаза перехвата (capture): значение в textarea уже есть, а обработчики
     // страницы могут менять DOM после клика — читаем до них.
-    document.addEventListener(
+    //
+    // ctx.addEventListener снимает обработчик при перезагрузке расширения:
+    // без этого старый content script на открытой вкладке продолжает
+    // ловить клики и падает с `Extension context invalidated`.
+    ctx.addEventListener(
+      document,
       "click",
       (event) => {
         const value = readCopiedValue(event.target);
@@ -89,10 +94,18 @@ export default defineContentScript({
         // Интересует только штрихкод отправления.
         if (!LABEL_BARCODE_RE.test(value)) return;
 
-        chrome.storage.local.set({ [LAST_LABEL_KEY]: value });
-        console.info(`[PrintNum:label] подхвачен штрихкод: ${value}`);
+        try {
+          // После обновления расширения старый контекст уже невалиден —
+          // молча выходим, пока пользователь не обновит вкладку.
+          if (!chrome?.runtime?.id) return;
+
+          chrome.storage.local.set({ [LAST_LABEL_KEY]: value });
+          console.info(`[PrintNum:label] подхвачен штрихкод: ${value}`);
+        } catch (error) {
+          console.debug("[PrintNum:label] storage недоступен:", error);
+        }
       },
-      true,
+      { capture: true },
     );
   },
 });

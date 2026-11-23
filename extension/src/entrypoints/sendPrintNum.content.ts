@@ -1,40 +1,142 @@
-import { sendServer } from "@/utils/api";
+declare const chrome: any;
+
 import { SELECTORS, CELL_PRINTABLE_RE, workPathNames } from "@/utils/constants";
 import { subscribe } from "@/utils/observer";
 import { registerScannerSimulator, onSimulatedScan } from "@/utils/scannerSimulator";
+import {
+  AUTO_PRINT_KEY,
+  normalizeAutoPrint,
+  type AutoPrintSettings,
+} from "@/utils/autoPrintSettings";
+import {
+  normalizePlacement,
+  type Placement,
+} from "@/utils/ozonPlacements";
 
 export default defineContentScript({
   matches: ["https://turbo-pvz.ozon.ru/*"],
 
-  async main() {
+  // document_start — чтобы bridge был готов до первых XHR страницы.
+  runAt: "document_start",
+
+  async main(ctx) {
     // В dev-сборке доступен эмулятор сканера: PrintNumScanner.simulate("123-47").
     registerScannerSimulator();
 
+    let settings: AutoPrintSettings = normalizeAutoPrint(undefined);
     let firstRun = false;
     let observer: MutationObserver | null = null;
 
     // Старый список текстов, с которым сравниваем новый
     let previousTexts: string[] = [];
 
-    const URL = "print-number";
+    /**
+     * Отправляет событие в background. Печать выполняет service worker:
+     * там дедупликация, проверка режима и HTTP-запрос к C-службе.
+     */
+    function requestPrint(placement: Placement): Promise<boolean> {
+      return new Promise((resolve) => {
+        try {
+          // После обновления расширения старый content script уже невалиден.
+          if (!chrome?.runtime?.id) {
+            resolve(false);
+            return;
+          }
 
-    async function sendNumber(number: string): Promise<boolean> {
-      try {
-        const response = await sendServer.post(URL, { text: number });
-
-        if (!response.ok) {
-          console.error(
-            `Ошибка сервера: ${response.status} ${response.statusText}`,
+          chrome.runtime.sendMessage(
+            { action: "printAuto", payload: placement },
+            (response: any) => {
+              // Ошибка «Receiving end does not exist» ожидаема, если
+              // service worker ещё не поднялся; гасим lastError.
+              void chrome.runtime.lastError;
+              resolve(!!response?.ok);
+            },
           );
-          return false;
+        } catch {
+          resolve(false);
         }
+      });
+    }
 
-        return true;
-      } catch (error) {
-        console.error("Ошибка отправки номера:", error);
-        return false;
+    // Настройки автопечати: читаем сразу и слушаем изменения popup'а.
+    try {
+      chrome.storage.local.get([AUTO_PRINT_KEY], (result: any) => {
+        settings = normalizeAutoPrint(result?.[AUTO_PRINT_KEY]);
+      });
+    } catch {
+      // Контекст расширения уже невалиден — работаем на дефолтах.
+    }
+
+    const onStorageChanged = (changes: any, area: string) => {
+      if (area !== "local" || !changes?.[AUTO_PRINT_KEY]) return;
+      settings = normalizeAutoPrint(changes[AUTO_PRINT_KEY].newValue);
+    };
+
+    chrome.storage.onChanged.addListener(onStorageChanged);
+    ctx.onInvalidated(() => {
+      try {
+        chrome.storage.onChanged.removeListener(onStorageChanged);
+      } catch {
+        // контекст уже невалиден
+      }
+    });
+
+    // --------------------------------------------------------
+    // Bridge из MAIN-мира.
+    //
+    // pageHook.js перехватывает XHR и присылает сюда placement
+    // через window.postMessage. Проверяем origin/source и форму.
+    // --------------------------------------------------------
+    ctx.addEventListener(window, "message", (event) => {
+      if (event.source !== window) return;
+      if (event.origin !== location.origin) return;
+
+      const data = event.data;
+      if (!data || data.source !== "PrintNum" || data.type !== "PLACEMENT") {
+        return;
+      }
+
+      const placement = normalizePlacement(data.payload);
+      if (!placement) return;
+
+      void requestPrint(placement);
+    });
+
+    // Просим background внедрить pageHook в MAIN-мир.
+    // Chrome 95+ / Firefox 102+: world "MAIN" через scripting API.
+    //
+    // На document_start service worker может ещё просыпаться, поэтому
+    // первый sendMessage иногда не доходит до слушателя. Повторяем
+    // с backoff — к моменту размещения товара hook уже точно стоит.
+    function requestPageHook(attempt = 0) {
+      try {
+        if (!chrome?.runtime?.id) return;
+
+        chrome.runtime.sendMessage(
+          { action: "injectPageHook" },
+          (response: any) => {
+            const err = chrome.runtime.lastError;
+            if (!err && response?.ok) return;
+
+            if (attempt < 4) {
+              ctx.setTimeout(
+                () => requestPageHook(attempt + 1),
+                250 * 2 ** attempt,
+              );
+              return;
+            }
+
+            console.warn(
+              `[PrintNum] pageHook не внедрён: ${err?.message ?? response?.error ?? "unknown"}`,
+            );
+          },
+        );
+      } catch {
+        // Контекст невалиден — вкладку нужно перезагрузить.
       }
     }
+
+    requestPageHook();
 
     function getTexts(): string[] {
       const tags = document.querySelectorAll(SELECTORS.numprint);
@@ -42,9 +144,8 @@ export default defineContentScript({
       return Array.from(tags)
         .map((tag) => tag.textContent?.trim() || "")
         .filter(Boolean)
-        // Исключаем ячейки с текстом ('Возврат-1', 'Прямой поток-5'):
-        // их нельзя закодировать в Code128 (только ASCII A/B), поэтому
-        // печать такого номера привела бы к пустой/битой этикетке.
+        // Исключаем текстовые ячейки ('Возврат-1', 'Прямой поток-5'):
+        // они не являются номером ячейки.
         .filter((text) => CELL_PRINTABLE_RE.test(text))
         .slice(0, 10);
     }
@@ -58,6 +159,9 @@ export default defineContentScript({
     }
 
     function runScript() {
+      // В режимах xhr/off DOM-наблюдатель молчит.
+      if (settings.mode === "xhr" || settings.mode === "off") return;
+
       const currentTexts = getTexts();
 
       if (!currentTexts.length) return;
@@ -76,11 +180,20 @@ export default defineContentScript({
       }
 
       // Список изменился.
-      // Отправляем первый текст нового списка
+      // Отправляем первый текст нового списка.
       const newText = currentTexts[0];
 
       if (newText) {
-        sendNumber(newText);
+        // DOM уже сравнил списки, поэтому dedupe: none — не подавляем
+        // повторное размещение в ту же ячейку. В режиме both от двойной
+        // печати DOM+XHR защищает overlapGuardMs в background.
+        const placement = normalizePlacement({
+          text: newText,
+          origin: "dom",
+          dedupe: "none",
+          raw: newText,
+        });
+        if (placement) void requestPrint(placement);
       }
 
       // Обновляем старый список только после успешной отправки
@@ -122,10 +235,9 @@ export default defineContentScript({
 
     // Логирование и обработка симулированного сканирования (dev).
     //
-    // В боевом режиме sendNumber() вызывает MutationObserver при изменении DOM.
-    // Эмулятор сканера меняет только keydown-события и DOM не трогает, поэтому
-    // здесь явно прогоняем номер через ту же отправку — иначе "сканирование"
-    // в эмуляторе никуда бы не уходило.
+    // В боевом режиме печать вызывает XHR-hook или DOM-наблюдатель.
+    // Эмулятор сканера меняет только keydown-события и DOM не трогает,
+    // поэтому здесь явно прогоняем номер через ту же отправку.
     let lastSimulated: { value: string; at: number } | null = null;
     onSimulatedScan((value) => {
       // Эмулированное сканирование тоже не должно отправлять
@@ -150,8 +262,19 @@ export default defineContentScript({
       }
       lastSimulated = { value, at: now };
 
-      // Отправляем номер в приложение так же, как при реальном сканировании.
-      sendNumber(value).then((ok) => {
+      const placement = normalizePlacement({
+        text: value,
+        origin: "scanner",
+        dedupe: "none",
+        raw: value,
+      });
+
+      if (!placement) {
+        console.info(`[PrintNum:scanner] некорректный номер: "${value}"`);
+        return;
+      }
+
+      requestPrint(placement).then((ok) => {
         console.info(
           ok
             ? `[PrintNum:scanner] номер "${value}" отправлен в PrintNum`

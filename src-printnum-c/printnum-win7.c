@@ -406,6 +406,18 @@ static void cfg_to_json(Config *c, wchar_t *out, int cap) {
     scat(out, cap, L"]}");
 }
 
+// JSON для API: тот же конфиг + список возможностей.
+// cfg_save() продолжает использовать cfg_to_json(), поэтому в config.json
+// поле features не попадает.
+static void cfg_to_api_json(wchar_t *out, int cap) {
+    cfg_to_json(&g_cfg, out, cap);
+    int n = slen(out);
+    if (n > 0 && out[n - 1] == L'}') {
+        out[--n] = 0;
+        scat(out, cap, L",\"features\":[\"shelf-dash\"]}");
+    }
+}
+
 // Применение частичного JSON из расширения: меняются только переданные ключи.
 static void cfg_apply_json(const wchar_t *body) {
     wchar_t tmp[256];
@@ -596,6 +608,13 @@ static BOOL is_all_digits(const wchar_t *s) {
     return TRUE;
 }
 
+// Полка: ведущий дефис + непустые цифры ("-88", "-57").
+// Такой формат проходит проверку /print-number (цифры/дефис/пробел),
+// поэтому отдельный эндпоинт и кириллица не нужны.
+static BOOL is_shelf_text(const wchar_t *text) {
+    return text[0] == L'-' && is_all_digits(text + 1);
+}
+
 // Проверка "КГТ-N" (и "кгт-N").
 static BOOL is_kgt(const wchar_t *main, const wchar_t *header) {
     BOOL kgt = (main[0] == L'К' || main[0] == L'к') &&
@@ -605,6 +624,25 @@ static BOOL is_kgt(const wchar_t *main, const wchar_t *header) {
 }
 
 static void prepare_label_data(const wchar_t *text, const Config *c, LabelData *d) {
+    // Полка ("-88"): печатаем одной крупной строкой, не разбивая по дефису.
+    // Иначе main оказался бы пустым, а "88" ушло бы в мелкий header.
+    if (is_shelf_text(text)) {
+        for (int i = 0; i < (int)sizeof(*d); i++) ((unsigned char *)d)[i] = 0;
+        scpy(d->main_text, 256, text);
+
+        // Жирность — по общим правилам: hybrid + номер >= expand.
+        long long v = stoi(text + 1);
+        d->is_bold = c->hybrid && v >= (long long)c->expand;
+
+        // Точка/подчёркивание — как у обычной ячейки.
+        d->is_underlined = c->end_line;
+        if (!c->end_line) scat(d->main_text, 256, L".");
+
+        d->show_header = FALSE;
+        d->force_left_header = FALSE;
+        return;
+    }
+
     wchar_t raw_main[256], raw_header[256];
     raw_main[0] = 0;
     raw_header[0] = 0;
@@ -1187,7 +1225,7 @@ static void handle_request(SOCKET s, Request *r) {
             return;
         }
         if (sascii(r->path, "/config")) {
-            cfg_to_json(&g_cfg, json, JSON_MAX);
+            cfg_to_api_json(json, JSON_MAX);
             send_json(s, 200, json);
             return;
         }
@@ -1215,7 +1253,7 @@ static void handle_request(SOCKET s, Request *r) {
             }
             cfg_apply_json(b);
             cfg_save();
-            cfg_to_json(&g_cfg, json, JSON_MAX);
+            cfg_to_api_json(json, JSON_MAX);
             send_json(s, 200, json);
             return;
         }

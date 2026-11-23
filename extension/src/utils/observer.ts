@@ -14,7 +14,20 @@ export function subscribe(fn: any) {
   listeners.push(fn);
 }
 
-observer.observe(document.body, {
-  subtree: true,
-  childList: true,
-});
+// На document_start (runAt) document.body ещё null, а content script
+// `sendPrintNum` запускается именно так. Без этой проверки
+// observer.observe(null) бросает TypeError и скрипт умирает до main().
+function observeBody() {
+  if (document.body) {
+    observer.observe(document.body, {
+      subtree: true,
+      childList: true,
+    });
+    return;
+  }
+
+  document.addEventListener("DOMContentLoaded", observeBody, { once: true });
+  window.addEventListener("load", observeBody, { once: true });
+}
+
+observeBody();
