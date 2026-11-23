@@ -2585,15 +2585,13 @@ static BOOL demo_qr_label_render(const wchar_t *text, const wchar_t *path, const
     PatBlt(hdc, 0, 0, w, h, WHITENESS);
     SetBkMode(hdc, TRANSPARENT);
 
-    // Рамка наклейки 43x25 мм (для наглядности границ).
+    // Рамка наклейки 43x25 мм (для наглядности границ) — толщина 10 px.
     {
-        HPEN pen = CreatePen(PS_SOLID, 1, RGB(0, 0, 0));
-        HGDIOBJ op = SelectObject(hdc, pen);
-        HGDIOBJ ob = SelectObject(hdc, GetStockObject(NULL_BRUSH));
-        Rectangle(hdc, 0, 0, w, h);
-        SelectObject(hdc, ob);
-        SelectObject(hdc, op);
-        DeleteObject(pen);
+        int t = 10;
+        PatBlt(hdc, 0, 0, w, t, BLACKNESS);         // верх
+        PatBlt(hdc, 0, h - t, w, t, BLACKNESS);      // низ
+        PatBlt(hdc, 0, 0, t, h, BLACKNESS);          // лево
+        PatBlt(hdc, w - t, 0, t, h, BLACKNESS);      // право
     }
 
     // QR как можно крупнее и ближе к краям; центр — плотно между ними.
