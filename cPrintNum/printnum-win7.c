@@ -1611,6 +1611,13 @@ static BOOL read_request(SOCKET s, Request *r) {
     static char buf[BODY_MAX * 2];
     int total = 0;
 
+    // Сервер однопоточный: если клиент открыл соединение и молчит, recv
+    // висел бы бесконечно и вся печать вставала. 5 с достаточно для
+    // loopback-запроса с телом ≤ BODY_MAX.
+    DWORD rcv_timeout = 5000;
+    setsockopt(s, SOL_SOCKET, SO_RCVTIMEO,
+               (const char *)&rcv_timeout, sizeof(rcv_timeout));
+
     // Читаем заголовки (+ тело по Content-Length).
     while (total < (int)sizeof(buf) - 1) {
         int n = recv(s, buf + total, (int)sizeof(buf) - 1 - total, 0);
@@ -1640,8 +1647,10 @@ static BOOL read_request(SOCKET s, Request *r) {
                     const char *p = buf + i + 15;
                     const char *end = buf + hdr_len;
                     while (p < end && *p == ' ') p++;
-                    while (p < end && *p >= '0' && *p <= '9')
+                    while (p < end && *p >= '0' && *p <= '9') {
                         content_len = content_len * 10 + (*p++ - '0');
+                        if (content_len > BODY_MAX - 1) return FALSE;  // мусор/атака
+                    }
                     break;
                 }
             }
