@@ -161,13 +161,13 @@ static void cfg_defaults(Config *c) {
     c->id_num = FALSE;
     c->end_line = FALSE;
     c->hybrid = FALSE;
-    c->checker = FALSE;          // по умолчанию сплошная заливка (как раньше)
+    c->checker = TRUE;           // по умолчанию шахматка (экономия термоголовки)
     c->checker_mm_x10 = 10;      // 1.0 мм клетка шахматки
     c->outline = TRUE;           // обводка по контуру включена
     c->outline_mm_x10 = 5;       // 0.5 мм тонкая линия
     c->expand = 500;
     c->running = TRUE;
-    c->qr_with_number = FALSE;   // по умолчанию печатаем как раньше
+    c->qr_with_number = TRUE;    // по умолчанию QR товара рядом с номером
     static const wchar_t *def[] = {
         L"43*25", L"30*20", L"40*30", L"50*70",
         L"58*40", L"60*40", L"75*120", L"100*150",
@@ -827,6 +827,27 @@ static void draw_main_text(HDC hdc, const wchar_t *text, const Sizes *s,
     }
 }
 
+// Простая шахматная заливка: гасим каждую вторую клетку сетки.
+// Раньше здесь заливались ВСЕ клетки прямоугольника — текст исчезал целиком
+// (checker:true + outline:false печатало пустую этикетку).
+// Паритет считаем по абсолютным координатам DC — так же, как в
+// apply_checker_with_outline (внутренние пиксели заливаются там же).
+static void checker_fill(HDC hdc, const TextLayout *tl, int cell) {
+    if (!tl || tl->w < 1 || tl->h < 1 || cell < 1) return;
+
+    int cx0 = tl->x / cell;
+    int cy0 = tl->y / cell;
+    int cx1 = (tl->x + tl->w - 1) / cell;
+    int cy1 = (tl->y + tl->h - 1) / cell;
+
+    for (int cy = cy0; cy <= cy1; cy++) {
+        for (int cx = cx0; cx <= cx1; cx++) {
+            if (((cx + cy) & 1) != 0) continue;   // оставляем чёрной
+            PatBlt(hdc, cx * cell, cy * cell, cell, cell, WHITENESS);
+        }
+    }
+}
+
 // Шахматная заливка + сплошная обводка по рельефу цифры.
 // Рисуем цифру в память, находим граничные пиксели (сосед с белым) —
 // они остаются чёрными (сплошной контур), а внутренние пиксели
@@ -962,11 +983,7 @@ static BOOL draw_label(HDC hdc, const Config *c, const LabelData *d) {
             int dpi_x = GetDeviceCaps(hdc, LOGPIXELSX);
             int cell = (int)((c->checker_mm_x10 / 10.0) / 25.4 * dpi_x + 0.5);
             if (cell < 1) cell = 1;
-            for (int y = tl.y; y < tl.y + tl.h; y += cell) {
-                for (int x = tl.x; x < tl.x + tl.w; x += cell) {
-                    PatBlt(hdc, x, y, cell, cell, WHITENESS);
-                }
-            }
+            checker_fill(hdc, &tl, cell);
         }
     }
     return TRUE;
@@ -1019,9 +1036,12 @@ static BOOL print_text(const wchar_t *text, const Config *c) {
     EndDoc(hdc);
     DeleteDC(hdc);
     if (ok) {
-        wchar_t m[320];
-        scpy(m, 320, L"Печать выполнена: ");
-        scat(m, 320, text);
+        wchar_t m[360];
+        scpy(m, 360, L"Печать выполнена: ");
+        scat(m, 360, text);
+        if (c->checker) {
+            scat(m, 360, c->outline ? L" [checker+outline]" : L" [checker]");
+        }
         log_line(m);
     } else {
         log_line(L"ОШИБКА печати: draw_label вернул FALSE");
@@ -1320,6 +1340,14 @@ static void handle_request(SOCKET s, Request *r) {
             if (!g_cfg.running) { send_text(s, 503, "stopped"); return; }
             if (!g_cfg.printer[0]) { send_text(s, 503, "no printer"); return; }
             if (!status_printer(g_cfg.printer)) { send_text(s, 503, "printer offline"); return; }
+
+            if (qr_text[0] && !g_cfg.qr_with_number) {
+                wchar_t m[320];
+                scpy(m, 320, L"QR не напечатан: qrWithNumber выключен (");
+                scat(m, 320, qr_text);
+                scat(m, 320, L")");
+                log_line(m);
+            }
 
             if (g_cfg.qr_with_number && qr_text[0]) {
                 if (print_text_with_qr(clean, qr_text, &g_cfg)) send_text(s, 200, "OK");
@@ -2721,16 +2749,53 @@ static void draw_number_qr_core(HDC hdc, const wchar_t *text,
     if (!d.is_underlined && len > 0 && d.main_text[len - 1] == L'.')
         d.main_text[len - 1] = 0;
 
+    // Шахматка заливает прямоугольник белым и работает по всему растру DC,
+    // поэтому при включённой шахматке текст рисуем в отдельный memory-DC
+    // шириной text_w, обрабатываем там и только потом переносим на этикетку.
+    // Иначе белая заливка затёрла бы часть QR.
+    HDC text_dc = hdc;
+    HBITMAP text_bmp = NULL;
+    HGDIOBJ text_old = NULL;
+
+    if (c->checker) {
+        HDC mem = CreateCompatibleDC(hdc);
+        HBITMAP bmp = mem ? CreateCompatibleBitmap(hdc, text_w, h) : NULL;
+        if (mem && bmp) {
+            text_old = SelectObject(mem, bmp);
+            PatBlt(mem, 0, 0, text_w, h, WHITENESS);
+            text_dc = mem;
+            text_bmp = bmp;
+        } else {
+            if (bmp) DeleteObject(bmp);
+            if (mem) DeleteDC(mem);
+        }
+    }
+
+    SetBkMode(text_dc, TRANSPARENT);
+
     int y_start = s.margin_y;
     if (d.show_header && d.header_text[0])
-        y_start = draw_header(hdc, d.header_text, &s, d.force_left_header);
+        y_start = draw_header(text_dc, d.header_text, &s, d.force_left_header);
 
     TextLayout tl;
-    draw_main_text(hdc, d.main_text, &s, y_start, d.is_underlined, d.is_bold, &tl);
+    draw_main_text(text_dc, d.main_text, &s, y_start, d.is_underlined, d.is_bold, &tl);
 
-    // Шахматка/обводка пропускаются осознанно: контур строится по всему
-    // растру, а здесь рядом QR — белая заливка затёрла бы часть кода.
-    (void)tl;
+    if (text_dc != hdc) {
+        if (tl.w > 0 && tl.h > 0) {
+            if (c->outline) {
+                // Контур по рельефу глифа + шахматка внутри.
+                apply_checker_with_outline(text_dc, d.main_text, &tl, &s, c);
+            } else {
+                int cell = (int)((c->checker_mm_x10 / 10.0) / 25.4 * dpi_x + 0.5);
+                if (cell < 1) cell = 1;
+                checker_fill(text_dc, &tl, cell);
+            }
+        }
+        BitBlt(hdc, 0, 0, text_w, h, text_dc, 0, 0, SRCCOPY);
+        SelectObject(text_dc, text_old);
+        DeleteObject(text_bmp);
+        DeleteDC(text_dc);
+    }
 }
 
 // Печать этикетки «номер + QR товара».
@@ -2787,11 +2852,14 @@ static BOOL print_text_with_qr(const wchar_t *text, const wchar_t *qr_text,
     EndDoc(hdc);
     DeleteDC(hdc);
 
-    wchar_t m[420];
-    scpy(m, 420, L"Печать с QR выполнена: ");
-    scat(m, 420, text);
-    scat(m, 420, L" / ");
-    scat(m, 420, qr_text);
+    wchar_t m[460];
+    scpy(m, 460, L"Печать с QR выполнена: ");
+    scat(m, 460, text);
+    scat(m, 460, L" / ");
+    scat(m, 460, qr_text);
+    if (c->checker) {
+        scat(m, 460, c->outline ? L" [checker+outline]" : L" [checker]");
+    }
     log_line(m);
     return TRUE;
 }
@@ -2883,11 +2951,7 @@ static BOOL demo_render_bmp(const wchar_t *text, const wchar_t *path, const Conf
         } else {
             int cell = (int)((c->checker_mm_x10 / 10.0) / 25.4 * 203 + 0.5);
             if (cell < 1) cell = 1;
-            for (int y = tl.y; y < tl.y + tl.h; y += cell) {
-                for (int x = tl.x; x < tl.x + tl.w; x += cell) {
-                    PatBlt(hdc, x, y, cell, cell, WHITENESS);
-                }
-            }
+            checker_fill(hdc, &tl, cell);
         }
     }
 

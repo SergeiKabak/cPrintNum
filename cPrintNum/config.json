@@ -20,5 +20,5 @@
   "checkerMm": 10,
   "outline": true,
   "outlineMm": 5,
-  "qrWithNumber": false
+  "qrWithNumber": true
 }

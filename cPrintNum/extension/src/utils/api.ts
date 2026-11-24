@@ -43,6 +43,14 @@ export type PrintSettings = {
   running: boolean;
   /** Печатать QR товара рядом с номером (без точки). */
   qrWithNumber: boolean;
+  /** Шахматная заливка цифры (экономия термоголовки). */
+  checker: boolean;
+  /** Размер клетки шахматки в 0.1 мм (10 = 1.0 мм). */
+  checkerMm: number;
+  /** Сплошная обводка по контуру глифа. */
+  outline: boolean;
+  /** Толщина обводки в 0.1 мм (5 = 0.5 мм). */
+  outlineMm: number;
   papers: string[];
   /**
    * Возможности backend'а. Например, `shelf-dash` — поддержка полок `-88`.

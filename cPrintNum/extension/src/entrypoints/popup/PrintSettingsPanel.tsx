@@ -249,6 +249,39 @@ export default function PrintSettingsPanel() {
             </span>
           )}
 
+          {/* Шахматка + обводка: раньше задавались только в config.json. */}
+          <div className="flex flex-col gap-2 pt-2 mt-1 border-t border-border/50">
+            <Checkbox
+              label="Шахматка (экономия термоголовки)"
+              checked={!!settings.checker}
+              onChange={(v) => patch({ checker: v })}
+            />
+            {settings.checker && (
+              <MmInput
+                label="Клетка, мм"
+                valueX10={settings.checkerMm}
+                fallbackX10={10}
+                onChange={(v) => patch({ checkerMm: v })}
+              />
+            )}
+            <Checkbox
+              label="Обводка по контуру"
+              checked={!!settings.outline}
+              onChange={(v) => patch({ outline: v })}
+            />
+            {settings.outline && (
+              <MmInput
+                label="Толщина, мм"
+                valueX10={settings.outlineMm}
+                fallbackX10={5}
+                onChange={(v) => patch({ outlineMm: v })}
+              />
+            )}
+            <span className="text-[10px] text-muted-foreground leading-tight">
+              Работает и вместе с QR: шахматка заливает только цифры.
+            </span>
+          </div>
+
           {/* Порог показываем только когда он влияет на печать. */}
           {settings.hybrid && (
             <label className="flex items-center gap-2 pl-6">
@@ -332,6 +365,40 @@ export default function PrintSettingsPanel() {
         </div>
       </div>
     </div>
+  );
+}
+
+/** Поле «размер в мм» для настроек, которые хранятся в 0.1 мм (10 = 1.0). */
+function MmInput({
+  label,
+  valueX10,
+  fallbackX10,
+  onChange,
+}: {
+  label: string;
+  valueX10: number | undefined;
+  fallbackX10: number;
+  onChange: (valueX10: number) => void;
+}) {
+  const mm = (valueX10 ?? fallbackX10) / 10;
+
+  return (
+    <label className="flex items-center gap-2 pl-6">
+      <span className="text-[11px] text-muted-foreground">{label}</span>
+      <input
+        type="number"
+        min={0.1}
+        step={0.1}
+        value={mm}
+        onChange={(e) => {
+          const parsed = parseFloat((e.target as HTMLInputElement).value);
+          if (Number.isNaN(parsed)) return;
+          const x10 = Math.max(1, Math.round(parsed * 10));
+          onChange(x10);
+        }}
+        className="h-7 w-20 rounded-md border border-border bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-ring"
+      />
+    </label>
   );
 }
 
