@@ -842,8 +842,9 @@ static int draw_header(HDC hdc, const wchar_t *text, const Sizes *s, BOOL force_
 
 // Параметры размещения основного текста (нужны для обводки и шахматки).
 typedef struct {
-    int x, y;          // левый верхний угол текста
-    int w, h;          // размер текста в пикселях
+    int x, y;          // левый верхний угол ячейки текста (для TextOut)
+    int ink_y;         // верх самих цифр внутри ячейки
+    int w, h;          // размер текста в пикселях (h — высота цифр)
     int size;          // размер шрифта
     int weight;        // FW_NORMAL / FW_BOLD
 } TextLayout;
@@ -853,11 +854,81 @@ typedef struct {
 // «+1 px» (50+ GDI-вызовов) делаем одно измерение при реперном размере 100 px
 // и линейную экстраполяцию, затем один контрольный проход с коррекцией вниз
 // (метрики шрифта не идеально линейны).
+// Измеряет РЕАЛЬНЫЕ чернила текста: рендерит его в scratch memory-DC и
+// сканирует пиксели. Нужно, чтобы подгонять кегль по высоте цифр, а не по
+// ascent+descent (иначе внизу остаётся пустой descent), и чтобы точно
+// отцентрировать — метрики шрифта различаются в Windows и Wine.
+// top/left — смещение чернил от точки TextOut.
+static BOOL measure_ink(HFONT font, const wchar_t *text,
+                        int *out_w, int *out_h, int *top, int *left) {
+    const int W = 768, H = 384, PAD = 64;
+
+    HDC dc = CreateCompatibleDC(NULL);
+    if (!dc) return FALSE;
+    HBITMAP bmp = CreateCompatibleBitmap(dc, W, H);
+    if (!bmp) { DeleteDC(dc); return FALSE; }
+    HGDIOBJ old_bmp = SelectObject(dc, bmp);
+    HGDIOBJ old_font = SelectObject(dc, font);
+    PatBlt(dc, 0, 0, W, H, WHITENESS);
+    SetBkMode(dc, TRANSPARENT);
+    TextOutW(dc, PAD, PAD, text, slen(text));
+
+    BITMAPINFO bi;
+    int z = 0;
+    while (z < (int)sizeof(bi)) ((BYTE *)&bi)[z++] = 0;
+    bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bi.bmiHeader.biWidth = W;
+    bi.bmiHeader.biHeight = -H;
+    bi.bmiHeader.biPlanes = 1;
+    bi.bmiHeader.biBitCount = 24;
+    bi.bmiHeader.biCompression = BI_RGB;
+    int stride = (W * 3 + 3) & ~3;
+
+    BOOL ok = FALSE;
+    BYTE *bits = (BYTE *)HeapAlloc(GetProcessHeap(), 0, (size_t)stride * H);
+    if (bits && GetDIBits(dc, bmp, 0, H, bits, &bi, DIB_RGB_COLORS)) {
+        int minx = W, maxx = -1, miny = H, maxy = -1;
+        for (int y = 0; y < H; y++) {
+            BYTE *row = bits + (size_t)y * stride;
+            for (int x = 0; x < W; x++) {
+                BYTE *px = row + (size_t)x * 3;
+                if ((30 * px[0] + 59 * px[1] + 11 * px[2]) / 100 < 128) {
+                    if (x < minx) minx = x;
+                    if (x > maxx) maxx = x;
+                    if (y < miny) miny = y;
+                    if (y > maxy) maxy = y;
+                }
+            }
+        }
+        if (maxx >= 0) {
+            *out_w = maxx - minx + 1;
+            *out_h = maxy - miny + 1;
+            *top = miny - PAD;
+            *left = minx - PAD;
+            ok = TRUE;
+        }
+    }
+
+    if (bits) HeapFree(GetProcessHeap(), 0, bits);
+    SelectObject(dc, old_font);
+    SelectObject(dc, old_bmp);
+    DeleteObject(bmp);
+    DeleteDC(dc);
+    return ok;
+}
+
 static void draw_main_text(HDC hdc, const wchar_t *text, const Sizes *s,
-                           int y_start, BOOL underline, BOOL bold, TextLayout *out) {
+                           int y_start, BOOL underline, BOOL bold,
+                           int max_ink_h, TextLayout *out) {
     int avail_h = s->height_px - y_start - s->margin_y;
     int weight = bold ? FW_BOLD : FW_NORMAL;
 
+    // Ограничение высоты цифр (0 — без ограничения): например, чтобы
+    // однозначный номер не растягивался на всю этикетку.
+    int fit_h = (max_ink_h > 0 && max_ink_h < avail_h) ? max_ink_h : avail_h;
+
+    // Стартовый кегль — по ширине и по ограничению высоты; дальше уточняем
+    // по фактическим чернилам (measure_ink), а не по ascent+descent.
     HFONT f = make_font(100, weight, underline);
     HGDIOBJ old = SelectObject(hdc, f);
     int w100, h100;
@@ -866,32 +937,56 @@ static void draw_main_text(HDC hdc, const wchar_t *text, const Sizes *s,
     DeleteObject(f);
 
     int size = 10;
-    if (w100 > 0 && h100 > 0) {
-        int by_w = (int)((long long)100 * s->max_allowed_w / w100);
-        int by_h = (int)((long long)100 * avail_h / h100);
-        size = by_w < by_h ? by_w : by_h;
+    if (w100 > 0) {
+        size = (int)((long long)100 * s->max_allowed_w / w100);
+        int by_h = (int)((long long)fit_h * 100 / 65);   // старт «с запасом»
+        if (by_h < size) size = by_h;
     }
+    if (size > 400) size = 400;
     if (size < 6) size = 6;
 
-    if (out) { out->x = 0; out->y = y_start; out->w = 0; out->h = 0; out->size = size; out->weight = weight; }
+    if (out) {
+        out->x = 0; out->y = y_start; out->ink_y = y_start;
+        out->w = 0; out->h = 0; out->size = size; out->weight = weight;
+    }
 
-    for (;;) {
+    // Подгоняем кегль по фактическим чернилам: пара итераций (первая —
+    // пропорциональный пересчёт, дальше уточнение).
+    for (int guard = 0; guard < 6; guard++) {
         HFONT f2 = make_font(size, weight, underline);
-        old = SelectObject(hdc, f2);
-        int w, h;
-        text_extent(hdc, text, &w, &h);
-        if (w <= s->max_allowed_w && h <= avail_h) {
-            int x = (s->width_px - w) / 2;
-            int y = y_start + (avail_h - h) / 2;
-            TextOutW(hdc, x, y, text, slen(text));
-            if (out) { out->x = x; out->y = y; out->w = w; out->h = h; out->size = size; out->weight = weight; }
-            SelectObject(hdc, old);
+        int tw = 0, th = 0, top = 0, left = 0;
+
+        if (!measure_ink(f2, text, &tw, &th, &top, &left)) {
             DeleteObject(f2);
             return;
         }
-        SelectObject(hdc, old);
+
+        if (tw <= s->max_allowed_w && th <= fit_h) {
+            int ink_x = (s->width_px - tw) / 2;
+            int ink_y = y_start + (avail_h - th) / 2;   // центр — полной области
+            int x = ink_x - left;
+            int y = ink_y - top;
+            HGDIOBJ oldf = SelectObject(hdc, f2);
+            TextOutW(hdc, x, y, text, slen(text));
+            SelectObject(hdc, oldf);
+            DeleteObject(f2);
+            if (out) {
+                out->x = x; out->y = y; out->ink_y = ink_y;
+                out->w = tw; out->h = th; out->size = size; out->weight = weight;
+            }
+            return;
+        }
+
+        int next = size;
+        if (th > fit_h) next = (int)((long long)size * fit_h / th);
+        if (tw > s->max_allowed_w) {
+            int by_w = (int)((long long)size * s->max_allowed_w / tw);
+            if (by_w < next) next = by_w;
+        }
+        if (next >= size) next = size - 1;
         DeleteObject(f2);
-        if (--size < 6) return;
+        if (next < 6) return;
+        size = next;
     }
 }
 
@@ -903,10 +998,11 @@ static void draw_main_text(HDC hdc, const wchar_t *text, const Sizes *s,
 static void checker_fill(HDC hdc, const TextLayout *tl, int cell) {
     if (!tl || tl->w < 1 || tl->h < 1 || cell < 1) return;
 
+    int top = tl->ink_y != 0 ? tl->ink_y : tl->y;
     int cx0 = tl->x / cell;
-    int cy0 = tl->y / cell;
+    int cy0 = top / cell;
     int cx1 = (tl->x + tl->w - 1) / cell;
-    int cy1 = (tl->y + tl->h - 1) / cell;
+    int cy1 = (top + tl->h - 1) / cell;
 
     for (int cy = cy0; cy <= cy1; cy++) {
         for (int cx = cx0; cx <= cx1; cx++) {
@@ -1089,7 +1185,7 @@ static BOOL draw_label(HDC hdc, const Config *c, const LabelData *d) {
         y_start = draw_header(hdc, d->header_text, &s, d->force_left_header);
 
     TextLayout tl;
-    draw_main_text(hdc, d->main_text, &s, y_start, d->is_underlined, d->is_bold, &tl);
+    draw_main_text(hdc, d->main_text, &s, y_start, d->is_underlined, d->is_bold, 0, &tl);
 
     if (c->checker && tl.w > 0 && tl.h > 0) {
         if (c->outline) {
@@ -1122,7 +1218,7 @@ static void render_text_label(HDC hdc, int w, int h, const wchar_t *text,
         y_start = draw_header(hdc, d.header_text, &s, d.force_left_header);
 
     TextLayout tl;
-    draw_main_text(hdc, d.main_text, &s, y_start, d.is_underlined, d.is_bold, &tl);
+    draw_main_text(hdc, d.main_text, &s, y_start, d.is_underlined, d.is_bold, 0, &tl);
 
     if (c->checker && tl.w > 0 && tl.h > 0) {
         if (c->outline) {
@@ -2978,7 +3074,11 @@ static void draw_number_qr_core(HDC hdc, const wchar_t *text,
         y_start = draw_header(text_dc, d.header_text, &s, d.force_left_header);
 
     TextLayout tl;
-    draw_main_text(text_dc, d.main_text, &s, y_start, d.is_underlined, d.is_bold, &tl);
+    // Однозначный номер не растягиваем на всю высоту: 63% = 126 px при
+    // этикетке 200 px, визуально как 2–3 цифры.
+    int max_ink = h * 63 / 100;
+    draw_main_text(text_dc, d.main_text, &s, y_start, d.is_underlined, d.is_bold,
+                   max_ink, &tl);
 
     if (text_dc != hdc) {
         if (tl.w > 0 && tl.h > 0) {
