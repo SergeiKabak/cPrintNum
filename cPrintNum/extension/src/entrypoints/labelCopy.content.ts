@@ -17,9 +17,18 @@
  * </div>
  * ```
  *
- * Поэтому буфер обмена не нужен: при клике читаем `textarea.value`
- * и кладём значение в `chrome.storage.local`. Генератор штрихкодов
- * подставляет его при следующем открытии окна.
+ * Поэтому буфер обмена не нужен: при клике читаем значение из поля
+ * (свойство `.value` **и** атрибут `value` — см. `readCopiedValue`) и кладём
+ * его в `chrome.storage.local`. Генератор штрихкодов подставляет его при
+ * следующем открытии окна.
+ *
+ * # Подводный камень: `value` у `<textarea>`
+ *
+ * Ozon сериализует значение как атрибут: `<textarea value="ii…">`.
+ * Для `<textarea>` атрибут `value` **не отражается** в свойство —
+ * `el.value === ""`, а `el.getAttribute("value") === "ii…"`.
+ * Именно из-за этого подхват ШК однажды «отвалился»: читать только
+ * `.value` нельзя.
  *
  * # Почему не слушаем событие copy и не парсим тост
  *
@@ -41,6 +50,9 @@ declare const chrome: any;
 
 import { LABEL_BARCODE_RE, SELECTORS } from "@/utils/constants";
 
+/** Тот же формат, но без якорей — для поиска внутри текста блока. */
+const LABEL_BARCODE_IN_TEXT_RE = /ii\d{9,14}/;
+
 /** Ключ в chrome.storage.local, откуда генератор читает последний ШК. */
 export const LAST_LABEL_KEY = "lastCopiedLabel";
 
@@ -55,27 +67,47 @@ export default defineContentScript({
     /**
      * Достаёт скопированное значение из блока кнопки.
      *
+     * # Почему не только `textarea.value`
+     *
+     * Ozon кладёт штрихкод в **атрибут** `value`, а не в свойство:
+     *
+     * ```html
+     * <textarea value="ii8923223139"></textarea>
+     * ```
+     *
+     * Для `<textarea>` content-атрибут `value` не отражается: `el.value === ""`,
+     * а `el.getAttribute("value") === "ii8923223139"`. Поэтому читаем оба,
+     * а если разметка поменяется — ищем ШК в тексте блока.
+     *
      * @param target Элемент, по которому кликнули.
-     * @returns Значение `textarea` либо `null`, если клик был не по кнопке.
+     * @returns Штрихкод либо `null`, если клик не по блоку копирования.
      */
     function readCopiedValue(target: EventTarget | null): string | null {
       const el = target as HTMLElement | null;
       if (!el || typeof el.closest !== "function") return null;
 
-      // Клик мог прийтись по иконке внутри кнопки — поднимаемся к кнопке,
-      // затем к обёртке, в которой лежит textarea.
-      const button = el.closest("button");
-      if (!button) return null;
-
-      const box = button.closest(SELECTORS.copyButton);
+      // Клик может прийтись по иконке, ссылке или самой кнопке —
+      // поднимаемся сразу к обёртке, в которой лежит поле значения.
+      const box = el.closest(SELECTORS.copyButton);
       if (!box) return null;
 
-      const area = box.querySelector(SELECTORS.copyValue) as
+      const field = box.querySelector(SELECTORS.copyValue) as
         | HTMLTextAreaElement
+        | HTMLInputElement
         | null;
 
-      const value = area?.value?.trim();
-      return value ? value : null;
+      const raw =
+        field?.value?.trim() ||
+        field?.getAttribute("value")?.trim() ||
+        field?.textContent?.trim() ||
+        "";
+
+      if (raw && LABEL_BARCODE_RE.test(raw)) return raw;
+
+      // Фолбэк: текст блока (видимое значение в `._target_`).
+      // Штрихкод от номера отправления/названия товара отличает формат `ii…`.
+      const match = LABEL_BARCODE_IN_TEXT_RE.exec(box.textContent ?? "");
+      return match ? match[0] : null;
     }
 
     // Фаза перехвата (capture): значение в textarea уже есть, а обработчики

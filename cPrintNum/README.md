@@ -693,12 +693,23 @@ const API_BASE = `http://127.0.0.1:${PORT}`;
 ### 4.10. `labelCopy.content.ts`
 
 - Слушает `click` в фазе capture на `document`.
-- Поднимается от цели клика к `button`, затем к `[class*="_copyButton_"]`,
-  читает `textarea[class*="_textarea_"]`.
+- Поднимается от цели клика сразу к обёртке `[class*="_copyButton_"]`
+  (`button` в цепочке не обязателен) и читает значение из
+  `textarea[class*="_textarea_"]`.
+- **Критично:** Ozon кладёт ШК в атрибут, а не в свойство:
+  `<textarea value="ii8923223139">`. Для `<textarea>` content-атрибут `value`
+  **не отражается** в `el.value` (там `""`), поэтому читается
+  `el.value || el.getAttribute("value") || el.textContent`. Если textarea
+  в разметке не окажется — ШК ищется регуляркой в тексте блока
+  (`._target_` с видимым значением).
 - Буфер обмена **не используется** (нет `clipboardRead`), текст уведомлений
   не парсится.
-- Фильтр: только `^ii\d{9,14}$` → `chrome.storage.local["lastCopiedLabel"]`.
+- Фильтр: только `^ii\d{9,14}$` (номер отправления `0114344617-0034-1` и
+  название товара отсекаются) → `chrome.storage.local["lastCopiedLabel"]`.
 - Селекторы частичные (`*=`) — имена классов Ozon содержат хэш сборки.
+- Проверено на реплике разметки Ozon (все 6 кейсов: атрибут `value`, текст
+  в textarea, отсутствие textarea, номер отправления, название товара,
+  клик мимо блока).
 
 ### 4.11. Popup
 
@@ -890,6 +901,7 @@ popup-панели (`Help`, `qrCommands`, `autoscript`, `SettingSection`, `hide/
 | полки не печатают, подсказка «Обновите PrintNum» | нет `features:["shelf-dash"]` | `GET /config` | обновить exe |
 | автопечать молчит | `autoPrint.mode = off`, не та страница, выключены `shelf`/`packing`, дедуп | `chrome.storage.local.autoPrint`, `lastAutoPrintEvent` | выбрать режим `xhr`, открыть нужный раздел |
 | после обновления расширения ничего не ловится | старые content scripts/pageHook в открытой вкладке | консоль: `Extension context invalidated` | перезагрузить вкладку Ozon (F5) |
+| ШК не подставляется в поле генератора | значение лежит в атрибуте `value`, а код читал только `.value`; либо старый content script | консоль вкладки: `[PrintNum:label] подхвачен штрихкод: ii…` | обновить сборку, перезагрузить расширение и вкладку; проверить `chrome.storage.local.lastCopiedLabel` |
 | этикетка пустая/смещена | размер бумаги в драйвере ≠ `paper` | настройки принтера Windows | выставить тот же размер |
 | popup показывает «не запущено», а `curl` работает | порт расширения ≠ порт сервера | `extension/.env`, `DEFAULT_PORT` | синхронизировать и пересобрать расширение |
 | `POST /config` «ничего не меняет» | ключ/тип не поддержан mini-JSON | `GET /config` после патча | см. §3.5 (только известные ключи, числа без минуса) |
