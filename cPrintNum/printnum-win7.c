@@ -587,6 +587,28 @@ static BOOL status_printer(const wchar_t *name) {
     return TRUE;
 }
 
+// Кэш статуса принтера на 1 секунду: OpenPrinter+GetPrinter дорогие, а
+// GET /status-printer может опрашиваться часто. Перед печатью статус
+// по-прежнему проверяется напрямую.
+static BOOL printer_online_cached(const wchar_t *name) {
+    static wchar_t cached_name[256];
+    static BOOL    cached_ok = FALSE;
+    static DWORD   cached_at = 0;
+    static BOOL    has_cache = FALSE;
+
+    DWORD now = GetTickCount();
+    if (has_cache && seq(cached_name, name) && (now - cached_at) < 1000)
+        return cached_ok;
+
+    BOOL ok = status_printer(name);
+
+    scpy(cached_name, 256, name);
+    cached_ok = ok;
+    cached_at = now;
+    has_cache = TRUE;
+    return ok;
+}
+
 // ============================================================
 // Автозагрузка (аналог service.rs)
 // ============================================================
@@ -810,17 +832,114 @@ typedef struct {
     int width_px, height_px, margin_x, margin_y, max_allowed_w;
 } Sizes;
 
-static BOOL calc_sizes(HDC hdc, const wchar_t *paper, Sizes *s) {
+static BOOL calc_sizes_dpi(int dx, int dy, const wchar_t *paper, Sizes *s) {
     int w_mm, h_mm;
     if (!parse_paper(paper, &w_mm, &h_mm)) return FALSE;
-    int dx = GetDeviceCaps(hdc, LOGPIXELSX);
-    int dy = GetDeviceCaps(hdc, LOGPIXELSY);
+    if (dx < 1 || dy < 1) return FALSE;
     s->width_px  = (int)((w_mm / 25.4) * dx);
     s->height_px = (int)((h_mm / 25.4) * dy);
     s->margin_x  = (int)(s->width_px * 0.05);
     s->margin_y  = (int)(s->height_px * 0.05);
     s->max_allowed_w = s->width_px - s->margin_x * 2;
     return TRUE;
+}
+
+static BOOL calc_sizes(HDC hdc, const wchar_t *paper, Sizes *s) {
+    return calc_sizes_dpi(GetDeviceCaps(hdc, LOGPIXELSX),
+                          GetDeviceCaps(hdc, LOGPIXELSY), paper, s);
+}
+
+// ============================================================
+// Offscreen-поверхность этикетки: один memory-DC/bitmap/буфер на все
+// пути рендера (GDI-печать, ESC/POS, демо). Раньше каждый путь создавал
+// свои DC+bitmap, а часть путей — ещё и по два.
+// ============================================================
+typedef struct {
+    HDC     dc;
+    HBITMAP bmp;
+    HGDIOBJ old_bmp;
+    BYTE   *bits;      // 24-bit BGR, top-down
+    int     w;
+    int     h;
+    int     stride;
+    BOOL    bits_ok;
+} LabelSurface;
+
+static LabelSurface g_surf;
+
+static BOOL surf_ensure(int w, int h) {
+    if (g_surf.dc && w <= g_surf.w && h <= g_surf.h) return TRUE;
+
+    int nw = w > g_surf.w ? w : g_surf.w;
+    int nh = h > g_surf.h ? h : g_surf.h;
+    if (nw < 16) nw = 16;
+    if (nh < 16) nh = 16;
+    int stride = (nw * 3 + 3) & ~3;
+
+    BYTE *bits = (BYTE *)HeapAlloc(GetProcessHeap(), 0, (size_t)stride * nh);
+    if (!bits) return FALSE;
+
+    if (g_surf.dc) {
+        SelectObject(g_surf.dc, g_surf.old_bmp);
+        if (g_surf.bmp) DeleteObject(g_surf.bmp);
+        DeleteDC(g_surf.dc);
+        if (g_surf.bits) HeapFree(GetProcessHeap(), 0, g_surf.bits);
+        g_surf.dc = NULL; g_surf.bmp = NULL; g_surf.bits = NULL;
+    }
+
+    HDC dc = CreateCompatibleDC(NULL);
+    if (!dc) { HeapFree(GetProcessHeap(), 0, bits); return FALSE; }
+    HBITMAP bmp = CreateCompatibleBitmap(dc, nw, nh);
+    if (!bmp) {
+        DeleteDC(dc);
+        HeapFree(GetProcessHeap(), 0, bits);
+        return FALSE;
+    }
+
+    g_surf.dc = dc;
+    g_surf.bmp = bmp;
+    g_surf.old_bmp = SelectObject(dc, bmp);
+    g_surf.bits = bits;
+    g_surf.w = nw;
+    g_surf.h = nh;
+    g_surf.stride = stride;
+    return TRUE;
+}
+
+// Готовит поверхность w×h (белый фон) и возвращает DC.
+static HDC surf_begin(int w, int h) {
+    if (w < 8 || h < 8) return NULL;
+    if (!surf_ensure(w, h)) return NULL;
+    PatBlt(g_surf.dc, 0, 0, w, h, WHITENESS);
+    SetBkMode(g_surf.dc, TRANSPARENT);
+    g_surf.bits_ok = FALSE;
+    return g_surf.dc;
+}
+
+// Читает пиксели поверхности (один GetDIBits на этикетку).
+static BOOL surf_read(int w, int h) {
+    if (!g_surf.dc) return FALSE;
+    if (w > g_surf.w) w = g_surf.w;
+    if (h > g_surf.h) h = g_surf.h;
+
+    BITMAPINFO bi;
+    int z = 0;
+    while (z < (int)sizeof(bi)) ((BYTE *)&bi)[z++] = 0;
+    bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bi.bmiHeader.biWidth = w;
+    bi.bmiHeader.biHeight = -h;
+    bi.bmiHeader.biPlanes = 1;
+    bi.bmiHeader.biBitCount = 24;
+    bi.bmiHeader.biCompression = BI_RGB;
+
+    return GetDIBits(g_surf.dc, g_surf.bmp, 0, h, g_surf.bits, &bi,
+                     DIB_RGB_COLORS) != 0;
+}
+
+// Переносит готовую этикетку на целевой DC (экран/принтер) одним BitBlt.
+static void surf_blit(HDC dst, int w, int h) {
+    if (!g_surf.dc) return;
+    BitBlt(dst, 0, 0, w, h, g_surf.dc, 0, 0, SRCCOPY);
 }
 
 // Колонтитул. Возвращает Y после него.
@@ -843,6 +962,7 @@ static int draw_header(HDC hdc, const wchar_t *text, const Sizes *s, BOOL force_
 // Параметры размещения основного текста (нужны для обводки и шахматки).
 typedef struct {
     int x, y;          // левый верхний угол ячейки текста (для TextOut)
+    int ink_x;         // левый край самих цифр
     int ink_y;         // верх самих цифр внутри ячейки
     int w, h;          // размер текста в пикселях (h — высота цифр)
     int size;          // размер шрифта
@@ -854,22 +974,91 @@ typedef struct {
 // «+1 px» (50+ GDI-вызовов) делаем одно измерение при реперном размере 100 px
 // и линейную экстраполяцию, затем один контрольный проход с коррекцией вниз
 // (метрики шрифта не идеально линейны).
-// Измеряет РЕАЛЬНЫЕ чернила текста: рендерит его в scratch memory-DC и
-// сканирует пиксели. Нужно, чтобы подгонять кегль по высоте цифр, а не по
-// ascent+descent (иначе внизу остаётся пустой descent), и чтобы точно
-// отцентрировать — метрики шрифта различаются в Windows и Wine.
-// top/left — смещение чернил от точки TextOut.
-static BOOL measure_ink(HFONT font, const wchar_t *text,
-                        int *out_w, int *out_h, int *top, int *left) {
-    const int W = 768, H = 384, PAD = 64;
+// Scratch-контекст для measure_ink(): создаётся один раз и переиспользуется,
+// чтобы не аллоцировать DC/bitmap/пиксельный буфер на каждый подбор кегля.
+typedef struct {
+    HDC     dc;
+    HBITMAP bmp;
+    HGDIOBJ old_bmp;
+    BYTE   *bits;
+    int     w;
+    int     h;
+    int     stride;
+} InkScratch;
+
+static InkScratch g_ink;
+
+static BOOL ink_scratch_ensure(int w, int h) {
+    if (g_ink.dc && w <= g_ink.w && h <= g_ink.h) return TRUE;
+
+    int nw = w > g_ink.w ? w : g_ink.w;
+    int nh = h > g_ink.h ? h : g_ink.h;
+    if (nw < 16) nw = 16;
+    if (nh < 16) nh = 16;
+    int stride = (nw * 3 + 3) & ~3;
+
+    BYTE *bits = (BYTE *)HeapAlloc(GetProcessHeap(), 0, (size_t)stride * nh);
+    if (!bits) return FALSE;
+
+    if (g_ink.dc) {
+        SelectObject(g_ink.dc, g_ink.old_bmp);
+        if (g_ink.bmp) DeleteObject(g_ink.bmp);
+        DeleteDC(g_ink.dc);
+        if (g_ink.bits) HeapFree(GetProcessHeap(), 0, g_ink.bits);
+        g_ink.dc = NULL; g_ink.bmp = NULL; g_ink.bits = NULL;
+    }
 
     HDC dc = CreateCompatibleDC(NULL);
-    if (!dc) return FALSE;
-    HBITMAP bmp = CreateCompatibleBitmap(dc, W, H);
-    if (!bmp) { DeleteDC(dc); return FALSE; }
-    HGDIOBJ old_bmp = SelectObject(dc, bmp);
+    if (!dc) { HeapFree(GetProcessHeap(), 0, bits); return FALSE; }
+
+    HBITMAP bmp = CreateCompatibleBitmap(dc, nw, nh);
+    if (!bmp) {
+        DeleteDC(dc);
+        HeapFree(GetProcessHeap(), 0, bits);
+        return FALSE;
+    }
+
+    g_ink.dc = dc;
+    g_ink.bmp = bmp;
+    g_ink.old_bmp = SelectObject(dc, bmp);
+    g_ink.bits = bits;
+    g_ink.w = nw;
+    g_ink.h = nh;
+    g_ink.stride = stride;
+    return TRUE;
+}
+
+// Измеряет РЕАЛЬНЫЕ чернила текста: рендерит его в scratch memory-DC и
+// сканирует пиксели. Нужно, чтобы подгонять кегль по высоте цифр, а не по
+// ascent+descent, и чтобы точно отцентрировать — метрики шрифта различаются
+// в Windows и Wine. top/left — смещение чернил от точки TextOut.
+static BOOL measure_ink(HFONT font, const wchar_t *text,
+                        int *out_w, int *out_h, int *top, int *left) {
+    const int PAD = 32;
+
+    // Габариты ячейки шрифта — на scratch-DC без bitmap: подгоняем scratch
+    // ровно под текст вместо фиксированных 768×384.
+    HDC ref = g_ink.dc ? g_ink.dc : CreateCompatibleDC(NULL);
+    if (!ref) return FALSE;
+
+    HGDIOBJ old_ref = SelectObject(ref, font);
+    SIZE sz;
+    BOOL got_extent = GetTextExtentPoint32W(ref, text, slen(text), &sz) != 0;
+    SelectObject(ref, old_ref);
+    if (!g_ink.dc) DeleteDC(ref);
+    if (!got_extent) return FALSE;
+
+    int w = sz.cx + PAD * 2;
+    int h = sz.cy + PAD * 2;
+    if (w > 4096 || h > 2048) return FALSE;
+
+    if (!ink_scratch_ensure(w, h)) return FALSE;
+
+    HDC dc = g_ink.dc;
+    int stride = g_ink.stride;
+
     HGDIOBJ old_font = SelectObject(dc, font);
-    PatBlt(dc, 0, 0, W, H, WHITENESS);
+    PatBlt(dc, 0, 0, w, h, WHITENESS);
     SetBkMode(dc, TRANSPARENT);
     TextOutW(dc, PAD, PAD, text, slen(text));
 
@@ -877,20 +1066,18 @@ static BOOL measure_ink(HFONT font, const wchar_t *text,
     int z = 0;
     while (z < (int)sizeof(bi)) ((BYTE *)&bi)[z++] = 0;
     bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    bi.bmiHeader.biWidth = W;
-    bi.bmiHeader.biHeight = -H;
+    bi.bmiHeader.biWidth = w;
+    bi.bmiHeader.biHeight = -h;
     bi.bmiHeader.biPlanes = 1;
     bi.bmiHeader.biBitCount = 24;
     bi.bmiHeader.biCompression = BI_RGB;
-    int stride = (W * 3 + 3) & ~3;
 
     BOOL ok = FALSE;
-    BYTE *bits = (BYTE *)HeapAlloc(GetProcessHeap(), 0, (size_t)stride * H);
-    if (bits && GetDIBits(dc, bmp, 0, H, bits, &bi, DIB_RGB_COLORS)) {
-        int minx = W, maxx = -1, miny = H, maxy = -1;
-        for (int y = 0; y < H; y++) {
-            BYTE *row = bits + (size_t)y * stride;
-            for (int x = 0; x < W; x++) {
+    if (GetDIBits(dc, g_ink.bmp, 0, h, g_ink.bits, &bi, DIB_RGB_COLORS)) {
+        int minx = w, maxx = -1, miny = h, maxy = -1;
+        for (int y = 0; y < h; y++) {
+            BYTE *row = g_ink.bits + (size_t)y * stride;
+            for (int x = 0; x < w; x++) {
                 BYTE *px = row + (size_t)x * 3;
                 if ((30 * px[0] + 59 * px[1] + 11 * px[2]) / 100 < 128) {
                     if (x < minx) minx = x;
@@ -909,13 +1096,10 @@ static BOOL measure_ink(HFONT font, const wchar_t *text,
         }
     }
 
-    if (bits) HeapFree(GetProcessHeap(), 0, bits);
     SelectObject(dc, old_font);
-    SelectObject(dc, old_bmp);
-    DeleteObject(bmp);
-    DeleteDC(dc);
     return ok;
 }
+
 
 static void draw_main_text(HDC hdc, const wchar_t *text, const Sizes *s,
                            int y_start, BOOL underline, BOOL bold,
@@ -946,7 +1130,8 @@ static void draw_main_text(HDC hdc, const wchar_t *text, const Sizes *s,
     if (size < 6) size = 6;
 
     if (out) {
-        out->x = 0; out->y = y_start; out->ink_y = y_start;
+        out->x = 0; out->y = y_start;
+        out->ink_x = 0; out->ink_y = y_start;
         out->w = 0; out->h = 0; out->size = size; out->weight = weight;
     }
 
@@ -971,7 +1156,8 @@ static void draw_main_text(HDC hdc, const wchar_t *text, const Sizes *s,
             SelectObject(hdc, oldf);
             DeleteObject(f2);
             if (out) {
-                out->x = x; out->y = y; out->ink_y = ink_y;
+                out->x = x; out->y = y;
+                out->ink_x = ink_x; out->ink_y = ink_y;
                 out->w = tw; out->h = th; out->size = size; out->weight = weight;
             }
             return;
@@ -999,9 +1185,10 @@ static void checker_fill(HDC hdc, const TextLayout *tl, int cell) {
     if (!tl || tl->w < 1 || tl->h < 1 || cell < 1) return;
 
     int top = tl->ink_y != 0 ? tl->ink_y : tl->y;
-    int cx0 = tl->x / cell;
+    int lx = tl->ink_x != 0 ? tl->ink_x : tl->x;
+    int cx0 = lx / cell;
     int cy0 = top / cell;
-    int cx1 = (tl->x + tl->w - 1) / cell;
+    int cx1 = (lx + tl->w - 1) / cell;
     int cy1 = (top + tl->h - 1) / cell;
 
     for (int cy = cy0; cy <= cy1; cy++) {
@@ -1010,13 +1197,6 @@ static void checker_fill(HDC hdc, const TextLayout *tl, int cell) {
             PatBlt(hdc, cx * cell, cy * cell, cell, cell, WHITENESS);
         }
     }
-}
-
-// DPI для пересчёта мм→px. У memory-DC (демо, ESC/POS) GetDeviceCaps даёт 96,
-// но этикетки печатаются на 203 dpi — иначе превью не совпадает с печатью.
-static int label_dpi(HDC hdc) {
-    int dpi = GetDeviceCaps(hdc, LOGPIXELSX);
-    return dpi < 150 ? 203 : dpi;
 }
 
 // Сколько цифр в крупной строке этикетки (дефисы, точки, пробелы не считаем).
@@ -1054,41 +1234,125 @@ static int outline_pen_px(const Config *c, int dpi) {
     return pen;
 }
 
+// Scratch для шахматки/обводки: DC, bitmap, 24-bit пиксели и карта чёрного
+// переиспользуются между этикетками (раньше на каждый рендер создавался
+// bitmap размером со всю этикетку и выделялось ~340 КБ буферов).
+typedef struct {
+    HDC     dc;
+    HBITMAP bmp;
+    HGDIOBJ old_bmp;
+    BYTE   *bits;
+    BYTE   *black;
+    int     w;
+    int     h;
+    int     stride;
+} CheckerScratch;
+
+static CheckerScratch g_chk;
+
+static BOOL chk_scratch_ensure(int w, int h) {
+    if (g_chk.dc && w <= g_chk.w && h <= g_chk.h) return TRUE;
+
+    int nw = w > g_chk.w ? w : g_chk.w;
+    int nh = h > g_chk.h ? h : g_chk.h;
+    if (nw < 16) nw = 16;
+    if (nh < 16) nh = 16;
+    int stride = (nw * 3 + 3) & ~3;
+
+    BYTE *bits = (BYTE *)HeapAlloc(GetProcessHeap(), 0, (size_t)stride * nh);
+    BYTE *black = (BYTE *)HeapAlloc(GetProcessHeap(), 0, (size_t)nw * nh);
+    if (!bits || !black) {
+        if (bits) HeapFree(GetProcessHeap(), 0, bits);
+        if (black) HeapFree(GetProcessHeap(), 0, black);
+        return FALSE;
+    }
+
+    if (g_chk.dc) {
+        SelectObject(g_chk.dc, g_chk.old_bmp);
+        if (g_chk.bmp) DeleteObject(g_chk.bmp);
+        DeleteDC(g_chk.dc);
+        if (g_chk.bits) HeapFree(GetProcessHeap(), 0, g_chk.bits);
+        if (g_chk.black) HeapFree(GetProcessHeap(), 0, g_chk.black);
+        g_chk.dc = NULL; g_chk.bmp = NULL;
+        g_chk.bits = NULL; g_chk.black = NULL;
+    }
+
+    HDC dc = CreateCompatibleDC(NULL);
+    if (!dc) {
+        HeapFree(GetProcessHeap(), 0, bits);
+        HeapFree(GetProcessHeap(), 0, black);
+        return FALSE;
+    }
+    HBITMAP bmp = CreateCompatibleBitmap(dc, nw, nh);
+    if (!bmp) {
+        DeleteDC(dc);
+        HeapFree(GetProcessHeap(), 0, bits);
+        HeapFree(GetProcessHeap(), 0, black);
+        return FALSE;
+    }
+
+    g_chk.dc = dc;
+    g_chk.bmp = bmp;
+    g_chk.old_bmp = SelectObject(dc, bmp);
+    g_chk.bits = bits;
+    g_chk.black = black;
+    g_chk.w = nw;
+    g_chk.h = nh;
+    g_chk.stride = stride;
+    return TRUE;
+}
+
 // Шахматная заливка + сплошная обводка по рельефу цифры.
 // Рисуем цифру в память, находим граничные пиксели (сосед с белым) —
 // они остаются чёрными (сплошной контур), а внутренние пиксели
-// превращаются в шахматку. Контур точно повторяет форму глифа, включая
-// низ цифры 4, и не выходит за границы.
+// превращаются в шахматку. Контур точно повторяет форму глифа.
+//
+// Обрабатываем только bbox текста + запас на контур, а не всю этикетку:
+// на 43×25 мм это ~130×150 вместо 344×200 пикселей.
 static void apply_checker_with_outline(HDC hdc, const wchar_t *text,
                                        const TextLayout *tl, const Sizes *s,
-                                       const Config *c) {
+                                       const Config *c, int dpi) {
     if (!tl || tl->w < 1 || tl->h < 1 || !s) return;
 
+    int pen = outline_pen_px(c, dpi);
+
     // outlineMm = 0 (явно выключено) → только шахматка, без memory-DC.
-    int dpi_check = label_dpi(hdc);
-    if (outline_pen_px(c, dpi_check) == 0) {
-        checker_fill(hdc, tl, checker_cell_px(c, dpi_check, count_digits(text)));
+    if (pen == 0) {
+        checker_fill(hdc, tl, checker_cell_px(c, dpi, count_digits(text)));
         return;
     }
 
-    // Работаем со ВСЕЙ этикеткой — иначе часть текста за пределами tl
-    // остаётся сплошной (второй '0' и точка в "100.").
-    int w = s->width_px, h = s->height_px;
-    HDC mem = CreateCompatibleDC(hdc);
-    if (!mem) return;
-    HBITMAP bmp = CreateCompatibleBitmap(mem, w, h);
-    if (!bmp) { DeleteDC(mem); return; }
-    HGDIOBJ old = SelectObject(mem, bmp);
-    PatBlt(mem, 0, 0, w, h, WHITENESS);
+    int cell = checker_cell_px(c, dpi, count_digits(text));
 
-    // Рисуем текст на те же координаты, что и на основном HDC.
+    // bbox — по чернилам (ink_x/ink_y), а не по ячейке шрифта: у крупного
+    // кегля верх ячейки далеко над цифрами и низ обрезался бы.
+    int ink_x = tl->ink_x != 0 ? tl->ink_x : tl->x;
+    int ink_y = tl->ink_y != 0 ? tl->ink_y : tl->y;
+    int x0 = ink_x - pen - 1, y0 = ink_y - pen - 1;
+    int x1 = ink_x + tl->w + pen + 1, y1 = ink_y + tl->h + pen + 1;
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 > s->width_px) x1 = s->width_px;
+    if (y1 > s->height_px) y1 = s->height_px;
+
+    int w = x1 - x0, h = y1 - y0;
+    if (w < 2 || h < 2) return;
+
+    if (!chk_scratch_ensure(w, h)) return;
+
+    HDC mem = g_chk.dc;
+    BYTE *bits = g_chk.bits;
+    BYTE *black = g_chk.black;
+    int stride = g_chk.stride;
+
+    PatBlt(mem, 0, 0, w, h, WHITENESS);
     HFONT f = make_font(tl->size, tl->weight, FALSE);
     HGDIOBJ oldf = SelectObject(mem, f);
-    TextOutW(mem, tl->x, tl->y, text, slen(text));
+    SetBkMode(mem, TRANSPARENT);
+    TextOutW(mem, tl->x - x0, tl->y - y0, text, slen(text));
     SelectObject(mem, oldf);
     DeleteObject(f);
 
-    // Читаем пиксели (24-bit, top-down).
     BITMAPINFO bi;
     int z = 0;
     while (z < (int)sizeof(bi)) ((BYTE *)&bi)[z++] = 0;
@@ -1098,101 +1362,61 @@ static void apply_checker_with_outline(HDC hdc, const wchar_t *text,
     bi.bmiHeader.biPlanes = 1;
     bi.bmiHeader.biBitCount = 24;
     bi.bmiHeader.biCompression = BI_RGB;
-    int stride = (w * 3 + 3) & ~3;
-    BYTE *bits = (BYTE *)HeapAlloc(GetProcessHeap(), 0, (size_t)stride * h);
-    if (!bits) { SelectObject(mem, old); DeleteObject(bmp); DeleteDC(mem); return; }
-    int got = GetDIBits(mem, bmp, 0, h, bits, &bi, DIB_RGB_COLORS);
 
-    if (got) {
-        int dpi = label_dpi(hdc);
-        int cell = checker_cell_px(c, dpi, count_digits(text));
-        int pen = outline_pen_px(c, dpi);
+    if (!GetDIBits(mem, g_chk.bmp, 0, h, bits, &bi, DIB_RGB_COLORS)) return;
 
-        // Карта чёрных пикселей.
-        BYTE *black = (BYTE *)HeapAlloc(GetProcessHeap(), 0, (size_t)w * h);
-        if (black) {
-            for (int y = 0; y < h; y++) {
-                for (int x = 0; x < w; x++) {
-                    BYTE *px = bits + (size_t)y * stride + (size_t)x * 3;
-                    black[y * w + x] = (*px < 128) ? 1 : 0;
+    // Карта чёрных пикселей; контур считаем на месте, без второй карты edge.
+    for (int y = 0; y < h; y++) {
+        const BYTE *row = bits + (size_t)y * stride;
+        BYTE *bl = black + (size_t)y * w;
+        for (int x = 0; x < w; x++)
+            bl[x] = (row[(size_t)x * 3] < 128) ? 1 : 0;
+    }
+
+    for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) {
+            if (!black[(size_t)y * w + x]) continue;
+
+            int is_edge = 0;
+            for (int dy = -pen; dy <= pen && !is_edge; dy++) {
+                int yy = y + dy;
+                if (yy < 0 || yy >= h) { is_edge = 1; break; }
+                const BYTE *nrow = black + (size_t)yy * w;
+                for (int dx = -pen; dx <= pen; dx++) {
+                    int xx = x + dx;
+                    if (xx < 0 || xx >= w || !nrow[xx]) { is_edge = 1; break; }
                 }
             }
 
-            // Граничные пиксели: чёрный, рядом (в радиусе pen) есть белый.
-            BYTE *edge = (BYTE *)HeapAlloc(GetProcessHeap(), 0, (size_t)w * h);
-            if (edge) {
-                for (int y = 0; y < h; y++) {
-                    for (int x = 0; x < w; x++) {
-                        size_t idx = (size_t)y * w + x;
-                        edge[idx] = 0;
-                        if (!black[idx]) continue;
-                        int is_edge = 0;
-                        for (int dy = -pen; dy <= pen && !is_edge; dy++) {
-                            int yy = y + dy;
-                            if (yy < 0 || yy >= h) { is_edge = 1; break; }
-                            for (int dx = -pen; dx <= pen; dx++) {
-                                int xx = x + dx;
-                                if (xx < 0 || xx >= w || !black[(size_t)yy * w + xx]) {
-                                    is_edge = 1;
-                                    break;
-                                }
-                            }
-                        }
-                        edge[idx] = (BYTE)is_edge;
-                    }
-                }
-
-                // Итог: контур чёрный, внутренние пиксели — шахматка.
-                for (int y = 0; y < h; y++) {
-                    for (int x = 0; x < w; x++) {
-                        size_t idx = (size_t)y * w + x;
-                        BYTE *px = bits + (size_t)y * stride + (size_t)x * 3;
-                        if (!black[idx]) continue;
-                        if (edge[idx]) {
-                            px[0] = px[1] = px[2] = 0;      // сплошной контур
-                        } else {
-                            int cx = x / cell, cy = y / cell;
-                            if (((cx + cy) & 1) == 0) {
-                                px[0] = px[1] = px[2] = 255; // пропуск
-                            }
-                        }
-                    }
-                }
-                SetDIBits(mem, bmp, 0, h, bits, &bi, DIB_RGB_COLORS);
-                HeapFree(GetProcessHeap(), 0, edge);
+            BYTE *px = bits + (size_t)y * stride + (size_t)x * 3;
+            if (is_edge) {
+                px[0] = px[1] = px[2] = 0;                 // сплошной контур
+            } else if ((((x0 + x) / cell + (y0 + y) / cell) & 1) == 0) {
+                px[0] = px[1] = px[2] = 255;               // пропуск шахматки
             }
-            HeapFree(GetProcessHeap(), 0, black);
         }
     }
 
-    HeapFree(GetProcessHeap(), 0, bits);
-
-    // Переносим результат на исходный HDC (вся этикетка).
-    BitBlt(hdc, 0, 0, w, h, mem, 0, 0, SRCCOPY);
-
-    SelectObject(mem, old);
-    DeleteObject(bmp);
-    DeleteDC(mem);
+    SetDIBits(mem, g_chk.bmp, 0, h, bits, &bi, DIB_RGB_COLORS);
+    BitBlt(hdc, x0, y0, w, h, mem, 0, 0, SRCCOPY);
 }
 
-static BOOL draw_label(HDC hdc, const Config *c, const LabelData *d) {
+static BOOL draw_label(HDC hdc, const Config *c, const LabelData *d,
+                       const Sizes *s, int dpi) {
     SetBkMode(hdc, TRANSPARENT);
-    Sizes s;
-    if (!calc_sizes(hdc, c->paper, &s)) return FALSE;
 
-    int y_start = s.margin_y;
+    int y_start = s->margin_y;
     if (d->show_header && d->header_text[0])
-        y_start = draw_header(hdc, d->header_text, &s, d->force_left_header);
+        y_start = draw_header(hdc, d->header_text, s, d->force_left_header);
 
     TextLayout tl;
-    draw_main_text(hdc, d->main_text, &s, y_start, d->is_underlined, d->is_bold, 0, &tl);
+    draw_main_text(hdc, d->main_text, s, y_start, d->is_underlined, d->is_bold, 0, &tl);
 
     if (c->checker && tl.w > 0 && tl.h > 0) {
         if (c->outline) {
-            apply_checker_with_outline(hdc, d->main_text, &tl, &s, c);
+            apply_checker_with_outline(hdc, d->main_text, &tl, s, c, dpi);
         } else {
-            int dpi_x = label_dpi(hdc);
-            checker_fill(hdc, &tl, checker_cell_px(c, dpi_x, count_digits(d->main_text)));
+            checker_fill(hdc, &tl, checker_cell_px(c, dpi, count_digits(d->main_text)));
         }
     }
     return TRUE;
@@ -1201,7 +1425,7 @@ static BOOL draw_label(HDC hdc, const Config *c, const LabelData *d) {
 // Рисует обычную этикетку (номер) на готовом DC размера w×h (203 dpi).
 // Используется демо-рендером и raw-печатью ESC/POS.
 static void render_text_label(HDC hdc, int w, int h, const wchar_t *text,
-                              const Config *c) {
+                              const Config *c, int dpi) {
     Sizes s;
     s.width_px = w;
     s.height_px = h;
@@ -1222,9 +1446,9 @@ static void render_text_label(HDC hdc, int w, int h, const wchar_t *text,
 
     if (c->checker && tl.w > 0 && tl.h > 0) {
         if (c->outline) {
-            apply_checker_with_outline(hdc, d.main_text, &tl, &s, c);
+            apply_checker_with_outline(hdc, d.main_text, &tl, &s, c, dpi);
         } else {
-            checker_fill(hdc, &tl, checker_cell_px(c, 203, count_digits(d.main_text)));
+            checker_fill(hdc, &tl, checker_cell_px(c, dpi, count_digits(d.main_text)));
         }
     }
 }
@@ -1236,15 +1460,22 @@ static BOOL print_text(const wchar_t *text, const Config *c) {
         return FALSE;
     }
 
-    // Очистка очереди принтера (аналог clear_printer_queue) — упрощённо
-    // пропускаем: SetPrinter(PURGE) требует прав ADMINISTER и часто не нужен.
-
     HDC hdc = CreateDCW(c->printer, c->printer, NULL, NULL);
     if (!hdc) {
         wchar_t m[320];
         scpy(m, 320, L"ОШИБКА печати: CreateDCW не удался для принтера ");
         scat(m, 320, c->printer);
         log_line(m);
+        return FALSE;
+    }
+
+    int dpi = GetDeviceCaps(hdc, LOGPIXELSX);
+    int dpi_y = GetDeviceCaps(hdc, LOGPIXELSY);
+
+    Sizes s;
+    if (!calc_sizes_dpi(dpi, dpi_y, c->paper, &s)) {
+        log_line(L"ОШИБКА печати: неверный размер бумаги");
+        DeleteDC(hdc);
         return FALSE;
     }
 
@@ -1261,20 +1492,29 @@ static BOOL print_text(const wchar_t *text, const Config *c) {
 
     if (StartDocW(hdc, &di) <= 0) {
         log_line(L"ОШИБКА печати: StartDocW не удался");
-        DeleteDC(hdc); return FALSE;
+        DeleteDC(hdc);
+        return FALSE;
     }
     if (StartPage(hdc) <= 0) {
         log_line(L"ОШИБКА печати: StartPage не удался");
-        AbortDoc(hdc); DeleteDC(hdc); return FALSE;
+        AbortDoc(hdc);
+        DeleteDC(hdc);
+        return FALSE;
     }
 
+    // Рисуем в память и отдаём драйверу один BitBlt: TextOut/PatBlt на
+    // printer DC дороже, чем в памяти.
+    HDC mem = surf_begin(s.width_px, s.height_px);
     LabelData d;
     prepare_label_data(text, c, &d);
-    BOOL ok = draw_label(hdc, c, &d);
+
+    BOOL ok = mem != NULL && draw_label(mem, c, &d, &s, dpi);
+    if (ok) surf_blit(hdc, s.width_px, s.height_px);
 
     EndPage(hdc);
     EndDoc(hdc);
     DeleteDC(hdc);
+
     if (ok) {
         wchar_t m[360];
         scpy(m, 360, L"Печать выполнена: ");
@@ -1289,6 +1529,7 @@ static BOOL print_text(const wchar_t *text, const Config *c) {
     return ok;
 }
 
+
 // ============================================================
 // HTTP-сервер (Winsock)
 // ============================================================
@@ -1301,7 +1542,7 @@ static BOOL print_text_with_qr(const wchar_t *text, const wchar_t *qr_text,
                                const Config *c);
 static void draw_number_qr_core(HDC hdc, const wchar_t *text,
                                 const wchar_t *qr_text, const Config *c,
-                                int w, int h);
+                                int w, int h, int dpi);
 
 // RAW-печать ESC/POS (printerMode = "escpos"): без драйвера печати.
 static BOOL raw_ready(const Config *c);
@@ -1469,7 +1710,7 @@ static void handle_request(SOCKET s, Request *r) {
             return;
         }
         if (sascii(r->path, "/status-printer")) {
-            BOOL online = g_cfg.printer[0] && status_printer(g_cfg.printer);
+            BOOL online = g_cfg.printer[0] && printer_online_cached(g_cfg.printer);
             send_json(s, 200, online ? L"{\"printerOnline\": true}"
                                      : L"{\"printerOnline\": false}");
             return;
@@ -2684,19 +2925,66 @@ static BOOL pn_qr_encode(const char *ascii, PnQrImage *out) {
     return rc == 0;
 }
 
+// Последняя закодированная матрица: частая перепечатка того же ШК не
+// пересчитывает QR заново.
+typedef struct {
+    char     ascii[128];
+    PnQrImage img;
+    BOOL     valid;
+} QrCache;
+
+static QrCache g_qr_cache;
+
+static BOOL ascii_same(const char *a, const char *b) {
+    int i = 0;
+    while (a[i] && a[i] == b[i]) i++;
+    return a[i] == b[i];
+}
+
+// Матрица QR из кэша либо кодирование с запоминанием.
+static PnQrImage *qr_image(const char *ascii) {
+    if (g_qr_cache.valid && ascii_same(g_qr_cache.ascii, ascii))
+        return &g_qr_cache.img;
+
+    if (!pn_qr_encode(ascii, &g_qr_cache.img)) {
+        g_qr_cache.valid = FALSE;
+        return NULL;
+    }
+
+    int i = 0;
+    while (ascii[i] && i < (int)sizeof(g_qr_cache.ascii) - 1) {
+        g_qr_cache.ascii[i] = ascii[i];
+        i++;
+    }
+    g_qr_cache.ascii[i] = 0;
+    g_qr_cache.valid = TRUE;
+    return &g_qr_cache.img;
+}
+
 // Рисует QR в (x,y) с заданным размером модуля; добавляет тихую зону 4 модуля.
 static void draw_qr(HDC hdc, PnQrImage *img, int x, int y, int module_px) {
     int side = (img->qr.size + 8) * module_px;
     PatBlt(hdc, x, y, side, side, WHITENESS);
+
+    // Горизонтальные серии тёмных модулей: один PatBlt на серию вместо
+    // PatBlt на каждый модуль (для QR v1 это в 2–3 раза меньше вызовов GDI).
     for (int my = 0; my < img->qr.size; my++) {
-        for (int mx = 0; mx < img->qr.size; mx++) {
-            if (pnqr_getModule(&img->qr, (pnqr_u8)mx, (pnqr_u8)my)) {
-                PatBlt(hdc, x + (mx + 4) * module_px, y + (my + 4) * module_px,
-                       module_px, module_px, BLACKNESS);
-            }
+        int mx = 0;
+        while (mx < img->qr.size) {
+            if (!pnqr_getModule(&img->qr, (pnqr_u8)mx, (pnqr_u8)my)) { mx++; continue; }
+
+            int run = 1;
+            while (mx + run < img->qr.size &&
+                   pnqr_getModule(&img->qr, (pnqr_u8)(mx + run), (pnqr_u8)my))
+                run++;
+
+            PatBlt(hdc, x + (mx + 4) * module_px, y + (my + 4) * module_px,
+                   run * module_px, module_px, BLACKNESS);
+            mx += run;
         }
     }
 }
+
 
 // Центрированный текст.
 static void center_text(HDC hdc, const wchar_t *text, int cx, int y, int weight, int size) {
@@ -2724,8 +3012,11 @@ static void draw_qr_label_core(HDC hdc, const wchar_t *text, int w, int h,
     ascii[n] = 0;
     if (n < 1) return;
 
-    PnQrImage qr;
-    if (!pn_qr_encode(ascii, &qr)) return;
+    PnQrImage qr_copy;
+    PnQrImage *qrp = qr_image(ascii);
+    if (!qrp) return;
+    qr_copy = *qrp;                 // структура небольшая (~0.6 КБ)
+    PnQrImage qr = qr_copy;
 
     // Разбиваем значение: всё, кроме последних 4 символов, + последние 4.
     int split = n > 4 ? n - 4 : 0;
@@ -2826,87 +3117,63 @@ static void draw_qr_label_core(HDC hdc, const wchar_t *text, int w, int h,
 }
 
 // Сохраняет содержимое memory-DC (24-bit) в 8-битный grayscale BMP.
-static BOOL demo_dc_save(HDC hdc, HBITMAP hbm, const wchar_t *path, int w, int h) {
-    // Считываем пиксели и сохраняем BMP.
-    BITMAPINFO bi;
-    int z = 0;
-    while (z < (int)sizeof(bi)) ((BYTE *)&bi)[z++] = 0;
-    bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    bi.bmiHeader.biWidth = w;
-    bi.bmiHeader.biHeight = -h;
-    bi.bmiHeader.biPlanes = 1;
-    bi.bmiHeader.biBitCount = 24;
-    bi.bmiHeader.biCompression = BI_RGB;
+// Сохраняет текущую поверхность рендера (g_surf) в 8-битный grayscale BMP.
+// Серый буфер переиспользуется между вызовами.
+static BOOL demo_save_surface(const wchar_t *path, int w, int h) {
+    static BYTE *gray = NULL;
+    static int gray_cap = 0;
 
-    BYTE *bits = (BYTE *)HeapAlloc(GetProcessHeap(), 0, (size_t)w * h * 3);
-    BYTE *gray = (BYTE *)HeapAlloc(GetProcessHeap(), 0, (size_t)w * h);
-    if (!bits || !gray) {
-        if (bits) HeapFree(GetProcessHeap(), 0, bits);
+    if (!surf_read(w, h)) return FALSE;
+
+    if (w * h > gray_cap) {
+        BYTE *np = (BYTE *)HeapAlloc(GetProcessHeap(), 0, (size_t)w * h);
+        if (!np) return FALSE;
         if (gray) HeapFree(GetProcessHeap(), 0, gray);
-        return FALSE;
+        gray = np;
+        gray_cap = w * h;
     }
 
-    int got = GetDIBits(hdc, hbm, 0, h, bits, &bi, DIB_RGB_COLORS);
-    if (got) {
-        for (int y = 0; y < h; y++) {
-            for (int x = 0; x < w; x++) {
-                BYTE *px = bits + ((size_t)y * w + x) * 3;
-                gray[(size_t)y * w + x] =
-                    (BYTE)((30 * px[0] + 59 * px[1] + 11 * px[2]) / 100);
-            }
+    const BYTE *bits = g_surf.bits;
+    int stride = g_surf.stride;
+    for (int y = 0; y < h; y++) {
+        const BYTE *row = bits + (size_t)y * stride;
+        BYTE *dst = gray + (size_t)y * w;
+        for (int x = 0; x < w; x++) {
+            const BYTE *px = row + (size_t)x * 3;
+            dst[x] = (BYTE)((30 * px[0] + 59 * px[1] + 11 * px[2]) / 100);
         }
-    } else {
-        for (size_t i = 0; i < (size_t)w * h; i++) gray[i] = 255;
     }
 
-    BOOL ok = demo_bmp_save(path, gray, w, h);
-    HeapFree(GetProcessHeap(), 0, bits);
-    HeapFree(GetProcessHeap(), 0, gray);
-    return ok;
+    return demo_bmp_save(path, gray, w, h);
 }
 
+
 // Рендерит QR-этикетку в BMP: создаёт memory-DC, рисует и сохраняет.
+// Рендерит QR-этикетку в BMP (--) через общую поверхность.
 static BOOL demo_qr_label_render(const wchar_t *text, const wchar_t *path, const Config *c) {
     (void)c;
 
     const int w = 344, h = 200;
-    HDC hdc = CreateCompatibleDC(NULL);
+    HDC hdc = surf_begin(w, h);
     if (!hdc) return FALSE;
-    HBITMAP hbm = CreateCompatibleBitmap(hdc, w, h);
-    if (!hbm) { DeleteDC(hdc); return FALSE; }
-    HGDIOBJ old = SelectObject(hdc, hbm);
-    PatBlt(hdc, 0, 0, w, h, WHITENESS);
-    SetBkMode(hdc, TRANSPARENT);
 
     draw_qr_label_core(hdc, text, w, h, 0 /* авто */, 4, 1, 32, 48);
-
-    BOOL ok = demo_dc_save(hdc, hbm, path, w, h);
-    SelectObject(hdc, old);
-    DeleteObject(hbm);
-    DeleteDC(hdc);
-    return ok;
+    return demo_save_surface(path, w, h);
 }
 
+
+// Демо этикетки «номер + QR товара» (--demo-cell-qr).
 // Демо этикетки «номер + QR товара» (--demo-cell-qr).
 static BOOL demo_cell_qr_render(const wchar_t *text, const wchar_t *qr_text,
                                 const wchar_t *path, const Config *c) {
     const int w = 344, h = 200;
-    HDC hdc = CreateCompatibleDC(NULL);
+    HDC hdc = surf_begin(w, h);
     if (!hdc) return FALSE;
-    HBITMAP hbm = CreateCompatibleBitmap(hdc, w, h);
-    if (!hbm) { DeleteDC(hdc); return FALSE; }
-    HGDIOBJ old = SelectObject(hdc, hbm);
-    PatBlt(hdc, 0, 0, w, h, WHITENESS);
-    SetBkMode(hdc, TRANSPARENT);
 
-    draw_number_qr_core(hdc, text, qr_text, c, w, h);
-
-    BOOL ok = demo_dc_save(hdc, hbm, path, w, h);
-    SelectObject(hdc, old);
-    DeleteObject(hbm);
-    DeleteDC(hdc);
-    return ok;
+    draw_number_qr_core(hdc, text, qr_text, c, w, h, 203);
+    return demo_save_surface(path, w, h);
 }
+
 
 // Печать комбинированной этикетки (QR слева/справа + значение по центру) на принтер.
 static BOOL print_qr_label(const wchar_t *text, const Config *c) {
@@ -2963,13 +3230,22 @@ static BOOL print_qr_label(const wchar_t *text, const Config *c) {
         return FALSE;
     }
 
-    SetBkMode(hdc, TRANSPARENT);
-    draw_qr_label_core(hdc, text, s.width_px, s.height_px,
-                       module_px, margin_x, gap_between, prefix_size, suffix_size);
+    HDC mem = surf_begin(s.width_px, s.height_px);
+    BOOL ok = mem != NULL;
+    if (ok) {
+        draw_qr_label_core(mem, text, s.width_px, s.height_px,
+                           module_px, margin_x, gap_between, prefix_size, suffix_size);
+        surf_blit(hdc, s.width_px, s.height_px);
+    }
 
     EndPage(hdc);
     EndDoc(hdc);
     DeleteDC(hdc);
+
+    if (!ok) {
+        log_line(L"ОШИБКА QR-этикетки: нет поверхности рендера");
+        return FALSE;
+    }
 
     wchar_t m[320];
     scpy(m, 320, L"Печать QR-этикетки выполнена: ");
@@ -2987,7 +3263,7 @@ static BOOL print_qr_label(const wchar_t *text, const Config *c) {
 // этикетки и рассчитаны на одну крупную строку).
 static void draw_number_qr_core(HDC hdc, const wchar_t *text,
                                 const wchar_t *qr_text, const Config *c,
-                                int w, int h) {
+                                int w, int h, int dpi) {
     // QR кодирует только ASCII (как /print-barcode).
     char ascii[256];
     int n = 0;
@@ -2998,10 +3274,13 @@ static void draw_number_qr_core(HDC hdc, const wchar_t *text,
     ascii[n] = 0;
     if (n < 1) return;
 
-    PnQrImage qr;
-    if (!pn_qr_encode(ascii, &qr)) return;   // слишком длинное значение
+    PnQrImage qr_copy;
+    PnQrImage *qrp = qr_image(ascii);        // кэш последней матрицы
+    if (!qrp) return;                        // слишком длинное значение
+    qr_copy = *qrp;
+    PnQrImage qr = qr_copy;
 
-    int dpi_x = label_dpi(hdc);
+    int dpi_x = dpi;
     int margin_x = (int)(w * 0.05);
     int margin_y = (int)(h * 0.05);
     int avail_h = h - 2 * margin_y;
@@ -3084,7 +3363,7 @@ static void draw_number_qr_core(HDC hdc, const wchar_t *text,
         if (tl.w > 0 && tl.h > 0) {
             if (c->outline) {
                 // Контур по рельефу глифа + шахматка внутри.
-                apply_checker_with_outline(text_dc, d.main_text, &tl, &s, c);
+                apply_checker_with_outline(text_dc, d.main_text, &tl, &s, c, dpi_x);
             } else {
                 checker_fill(text_dc, &tl, checker_cell_px(c, dpi_x, count_digits(d.main_text)));
             }
@@ -3113,8 +3392,11 @@ static BOOL print_text_with_qr(const wchar_t *text, const wchar_t *qr_text,
         return FALSE;
     }
 
+    int dpi = GetDeviceCaps(hdc, LOGPIXELSX);
+    int dpi_y = GetDeviceCaps(hdc, LOGPIXELSY);
+
     Sizes s;
-    if (!calc_sizes(hdc, c->paper, &s)) {
+    if (!calc_sizes_dpi(dpi, dpi_y, c->paper, &s)) {
         log_line(L"ОШИБКА печати (номер+QR): неверный размер бумаги");
         DeleteDC(hdc);
         return FALSE;
@@ -3143,24 +3425,33 @@ static BOOL print_text_with_qr(const wchar_t *text, const wchar_t *qr_text,
         return FALSE;
     }
 
-    SetBkMode(hdc, TRANSPARENT);
-    draw_number_qr_core(hdc, text, qr_text, c, s.width_px, s.height_px);
+    HDC mem = surf_begin(s.width_px, s.height_px);
+    BOOL ok = mem != NULL;
+    if (ok) {
+        draw_number_qr_core(mem, text, qr_text, c, s.width_px, s.height_px, dpi);
+        surf_blit(hdc, s.width_px, s.height_px);
+    }
 
     EndPage(hdc);
     EndDoc(hdc);
     DeleteDC(hdc);
 
-    wchar_t m[460];
-    scpy(m, 460, L"Печать с QR выполнена: ");
-    scat(m, 460, text);
-    scat(m, 460, L" / ");
-    scat(m, 460, qr_text);
-    if (c->checker) {
-        scat(m, 460, c->outline ? L" [checker+outline]" : L" [checker]");
+    if (ok) {
+        wchar_t m[460];
+        scpy(m, 460, L"Печать с QR выполнена: ");
+        scat(m, 460, text);
+        scat(m, 460, L" / ");
+        scat(m, 460, qr_text);
+        if (c->checker) {
+            scat(m, 460, c->outline ? L" [checker+outline]" : L" [checker]");
+        }
+        log_line(m);
+    } else {
+        log_line(L"ОШИБКА печати (номер+QR): нет поверхности рендера");
     }
-    log_line(m);
-    return TRUE;
+    return ok;
 }
+
 
 // ============================================================
 // RAW-печать ESC/POS (printerMode = "escpos")
@@ -3327,36 +3618,26 @@ static BOOL escpos_build(const wchar_t *text, const wchar_t *qr, BOOL qr_label,
     int total_w = lw + off;
     if (total_w > 4096) return FALSE;
 
-    HDC mem = CreateCompatibleDC(NULL);
+    HDC mem = surf_begin(lw, lh);
     if (!mem) return FALSE;
-    HBITMAP bmp = CreateCompatibleBitmap(mem, lw, lh);
-    if (!bmp) { DeleteDC(mem); return FALSE; }
-    HGDIOBJ old = SelectObject(mem, bmp);
-    PatBlt(mem, 0, 0, lw, lh, WHITENESS);
 
     if (qr_label) {
         draw_qr_label_core(mem, text, lw, lh, 0 /* авто */, 4, 1, 32, 48);
     } else if (c->qr_with_number && qr && qr[0]) {
-        draw_number_qr_core(mem, text, qr, c, lw, lh);
+        draw_number_qr_core(mem, text, qr, c, lw, lh, dpi);
     } else {
-        render_text_label(mem, lw, lh, text, c);
+        render_text_label(mem, lw, lh, text, c, dpi);
     }
 
-    BITMAPINFO bi;
-    int z = 0;
-    while (z < (int)sizeof(bi)) ((BYTE *)&bi)[z++] = 0;
-    bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    bi.bmiHeader.biWidth = lw;
-    bi.bmiHeader.biHeight = -lh;
-    bi.bmiHeader.biPlanes = 1;
-    bi.bmiHeader.biBitCount = 24;
-    bi.bmiHeader.biCompression = BI_RGB;
-
-    BYTE *bits = (BYTE *)HeapAlloc(GetProcessHeap(), 0, (size_t)lw * lh * 3);
-    int got = bits ? GetDIBits(mem, bmp, 0, lh, bits, &bi, DIB_RGB_COLORS) : 0;
-
     int bytes_per_row = (total_w + 7) / 8;
-    BOOL ok = got > 0;
+    BOOL ok = surf_read(lw, lh);
+
+    // Одна резервация под весь поток вместо нескольких удвоений ByteBuf.
+    if (ok) {
+        int feed_dots = (int)((c->label_gap_mm_x10 / 10.0) / 25.4 * dpi + 0.5);
+        int expected = 8 + bytes_per_row * lh + 3 * (feed_dots / 255 + 1) + 32;
+        ok = bb_reserve(out, expected);
+    }
 
     if (ok) ok = bb_put(out, 0x1B) && bb_put(out, 0x40);          // ESC @
     if (ok && c->raw_init_hex[0]) raw_init_bytes(c->raw_init_hex, out);
@@ -3373,8 +3654,9 @@ static BOOL escpos_build(const wchar_t *text, const wchar_t *qr, BOOL qr_label,
         static BYTE row[8192];
         for (int y = 0; y < lh && ok; y++) {
             for (int i = 0; i < bytes_per_row; i++) row[i] = 0;
+            const BYTE *srow = g_surf.bits + (size_t)y * g_surf.stride;
             for (int x = 0; x < lw; x++) {
-                BYTE *px = bits + ((size_t)y * lw + x) * 3;
+                const BYTE *px = srow + (size_t)x * 3;
                 int g = (30 * px[0] + 59 * px[1] + 11 * px[2]) / 100;
                 if (g < 128) {
                     int bit = x + off;
@@ -3396,10 +3678,6 @@ static BOOL escpos_build(const wchar_t *text, const wchar_t *qr, BOOL qr_label,
         }
     }
 
-    SelectObject(mem, old);
-    DeleteObject(bmp);
-    DeleteDC(mem);
-    if (bits) HeapFree(GetProcessHeap(), 0, bits);
     return ok;
 }
 
@@ -3496,59 +3774,19 @@ static BOOL write_bin_file(const wchar_t *path, const BYTE *data, int len) {
 }
 
 // Рендерит номер ячейки в BMP через те же GDI-функции, что и реальная печать.
+// Рендерит номер ячейки в BMP через те же GDI-функции, что и реальная печать.
 static BOOL demo_render_bmp(const wchar_t *text, const wchar_t *path, const Config *c) {
     const int dpi = 203;
     int w = (int)(43.0 / 25.4 * dpi + 0.5);   // 344
     int h = (int)(25.0 / 25.4 * dpi + 0.5);   // 200
 
-    HDC hdc = CreateCompatibleDC(NULL);
+    HDC hdc = surf_begin(w, h);
     if (!hdc) return FALSE;
-    HBITMAP hbm = CreateCompatibleBitmap(hdc, w, h);
-    if (!hbm) { DeleteDC(hdc); return FALSE; }
-    HGDIOBJ old = SelectObject(hdc, hbm);
-    PatBlt(hdc, 0, 0, w, h, WHITENESS);
 
-    // Тот же код, что и в печати (номер + шахматка/обводка).
-    render_text_label(hdc, w, h, text, c);
-
-    // Считываем пиксели обратно (bottom-up DIB → top-down строками).
-    BITMAPINFO bi;
-    int z = 0;
-    while (z < (int)sizeof(bi)) ((BYTE *)&bi)[z++] = 0;
-    bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    bi.bmiHeader.biWidth = w;
-    bi.bmiHeader.biHeight = -h;
-    bi.bmiHeader.biPlanes = 1;
-    bi.bmiHeader.biBitCount = 24;
-    bi.bmiHeader.biCompression = BI_RGB;
-
-    BYTE *bits = (BYTE *)HeapAlloc(GetProcessHeap(), 0, (size_t)w * h * 3);
-    BYTE *gray = (BYTE *)HeapAlloc(GetProcessHeap(), 0, (size_t)w * h);
-    if (!bits || !gray) {
-        if (bits) HeapFree(GetProcessHeap(), 0, bits);
-        if (gray) HeapFree(GetProcessHeap(), 0, gray);
-        return FALSE;
-    }
-
-    int got = GetDIBits(hdc, hbm, 0, h, bits, &bi, DIB_RGB_COLORS);
-    if (got) {
-        for (int y = 0; y < h; y++) {
-            for (int x = 0; x < w; x++) {
-                BYTE *px = bits + ((size_t)y * w + x) * 3;
-                gray[(size_t)y * w + x] =
-                    (BYTE)((30 * px[0] + 59 * px[1] + 11 * px[2]) / 100);
-            }
-        }
-    } else {
-        for (size_t i = 0; i < (size_t)w * h; i++) gray[i] = 255;
-    }
-
-    (void)old;
-    BOOL ok = demo_bmp_save(path, gray, w, h);
-    HeapFree(GetProcessHeap(), 0, bits);
-    HeapFree(GetProcessHeap(), 0, gray);
-    return ok;
+    render_text_label(hdc, w, h, text, c, dpi);
+    return demo_save_surface(path, w, h);
 }
+
 
 // Демо-рендер в BMP (единственный поддерживаемый формат).
 static BOOL demo_file(const wchar_t *text, const wchar_t *path, const Config *c) {

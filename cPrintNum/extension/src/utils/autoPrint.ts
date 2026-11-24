@@ -162,10 +162,11 @@ export async function handleAutoPrint(value: unknown): Promise<AutoPrintEvent | 
       res.ok ? undefined : `PrintNum вернул ${res.status}`,
     );
 
-    await writeEvent(event);
-
     if (res.ok) {
+      // Один storage.set вместо двух: раньше событие и lastAutoPrint
+      // писались отдельными IPC-вызовами.
       await chrome.storage.local.set({
+        [LAST_AUTO_PRINT_EVENT_KEY]: event,
         [LAST_AUTO_PRINT_KEY]: {
           text: placement.text,
           kind: placement.kind,
@@ -177,6 +178,7 @@ export async function handleAutoPrint(value: unknown): Promise<AutoPrintEvent | 
           (placement.qr ? ` + QR ${placement.qr}` : ""),
       );
     } else {
+      await writeEvent(event);
       console.error(`[PrintNum:auto] ошибка печати ${placement.text}: ${res.status}`);
     }
 

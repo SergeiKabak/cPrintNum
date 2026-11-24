@@ -69,7 +69,12 @@ export default defineContentScript({
 
     const onStorageChanged = (changes: any, area: string) => {
       if (area !== "local" || !changes?.[AUTO_PRINT_KEY]) return;
+
+      const prevMode = settings.mode;
       settings = normalizeAutoPrint(changes[AUTO_PRINT_KEY].newValue);
+
+      // Переключили режим (например, на xhr) — observer больше не нужен.
+      if (prevMode !== settings.mode) toggleState();
     };
 
     chrome.storage.onChanged.addListener(onStorageChanged);
@@ -210,6 +215,21 @@ export default defineContentScript({
       previousTexts = [];
     }
 
+    // MutationObserver может срабатывать десятки раз за одно изменение DOM
+    // (Ozon перестраивает список), поэтому проверяем DOM не чаще, чем раз
+    // в кадр — через microtask-флажок, без setTimeout-задержек.
+    let runScheduled = false;
+
+    function scheduleRun() {
+      if (runScheduled) return;
+      runScheduled = true;
+
+      Promise.resolve().then(() => {
+        runScheduled = false;
+        runScript();
+      });
+    }
+
     function toggleState() {
       // Всегда очищаем старый observer
       if (observer) {
@@ -217,13 +237,19 @@ export default defineContentScript({
         observer = null;
       }
 
+      // В режимах xhr/off DOM не нужен вообще: раньше observer всё равно
+      // создавался на странице приёмки и молча просыпался на каждую мутацию.
+      if (settings.mode !== "dom" && settings.mode !== "both") {
+        resetState();
+        return;
+      }
+
       if (location.pathname !== workPathNames.recommendation) {
         resetState();
         return;
       }
 
-      // Создаем новый observer
-      observer = new MutationObserver(() => runScript());
+      observer = new MutationObserver(scheduleRun);
 
       observer.observe(document.body, {
         childList: true,

@@ -70,10 +70,11 @@ export function shelfToCode(raw: unknown): string | null {
  * @returns ШК либо `null`, если в ответе его нет.
  */
 export function findBarcode(value: unknown): string | null {
-  const budget = { nodes: 400 };
+  // Счётчик узлов вместо замыкания-объекта: без аллокации на каждый вызов.
+  let budget = 400;
 
   const walk = (node: unknown, depth: number): string | null => {
-    if (budget.nodes-- <= 0 || depth > 6 || node == null) return null;
+    if (budget-- <= 0 || depth > 6 || node == null) return null;
 
     if (typeof node === "string") {
       const trimmed = node.trim();
@@ -82,12 +83,21 @@ export function findBarcode(value: unknown): string | null {
 
     if (typeof node !== "object") return null;
 
-    const items = Array.isArray(node)
-      ? node.slice(0, 20)
-      : Object.values(node as Record<string, unknown>).slice(0, 40);
+    // Обходим без Object.values()/slice(): на больших ответах Ozon они
+    // создавали временные массивы на каждом уровне вложенности.
+    if (Array.isArray(node)) {
+      const n = node.length < 20 ? node.length : 20;
+      for (let i = 0; i < n; i++) {
+        const found = walk(node[i], depth + 1);
+        if (found) return found;
+      }
+      return null;
+    }
 
-    for (const item of items) {
-      const found = walk(item, depth + 1);
+    let seen = 0;
+    for (const key in node as Record<string, unknown>) {
+      if (seen++ >= 40) break;
+      const found = walk((node as Record<string, unknown>)[key], depth + 1);
       if (found) return found;
     }
     return null;
@@ -176,12 +186,14 @@ export function parsePlacement(
   data: unknown,
   origin: PlacementOrigin = "xhr",
 ): Placement | null {
-  // Штрихкод товара ищем один раз для любого из эндпоинтов.
-  const qr = findBarcode(data) ?? undefined;
+  // Сначала дешёвая проверка размещения: findBarcode обходит весь JSON,
+  // поэтому запускаем его только для ответов с валидной ячейкой/полкой.
+  let qr: string | undefined;
 
   if (url.includes(OZON_ENDPOINTS.movement)) {
     const raw = (data as any)?.articlePositions?.[0]?.address;
     if (typeof raw !== "string") return null;
+    qr = findBarcode(data) ?? undefined;
 
     return normalizePlacement({
       text: raw,
@@ -198,6 +210,7 @@ export function parsePlacement(
     const raw = (data as any)?.transferSuccess?.cell;
     const text = shelfToCode(raw);
     if (!text) return null;
+    qr = findBarcode(data) ?? undefined;
 
     return normalizePlacement({
       text,
@@ -214,6 +227,7 @@ export function parsePlacement(
     const raw = (data as any)?.success?.cell;
     const text = shelfToCode(raw);
     if (!text) return null;
+    qr = findBarcode(data) ?? undefined;
 
     return normalizePlacement({
       text,
