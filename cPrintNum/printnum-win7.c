@@ -2910,8 +2910,12 @@ static void draw_number_qr_core(HDC hdc, const wchar_t *text,
     int margin_y = (int)(h * 0.05);
     int avail_h = h - 2 * margin_y;
 
-    // Квадрат QR: не больше ~48% ширины и не выше доступной высоты.
-    int target = (w - 2 * margin_x) * 48 / 100;
+    // Квадрат QR: до 48% ширины для длинных номеров и 40% для коротких —
+    // иначе у 1–3-значных номеров QR отбирал ширину, а цифры упирались в неё
+    // и не использовали высоту этикетки.
+    int digits = count_digits(text);
+    int qr_percent = digits <= 3 ? 40 : 48;
+    int target = (w - 2 * margin_x) * qr_percent / 100;
     if (target > avail_h) target = avail_h;
     int modules = qr.qr.size + 8;            // + тихая зона 4 модуля
     int module_px = target / modules;
@@ -2922,18 +2926,20 @@ static void draw_number_qr_core(HDC hdc, const wchar_t *text,
     int qr_y = (h - side) / 2;
     draw_qr(hdc, &qr, qr_x, qr_y, module_px);
 
-    // Область под номер — слева от QR, с зазором ~2 мм.
-    int gap = (int)(2.0 / 25.4 * dpi_x + 0.5);
-    if (gap < 2) gap = 2;
+    // Область под номер — слева от QR. У QR уже есть своя тихая зона
+    // (4 модуля), поэтому визуальный зазор делаем небольшим — 1 мм:
+    // иначе номер зря мельчает, хотя справа/сверху места достаточно.
+    int gap = (int)(1.0 / 25.4 * dpi_x + 0.5);
+    if (gap < 4) gap = 4;
     int text_w = qr_x - gap;
-    if (text_w < margin_x * 2 + 8) return;
+    if (text_w < 24) return;
 
     Sizes s;
     s.width_px = text_w;
     s.height_px = h;
-    s.margin_x = margin_x;
+    s.margin_x = 4;                 // отступ только для колонтитула (idNum)
     s.margin_y = margin_y;
-    s.max_allowed_w = text_w - margin_x * 2;
+    s.max_allowed_w = text_w - 8;   // по 4 px от края области
 
     LabelData d;
     prepare_label_data(text, c, &d);
