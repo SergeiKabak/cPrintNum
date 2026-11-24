@@ -1,11 +1,7 @@
 import { defineConfig } from "wxt";
 
 // Список entrypoint'ов, которые попадают в сборку. Всё, чего здесь нет,
-// WXT пропускает (файлы остаются в src/entrypoints/, но не собираются).
-// Полный список доступных имён (для возврата в сборку — раскомментировать):
-//   autoscriptBox, autoscriptPackage,
-//   hideBannerAllOrder, hideBannerOrder, hideMenu, hideNotification, hideReturns,
-//   qrIssueAllOrder, qrIssueOrder, qrPayOrder, qrRecommendation, qrReturnOrder
+// WXT пропускает (файлов вне списка в сборке нет).
 const INCLUDED_ENTRYPOINTS = [
   "background",
   "popup",
@@ -19,7 +15,7 @@ export default defineConfig({
   filterEntrypoints: INCLUDED_ENTRYPOINTS,
 
   manifest: {
-    permissions: ["storage", "nativeMessaging", "scripting"],
+    permissions: ["storage", "scripting"],
     action: {},
     name: "PrintNum - Печать Ячеек (Ozon)",
     description:

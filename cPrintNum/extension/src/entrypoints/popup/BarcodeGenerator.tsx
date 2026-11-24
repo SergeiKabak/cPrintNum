@@ -10,7 +10,7 @@
  * ввода и учитывает размер этикетки из `GET /config` (`paper`).
  *
  * Печать:
- * - «Печать через PrintNum» — отправляет текст в C-службу (native/HTTP);
+ * - «Печать через PrintNum» — HTTP POST /print-barcode (C-служба);
  * - «Печать из браузера» — печатает тот же SVG через `window.print()`.
  */
 
@@ -20,7 +20,6 @@ import { useEffect, useMemo, useState } from "preact/hooks";
 import { Barcode, MonitorUp, Printer } from "lucide-preact";
 import { Button } from "@/components/preact/button";
 import { getSettings, sendServer } from "@/utils/api";
-import { isNativeAvailable, sendNative } from "@/utils/nativeMessaging";
 import { LAST_LABEL_KEY } from "@/entrypoints/labelCopy.content";
 import {
   buildQrLabelSvg,
@@ -128,38 +127,11 @@ export default function BarcodeGenerator() {
     setStatus({ kind: "ok", msg: "Открыто окно печати браузера" });
   };
 
-  /** Печать через приложение PrintNum: native messaging, затем HTTP. */
+  /** Печать через приложение PrintNum (HTTP, C-служба на 127.0.0.1:5000). */
   const printViaPrintNum = async () => {
     if (!svg || !canPrint) return;
     setStatus({ kind: "idle" });
 
-    // 1. Native messaging (если зарегистрирован host).
-    if (isNativeAvailable()) {
-      try {
-        const r = await sendNative<{
-          status: string;
-          reason?: string;
-          error?: string;
-        }>({
-          command: "print-barcode",
-          text: trimmed,
-        });
-
-        if (r?.status === "ok") {
-          setStatus({ kind: "ok", msg: "Отправлено в PrintNum (native)" });
-          return;
-        }
-        if (r?.status === "skipped") {
-          setStatus({ kind: "err", msg: `Пропущено: ${r.reason}` });
-          return;
-        }
-        // При ошибке/неизвестном статусе — пробуем HTTP ниже.
-      } catch {
-        // Host не зарегистрирован — переходим на HTTP.
-      }
-    }
-
-    // 2. HTTP (C-служба на 127.0.0.1:5000).
     try {
       const res = await sendServer.post("print-barcode", { text: trimmed });
       setStatus(

@@ -117,89 +117,64 @@ cPrintNum/
 
 ```
 extension/
+├── public/                  # статика → копируется в output как есть
+│   └── icon/                # 16/32/48/96/128.png → manifest.icons
+│                            # ВАЖНО: WXT ищет publicDir в КОРНЕ проекта
+│                            # (public), а не в src/public
 ├── src/
 │   ├── entrypoints/         # точки входа WXT (файл = артефакт, см. §4.3)
 │   │   ├── background.ts            # service worker: очередь печати, инъекция pageHook
 │   │   ├── sendPrintNum.content.ts  # document_start: DOM-наблюдатель + приём postMessage
 │   │   ├── pageHook.unlisted.ts     # MAIN-world: перехват XHR/fetch ответов Ozon
 │   │   ├── labelCopy.content.ts     # «копировать» ШК → chrome.storage
-│   │   ├── popup/                   # окно расширения
-│   │   │   ├── index.html           # точка входа popup (link на ~/assets/main.css)
-│   │   │   ├── main.tsx             # render(<App/>, #root)
-│   │   │   ├── App.tsx              # порядок панелей: статус, настройки, автопечать, QR
-│   │   │   ├── statusPrinting.tsx   # GET / → «Печать активна/не активна»
-│   │   │   ├── PrintSettingsPanel.tsx # GET/POST /config, /papers, /listPrinters, /service*
-│   │   │   ├── AutoPrintPanel.tsx   # режим автопечати в chrome.storage (autoPrint)
-│   │   │   ├── BarcodeGenerator.tsx # превью QR-этикетки + печать (native→HTTP / browser)
-│   │   │   ├── Help.tsx             # ссылка на репозиторий (НЕ подключён в App)
-│   │   │   ├── qrCommands.tsx       # настройки QR-команд (НЕ подключён)
-│   │   │   ├── autoscript.tsx       # настройки автоскриптов (НЕ подключён)
-│   │   │   ├── SettingSection.tsx   # generic-аккордеон для настроек (используется только ими)
-│   │   │   └── hide/                # UI скрытия элементов (НЕ подключён)
-│   │   │       ├── index.tsx, menu.tsx, notifications.tsx, returns.tsx, other.tsx
-│   │   ├── hideMenu.content.ts              # скрытие пунктов меню (НЕ в сборке)
-│   │   ├── hideNotification.content.ts      # скрытие уведомлений (НЕ в сборке)
-│   │   ├── hideReturns.content.ts           # скрытие возвратов (НЕ в сборке)
-│   │   ├── hideBannerAllOrder.content.ts    # баннер на /orders (НЕ в сборке)
-│   │   ├── hideBannerOrder.content.ts       # баннер в карточке выдачи (НЕ в сборке)
-│   │   ├── qrIssueOrder.content.ts          # QR: выдать заказ (НЕ в сборке)
-│   │   ├── qrIssueAllOrder.content.ts       # QR: выдать всё (НЕ в сборке)
-│   │   ├── qrPayOrder.content.ts            # QR: оплатить (НЕ в сборке)
-│   │   ├── qrReturnOrder.content.ts         # QR: отказ от товара (НЕ в сборке)
-│   │   ├── qrRecommendation.content.ts      # QR: «С рекомендацией» (НЕ в сборке)
-│   │   ├── autoscriptPackage.content.ts     # «Упаковки Ozon нет» (НЕ в сборке)
-│   │   └── autoscriptBox.content.ts         # тарники в перевозку (НЕ в сборке)
+│   │   └── popup/                   # окно расширения
+│   │       ├── index.html           # точка входа popup (link на ~/assets/main.css)
+│   │       ├── main.tsx             # render(<App/>, #root)
+│   │       ├── App.tsx              # порядок панелей: статус, настройки, автопечать, QR
+│   │       ├── statusPrinting.tsx   # GET / → «Печать активна/не активна»
+│   │       ├── PrintSettingsPanel.tsx # GET/POST /config, /papers, /listPrinters, /service*
+│   │       ├── AutoPrintPanel.tsx   # режим автопечати в chrome.storage (autoPrint)
+│   │       └── BarcodeGenerator.tsx # превью QR-этикетки + печать (HTTP / browser)
 │   ├── utils/
 │   │   ├── api.ts               # HTTP-клиент сервера + тип PrintSettings
 │   │   ├── autoPrint.ts         # обработка события печати в background
 │   │   ├── autoPrintSettings.ts # ключи storage, дефолты, нормализация, типы
 │   │   ├── ozonPlacements.ts    # парсинг ответов Ozon → Placement (чистый модуль)
-│   │   ├── constants.ts         # SELECTORS, regex, TEXT, пути, таблицы QR-команд
+│   │   ├── constants.ts         # SELECTORS (3 шт.), regex ячейки/ШК, путь приёмки
 │   │   ├── qrLabel.ts           # SVG-превью QR-этикетки (геометрия как в C)
-│   │   ├── nativeMessaging.ts   # клиент native host ru.printnum.host (сервер его НЕ реализует)
 │   │   ├── observer.ts          # подписка на смену URL + observe(document.body)
-│   │   ├── find.ts              # waitLoadElement / waitLoadElement2 (ожидание DOM)
-│   │   ├── listener.ts          # накопление keydown сканера ШК (только disabled-скрипты)
-│   │   ├── scannerSimulator.ts  # dev-эмулятор сканера (в prod вырезается)
-│   │   └── code128.ts           # МЁРТВЫЙ код (Code128 удалён, нигде не импортируется)
-│   ├── components/
-│   │   ├── preact/button.tsx    # кнопка (варианты default/outline/destructive/...)
-│   │   ├── preact/accordion.tsx # аккордеон (только для disabled-панелей)
-│   │   └── opeTabURL.tsx        # кнопка-ссылка (только для disabled-панелей)
-│   ├── hooks/
-│   │   ├── useStorageValue.ts   # одиночное значение в chrome.storage (AutoPrintPanel)
-│   │   └── useStorageState.ts   # массив-переключатель (disabled-панели)
+│   │   └── scannerSimulator.ts  # dev-эмулятор сканера (в prod вырезается)
+│   ├── components/preact/button.tsx # единственный UI-компонент (кнопка)
+│   ├── hooks/useStorageValue.ts # одиночное значение в chrome.storage (AutoPrintPanel)
 │   ├── lib/utils.ts             # cn() = clsx + tailwind-merge
-│   ├── assets/main.css          # Tailwind + CSS-переменные темы (подключён в popup)
-│   ├── main.css                 # дубль assets/main.css, НЕ используется
-│   └── public/                  # статика: иконки 16–128, light/home.png, dark/home.png,
-│                                # publish/* (скриншоты для магазина), qrCodes.pdf/docx
+│   └── assets/main.css          # Tailwind + CSS-переменные темы (подключён в popup)
 ├── output/                  # сборка WXT: chrome-mv3/{manifest.json,background.js,
 │                            #   content-scripts/{sendPrintNum,labelCopy}.js,pageHook.js,
-│                            #   popup.html,chunks/,assets/} + chrome-mv3.zip
+│                            #   popup.html,chunks/,assets/,icon/} + chrome-mv3.zip
 ├── .wxt/                    # сгенерированные типы WXT (wxt prepare), не редактировать
 ├── example.html             # сохранённая страница Ozon (дамп, в .gitignore)
 ├── example_files/           # CSS/JS-ассеты того дампа (в .gitignore)
 ├── node_modules/            # зависимости
 ├── wxt.config.ts            # filterEntrypoints, manifest, outDir, vite (preact alias)
 ├── package.json             # v2.1.0, скрипты dev/build/compile/zip
-├── package-lock.json / pnpm-lock.yaml  # два лок-файла (исторически)
+├── package-lock.json        # npm (pnpm-lock.yaml удалён — один пакетный менеджер)
 ├── tsconfig.json            # strict, preact jsx, алиасы @ ~ @@ ~~
 ├── tailwind.config.js       # rem→px через postcss-rem-to-px (popup в px)
 ├── postcss.config.js        # tailwind + rem-to-px + autoprefixer
-├── eslint.config.js         # @antfu/eslint-config (в CI не запускается)
-├── components.json          # конфиг shadcn/ui (историческое, не влияет на сборку)
 ├── .env.example             # VITE_PRINTNUM_PORT=5000
 ├── .gitignore               # node_modules, output, .wxt, example.html, example_files
 └── README.md                # после объединения — короткая ссылка на этот файл
 ```
 
+Всего в `src/` — 23 файла; всё, что не достижимо из пяти
+`INCLUDED_ENTRYPOINTS`, удалено (см. §4.14 и §9).
+
 ### 2.2. Состояние git
 
 - Git-корень проекта — `/Users/rayan/development/PrintNum` (родительская папка).
-- `cPrintNum/` перенесён целиком и сейчас **untracked**; старые пути
-  (`extension/`, `docs/`, `amvera/`, `dist-*`, `src-printnum/`) в индексе
-  числятся как удалённые (`git status` → `D`+`?? cPrintNum/`).
+- `cPrintNum/` закоммичен (`f0ba5e9 Move project to cPrintNum and merge docs…`);
+  старые пути (`src-printnum/`, `extension/`, `docs/`, `amvera/`, `dist-*`)
+  удалены из дерева, но доступны в истории.
 - `.gitignore` родителя игнорирует `*.exe`, `node_modules`, `dist`, `.env`.
 
 ---
@@ -501,7 +476,7 @@ bind/listen/WSAStartup пишутся в лог и завершают проце
 | `BODY_MAX 4096` / `JSON_MAX 8192` | большие тела/конфиги обрезаются |
 | Список принтеров ≤ 8, буфер 4096 | на машинах с десятками принтеров список усечён |
 | Нет dry-run для HTTP | эмуляция печати возможна только через `--demo-*` |
-| Нет native messaging (`--native-host`) | `nativeMessaging.ts` в расширении всегда падает и откатывается на HTTP |
+| Нет native messaging | клиент работает только по HTTP (см. §4.13); `--native-host` не реализован |
 | Нет очистки очереди спулера | `SetPrinter(PURGE)` не вызывается (нужны права ADMINISTER) |
 | Нет аутентификации | доверять только loopback-периметру |
 
@@ -531,7 +506,8 @@ bind/listen/WSAStartup пишутся в лог и завершают проце
 - `filterEntrypoints` — **белый список** того, что попадает в сборку:
   `background`, `popup`, `sendPrintNum`, `labelCopy`, `pageHook`.
   Файлы вне списка остаются в `src/`, но не собираются и не регистрируются.
-- `manifest.permissions`: `storage`, `nativeMessaging`, `scripting`.
+- `manifest.permissions`: `storage`, `scripting` (только то, что реально
+  используется; `nativeMessaging` удалён — см. §4.13).
 - `host_permissions`: `http://localhost/*`, `http://127.0.0.1/*`,
   `https://turbo-pvz.ozon.ru/*` (последнее — для `scripting.executeScript`
   в MAIN-мир).
@@ -551,11 +527,11 @@ bind/listen/WSAStartup пишутся в лог и завершают проце
 | `content-scripts/labelCopy.js` | `entrypoints/labelCopy.content.ts` | `content_scripts` (idle) |
 | `pageHook.js` | `entrypoints/pageHook.unlisted.ts` | **не** в manifest; инъекция из background |
 | `popup.html` + `chunks/*` + `assets/*` | `entrypoints/popup/*` | `action.default_popup` |
+| `icon/*.png` | `public/icon/*.png` | `manifest.icons` (автоподхват WXT) |
 
-Все `hide*`, `qr*`, `autoscript*` content-скрипты **не собираются**
-(исключены `filterEntrypoints`). Popup-панели `qrCommands`, `autoscript`,
-`hide/`, `Help` в дереве сборки отсутствуют, потому что `App.tsx` их не
-импортирует (Vite tree-shaking). Код сохранён для возврата функций.
+Других entrypoint'ов нет: всё, что не достижимо из `filterEntrypoints` и
+`App.tsx`, удалено (см. §4.14, §9). `publicDir` у WXT — **корень проекта**
+(`public/`), поэтому `src/public/` раньше не копировалась вообще.
 
 ### 4.4. Потоки данных
 
@@ -591,7 +567,7 @@ Ozon XHR/fetch (2xx)
 
 ```
 popup BarcodeGenerator → buildQrLabelSvg (локально, canvas-измерение)
-  → «Печать через PrintNum»: native sendNative (если host есть) → HTTP POST /print-barcode
+  → «Печать через PrintNum»: HTTP POST /print-barcode
   → «Печать из браузера»: новый window с тем же SVG + window.print()
 popup PrintSettingsPanel → GET /config,/papers,/listPrinters,/service
   → POST /config (частичный патч) / POST /service/install|uninstall
@@ -638,8 +614,6 @@ const API_BASE = `http://127.0.0.1:${PORT}`;
 | `lastAutoPrint` | background | background (дедуп) | `{text, kind, at}` |
 | `lastAutoPrintEvent` | background | AutoPrintPanel | `{text, kind, ok, status, error?, at}` |
 | `lastCopiedLabel` | labelCopy | BarcodeGenerator | `string` (`ii…`) |
-| `other`, `autoscripts`, `offAutoscripts`, `qrCodes`, `offQrCodes` | background (seed) | disabled-скрипты/панели | `string[]` имён |
-| `returns`, `offReturns` | disabled hideReturns | disabled hideReturns | `string[]` |
 
 `autoPrint` дефолт (`DEFAULT_AUTO_PRINT`): `mode:"dom"`, `shelf:true`,
 `packing:true`, `dedupeMs:5000`, `overlapGuardMs:1000`.
@@ -743,16 +717,18 @@ const API_BASE = `http://127.0.0.1:${PORT}`;
    «При упаковке», `dedupeMs`, предупреждение при старом сервере, последнее
    событие автопечати.
 4. **BarcodeGenerator** — ввод текста, SVG-превью, кнопки «Печать через
-   PrintNum» (native → HTTP) и «Печать из браузера», подхват `lastCopiedLabel`.
+   PrintNum» (HTTP POST `/print-barcode`) и «Печать из браузера», подхват
+   `lastCopiedLabel`.
 
 Тёмная тема: `App` ставит класс `dark` на `<html>` по
 `prefers-color-scheme` (Tailwind `darkMode: ["class"]`).
 
-Скриншоты (для магазина/доков): `src/public/light/home.png`,
-`src/public/dark/home.png`, а также `src/public/publish/*`
-(`homeOn*`, `homeOff*`, `light/home.jpg`, `dark/400x640.png`).
+Скриншоты для магазина в репозитории больше не хранятся (удалены как
+неиспользуемые — `publish/*`, `light|dark/home.png`).
 
-Не подключены (код есть): `Help`, `qrCommands`, `autoscript`, `hide/*`.
+Иконки расширения лежат в `public/icon/` и попадают в `manifest.icons`.
+Это важно: WXT ищет `publicDir` в **корне проекта**, поэтому прежняя
+папка `src/public/` в сборку не попадала совсем (иконок в manifest не было).
 
 ### 4.12. `qrLabel.ts` — превью, совпадающее с C
 
@@ -769,49 +745,54 @@ const API_BASE = `http://127.0.0.1:${PORT}`;
 
 Это **только превью**: реальную печать всегда делает C-служба.
 
-### 4.13. `nativeMessaging.ts` — заявлено, но не реализовано
+### 4.13. Native Messaging — удалён (только HTTP)
 
-- Host-имя: `ru.printnum.host`; разрешение `nativeMessaging` есть в manifest.
-- `sendNative({command})` → `chrome.runtime.sendNativeMessage`; `nativePing()`.
-- **C-служба не умеет `--native-host` и не регистрирует host-манифест** →
-  вызов всегда падает с ошибкой, `BarcodeGenerator` ловит её и уходит на HTTP.
-- Если реализовывать: добавить в `wWinMain` режим `--native-host`
-  (4-байтовый little-endian префикс длины + JSON, stdin/stdout), регистрировать
-  манифест в реестре и/или `~/.config/.../NativeMessagingHosts`, поддержать
-  команды `ping`, `print-number`, `print-barcode`, `status-printer`,
-  `list-printers`. Тогда `BarcodeGenerator` начнёт использовать native-путь
-  без правок клиента.
+Раньше в расширении был клиент native messaging (`utils/nativeMessaging.ts`,
+host `ru.printnum.host`, разрешение `nativeMessaging` в manifest). C-служба
+команду `--native-host` и регистрацию host-манифеста **никогда не реализовывала**,
+поэтому каждый вызов «Печать через PrintNum» сначала падал в native, а потом
+уходил на HTTP. Модуль, разрешение и native-ветка в `BarcodeGenerator` удалены:
+единственный транспорт — HTTP на `127.0.0.1:5000`.
 
-### 4.14. Отключённые, но сохранённые функции (Ozon-автоматизация)
+Если native messaging понадобится (печать без открытого порта):
 
-Код лежит в `src/entrypoints/*.content.ts`, но исключён из сборки. Чтобы
-включить — добавить имя в `INCLUDED_ENTRYPOINTS` (`wxt.config.ts`) и (для UI)
-импортировать панель в `App.tsx`.
+1. вернуть `nativeMessaging` в `permissions` (`wxt.config.ts`);
+2. добавить в `wWinMain` режим `--native-host`: 4-байтовый little-endian
+   префикс длины + JSON в stdin/stdout;
+3. зарегистрировать host-манифест (реестр Windows или
+   `~/.config/google-chrome/NativeMessagingHosts/ru.printnum.host.json`);
+4. поддержать команды `ping`, `print-number`, `print-barcode`,
+   `status-printer`, `list-printers`;
+5. вернуть клиентский модуль и fallback на HTTP в `BarcodeGenerator`.
 
-**QR-команды** (сканируется QR в нужном разделе):
+### 4.14. Удалённые функции (история)
 
-| Команда | Раздел | Действия |
+Раньше в проекте были **QR-команды**, **автоскрипты** и **настройки
+видимости** для Ozon. Их код существовал только на страницах и никогда не
+отображался в UI (popup-панели не были подключены к `App.tsx`), поэтому
+функционал удалён вместе со вспомогательными модулями. Восстановить можно
+только из git-истории (коммиты до `f0ba5e9`).
+
+Что именно было (для понимания, если тянуть обратно):
+
+| Функция | Раздел Ozon | Поведение |
 |---|---|---|
-| Выдать все (без пакета / M / L) | `/orders` | «К выдаче» → [пакет M/L] → «Выдать» |
-| Выдать заказ (без пакета / M / L) | `/orders/session` | [пакет] → «Выдать» |
-| Оплатить заказ (без пакета / M / L) | `/orders/session` | [пакет] → «Провести оплату» (повтор при «Попробовать ещё») |
+| Выдать заказ/всё (без пакета, M, L) | `/orders`, `/orders/session` | «Взять в работу» → выбор пакета → «Выдать» |
+| Оплатить заказ | `/orders/session` | выбор пакета → «Провести оплату» |
 | Отказ от товара | `/orders/session` | «Проверить» → «На проверке» → «К выдаче» → причина |
-| С рекомендацией | `/receiving-v2/main` | переключить тумблер |
+| «С рекомендацией» | `/receiving-v2/main` | переключить тумблер |
+| Автоскрипты | `/outbound` | «Упаковки Ozon нет» / «Перенести тарники» |
+| Скрытие UI | все страницы | меню, уведомления, возвраты, баннеры |
 
-ID QR-кодов и списки действий — в `utils/constants.ts`
-(`qrCommands*`). Печатные листы QR: `src/public/qrCodes.pdf` / `.docx`
-(кнопка в popup, если панель подключена).
+Триггером служило сканирование QR-кода в нужном разделе (ID и таблицы
+действий были в `constants.ts`), настройки — массивы имён в
+`chrome.storage.local` (`other`, `autoscripts`, `qrCodes`, `returns`).
 
-**Автоскрипты** (`/outbound`): «Упаковки Ozon нет в наличии» (выбор причины,
-«Завершить», повторное сканирование) и «Перенести тарники в перевозку».
-
-**Настройки видимости**: скрытие меню, уведомлений, возвратов, баннеров
-(`/orders`, карточка выдачи). Включаются/выключаются массивами в
-`chrome.storage` (`other`, `autoscripts`/`offAutoscripts`, `qrCodes`/`offQrCodes`,
-`returns`/`offReturns`); background при старте «сеет» актуальные списки имён.
-
-> Не путать: `entrypoints/hide*.content.ts` — рабочая логика для Ozon
-> (сейчас не собирается), `entrypoints/popup/hide/` — UI настроек.
+Удалено вместе с ними: 12 content-скриптов (`hide*`, `qr*`, `autoscript*`),
+popup-панели (`Help`, `qrCommands`, `autoscript`, `SettingSection`, `hide/*`),
+`components/{accordion,opeTabURL}.tsx`, `hooks/useStorageState.ts`,
+`utils/{find,listener,code128}.ts`, печатные листы `qrCodes.pdf/docx`,
+а также сидирование этих списков в `background.ts`.
 
 ### 4.15. Dev-инструменты
 
@@ -875,7 +856,7 @@ ID QR-кодов и списки действий — в `utils/constants.ts`
 | `AutoPrintPanel` | открытие popup | `GET /config` | `200`, `features` | `shelfSupported = null` (без предупреждения) |
 | `autoPrint.handleAutoPrint` | размещение товара | `GET /config` (кэш 30 с) | `features` | `null` — возможности неизвестны: полка всё равно печатается, ячейки печатаются без проверки |
 | `autoPrint.handleAutoPrint` | размещение товара | `POST /print-number` | `200 OK` | событие с `ok:false` + `lastAutoPrintEvent` |
-| `BarcodeGenerator` | «Печать через PrintNum» | native `print-barcode` → `POST /print-barcode` | `200 OK` | «PrintNum недоступен…» / «вернул ошибку N» |
+| `BarcodeGenerator` | «Печать через PrintNum» | `POST /print-barcode` | `200 OK` | «PrintNum недоступен…» / «вернул ошибку N» |
 
 Ответы `503` (служба выключена, принтер не выбран/offline) расширение
 показывает как ошибку печати — это нормальный сценарий, а не «нет связи».
@@ -987,7 +968,7 @@ python3 -c "import json;m=json.load(open('output/chrome-mv3/manifest.json'));pri
 | Включить QR/автоскрипты/скрытие | `wxt.config.ts` `INCLUDED_ENTRYPOINTS` (+ панель в `App.tsx`) | перезагрузить вкладки Ozon |
 | Поменять геометрию QR-этикетки | `draw_qr_label_core` (C) **и** `qrLabel.ts` (preview) | держать константы синхронными (0.5/0.125/4/6 мм, 88 px) |
 | Поменять формат номера ячейки | `is_printable`-блок в `handle_request` + `prepare_label_data` | клиент: `CELL_PRINTABLE_RE`, `normalizePlacement` |
-| Добавить native messaging | `wWinMain` (`--native-host`), `nativeMessaging.ts` уже готов | host-манифест, реестр/каталог хостов |
+| Вернуть native messaging | `wWinMain` (`--native-host`) + клиентский модуль + `permissions` (см. §4.13) | host-манифест, реестр/каталог хостов |
 
 ---
 
@@ -1004,7 +985,15 @@ python3 -c "import json;m=json.load(open('output/chrome-mv3/manifest.json'));pri
 | Сборка расширения | `npm run build` → `output/chrome-mv3` |
 | Демо-этикетка без принтера | `wine printnum-diag.exe --demo-file "45" label.bmp` |
 | Демо QR-этикетки | `wine printnum-diag.exe --demo-qr "ii19382868529" label.bmp` |
+| Предупреждения C (`-Wextra`) | `x86_64-w64-mingw32-gcc … -Wall -Wextra …` → **0 предупреждений** |
+| Корректность QR-энкодера | `sips -s format png label.bmp --out q.png && zbarimg -q --raw q.png` → `ii19382868529` |
+| Типы без мёртвых locals | `npx tsc --noEmit --noUnusedLocals --noUnusedParameters` → 0 ошибок |
 | Сквозной тест без сканера | dev-сборка + `PrintNumScanner.simulate("123-47")` |
+
+Проверено на текущем состоянии: `./build.sh` — 0 ошибок/0 предупреждений
+(`-Wall -Wextra`), `./wine-ctl.sh test` — `21 passed, 0 failed`,
+`npm run compile` и `npm run build` — без ошибок, `manifest.icons` на месте,
+QR-этикетка декодируется `zbarimg` в исходное значение.
 
 Покрытие `wine-ctl.sh test`: `GET /`, `/config`, `/papers`, `/listPrinters`,
 `/status-printer`, `/service`; `POST /config`; полка `-88` (доходит до `503`,
@@ -1028,30 +1017,35 @@ python3 -c "import json;m=json.load(open('output/chrome-mv3/manifest.json'));pri
   порт фиксирован, dry-run только через `PRINTNUM_DRY_RUN` для CLI,
   автозагрузка ставится через API `POST /service/install`.
 - **Code128 удалён**: `/print-barcode` печатает комбинированную QR-этикетку.
-  `src/utils/code128.ts` — мёртвый код (нигде не импортируется), оставлен
-  исторически. Поля `moduleMm`/`heightMm` игнорируются.
+  Поля `moduleMm`/`heightMm` игнорируются.
 - **`docs/*`** (`first-run.md`, `emulation-testing.md`, `native-messaging.md`,
   `frontend-reference.md`, `preact-vs-vanilla.md`) удалены; их актуальные
   части перенесены сюда.
 - **Native Messaging** описано в старом README как рабочее — в C-службе оно
-  **не реализовано** (см. §4.13).
+  **не реализовано**, поэтому клиент и разрешение `nativeMessaging` удалены:
+  работаем только через HTTP (см. §4.13).
 - **КГТ-логика** (`is_kgt`) в C присутствует, но недостижима из-за валидации
   `/print-number`.
-- **Мёртвый/неиспользуемый код расширения**:
-  `utils/code128.ts` (не импортируется), `utils/listener.ts` (только
-  disabled-скрипты), `utils/find.ts` (только disabled-скрипты),
-  `src/main.css` (дубль `assets/main.css`), `components/accordion.tsx`,
-  `components/opeTabURL.tsx`, `hooks/useStorageState.ts`,
-  `entrypoints/popup/{Help,qrCommands,autoscript,SettingSection}.tsx`,
-  `entrypoints/popup/hide/*` — всё это либо не в сборке, либо не достижимо из
-  `App.tsx`. Vite их вырезает, на размер бандла они не влияют.
+- **Удалённый код расширения** (недостижим из пяти собираемых entrypoint'ов):
+  12 content-скриптов (`hide*`, `qr*`, `autoscript*`), popup-панели
+  (`Help`, `qrCommands`, `autoscript`, `SettingSection`, `hide/*`),
+  `components/{accordion,opeTabURL}.tsx`, `hooks/useStorageState.ts`,
+  `utils/{find,listener,code128}.ts`, `src/main.css`, `components.json`,
+  `eslint.config.js` (без зависимостей не запускался), `pnpm-lock.yaml`,
+  `src/public/*` (иконки, скриншоты, `qrCodes.pdf/docx`) и сидирование
+  legacy-списков в `background.ts`.
+- **Иконки**: WXT ищет `publicDir` в корне проекта, поэтому прежняя
+  `src/public/` не попадала в сборку — `manifest.icons` отсутствовал.
+  Иконки перенесены в `public/icon/` и теперь попадают в manifest.
 - **`example.html` / `example_files/`** — дамп реальной страницы Ozon
   (600+ КБ, 120+ CSS), нужен только для изучения разметки; в `.gitignore`.
+  Оставлен намеренно (не восстанавливается из git).
 - **`compile_commands.json` / `generate_compile_commands.py`** — для clangd;
   пути внутри устарели (`src-printnum-c`, `test-min.c` отсутствует).
   Регенерировать при необходимости.
-- **Два лок-файла** (`package-lock.json`, `pnpm-lock.yaml`) — следы смены
-  пакетного менеджера; актуален `package-lock.json` (npm).
+- **Один лок-файл** (`package-lock.json`, npm); `pnpm-lock.yaml` удалён.
+  `esbuild` остаётся в devDependencies: без него `tsc --noEmit` падает на
+  типах `vite.esbuild` в `wxt.config.ts` (проверено).
 
 ---
 

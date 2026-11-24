@@ -826,7 +826,7 @@ static void draw_main_text(HDC hdc, const wchar_t *text, const Sizes *s,
 // низ цифры 4, и не выходит за границы.
 static void apply_checker_with_outline(HDC hdc, const wchar_t *text,
                                        const TextLayout *tl, const Sizes *s,
-                                       int y_start, const Config *c) {
+                                       const Config *c) {
     if (!tl || tl->w < 1 || tl->h < 1 || !s) return;
 
     // Работаем со ВСЕЙ этикеткой — иначе часть текста за пределами tl
@@ -949,7 +949,7 @@ static BOOL draw_label(HDC hdc, const Config *c, const LabelData *d) {
 
     if (c->checker && tl.w > 0 && tl.h > 0) {
         if (c->outline) {
-            apply_checker_with_outline(hdc, d->main_text, &tl, &s, y_start, c);
+            apply_checker_with_outline(hdc, d->main_text, &tl, &s, c);
         } else {
             int dpi_x = GetDeviceCaps(hdc, LOGPIXELSX);
             int cell = (int)((c->checker_mm_x10 / 10.0) / 25.4 * dpi_x + 0.5);
@@ -2262,7 +2262,8 @@ pnqr_s8 pnqr_initText(PnQr *qr, pnqr_u8 *modules, pnqr_u8 version, pnqr_u8 ecc, 
 }
 
 pnqr_u8 pnqr_getModule(PnQr *qr, pnqr_u8 x, pnqr_u8 y) {
-    if (x < 0 || x >= qr->size || y < 0 || y >= qr->size) {
+    // x, y беззнаковые — достаточно проверки верхней границы.
+    if (x >= qr->size || y >= qr->size) {
         return 0;
     }
 
@@ -2684,7 +2685,7 @@ static BOOL demo_render_bmp(const wchar_t *text, const wchar_t *path, const Conf
     draw_main_text(hdc, d.main_text, &s, y_start, d.is_underlined, d.is_bold, &tl);
     if (c->checker && tl.w > 0 && tl.h > 0) {
         if (c->outline) {
-            apply_checker_with_outline(hdc, d.main_text, &tl, &s, y_start, c);
+            apply_checker_with_outline(hdc, d.main_text, &tl, &s, c);
         } else {
             int cell = (int)((c->checker_mm_x10 / 10.0) / 25.4 * 203 + 0.5);
             if (cell < 1) cell = 1;
