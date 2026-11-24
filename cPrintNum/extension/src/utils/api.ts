@@ -53,7 +53,7 @@ export type PrintSettings = {
   outlineMm: number;
   /** Как печатать: "gdi" — через драйвер Windows, "escpos" — raw ESC/POS. */
   printerMode: string;
-  /** Зазор между этикетками (die-cut) в 0.1 мм (20 = 2 мм), только ESC/POS. */
+  /** Зазор между этикетками (die-cut) в 0.1 мм (30 = 3 мм), только ESC/POS. */
   labelGapMm: number;
   /** Сдвиг картинки вправо в 0.1 мм, только ESC/POS. */
   rawXOffsetMm: number;

@@ -276,7 +276,7 @@ export default function PrintSettingsPanel() {
                 <MmInput
                   label="Зазор, мм"
                   valueX10={settings.labelGapMm}
-                  fallbackX10={20}
+                  fallbackX10={30}
                   onChange={(v) => patch({ labelGapMm: v })}
                 />
                 <MmInput

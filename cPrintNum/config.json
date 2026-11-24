@@ -7,7 +7,7 @@
   "expand": 500,
   "running": true,
   "printerMode": "gdi",
-  "labelGapMm": 20,
+  "labelGapMm": 30,
   "rawXOffsetMm": 0,
   "rawTransport": "spooler",
   "rawHost": "",

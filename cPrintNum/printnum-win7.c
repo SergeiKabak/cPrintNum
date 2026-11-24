@@ -151,7 +151,7 @@ typedef struct {
     BOOL    running;
     BOOL    qr_with_number; // QR товара рядом с номером ячейки (без точки)
     wchar_t printer_mode[16];   // "gdi" (драйвер) | "escpos" (raw, без драйвера)
-    long    label_gap_mm_x10;   // зазор между этикетками, 0.1 мм (20 = 2 мм)
+    long    label_gap_mm_x10;   // зазор между этикетками, 0.1 мм (30 = 3 мм)
     long    raw_x_offset_mm_x10;// сдвиг растра вправо, 0.1 мм
     wchar_t raw_transport[16];  // "spooler" (USB/LAN через спулер) | "tcp"
     wchar_t raw_host[64];       // IP принтера для tcp
@@ -177,7 +177,7 @@ static void cfg_defaults(Config *c) {
     c->running = TRUE;
     c->qr_with_number = TRUE;    // по умолчанию QR товара рядом с номером
     scpy(c->printer_mode, 16, L"gdi");
-    c->label_gap_mm_x10 = 20;    // 2 мм между этикетками (die-cut)
+    c->label_gap_mm_x10 = 30;    // 3 мм между этикетками (die-cut)
     c->raw_x_offset_mm_x10 = 0;  // без сдвига
     scpy(c->raw_transport, 16, L"spooler");
     c->raw_host[0] = 0;
@@ -916,6 +916,35 @@ static void checker_fill(HDC hdc, const TextLayout *tl, int cell) {
     }
 }
 
+// DPI для пересчёта мм→px. У memory-DC (демо, ESC/POS) GetDeviceCaps даёт 96,
+// но этикетки печатаются на 203 dpi — иначе превью не совпадает с печатью.
+static int label_dpi(HDC hdc) {
+    int dpi = GetDeviceCaps(hdc, LOGPIXELSX);
+    return dpi < 150 ? 203 : dpi;
+}
+
+// Клетка шахматки: размер из конфига (0.1 мм), но не крупнее ~1/20 кегля —
+// при уменьшении шрифта клетка уменьшается вместе с цифрами.
+static int checker_cell_px(const Config *c, int dpi, int font_size) {
+    int cell = (int)((c->checker_mm_x10 / 10.0) / 25.4 * dpi + 0.5);
+    int by_size = font_size / 20;
+    if (by_size < 2) by_size = 2;      // меньше 2 px на термобумаге смазывается
+    if (cell > by_size) cell = by_size;
+    if (cell < 1) cell = 1;
+    return cell;
+}
+
+// Толщина обводки: не толще ~1/32 кегля, но не меньше 1 px — контур
+// остаётся всегда (просто тонкий), шахматке хватает места внутри штриха.
+static int outline_pen_px(const Config *c, int dpi, int font_size) {
+    int pen = (int)((c->outline_mm_x10 / 10.0) / 25.4 * dpi + 0.5);
+    int by_size = font_size / 32;
+    if (by_size < 1) by_size = 1;
+    if (pen > by_size) pen = by_size;
+    if (pen < 0) pen = 0;       // outlineMm = 0 → без контура (явное выключение)
+    return pen;
+}
+
 // Шахматная заливка + сплошная обводка по рельефу цифры.
 // Рисуем цифру в память, находим граничные пиксели (сосед с белым) —
 // они остаются чёрными (сплошной контур), а внутренние пиксели
@@ -925,6 +954,13 @@ static void apply_checker_with_outline(HDC hdc, const wchar_t *text,
                                        const TextLayout *tl, const Sizes *s,
                                        const Config *c) {
     if (!tl || tl->w < 1 || tl->h < 1 || !s) return;
+
+    // outlineMm = 0 (явно выключено) → только шахматка, без memory-DC.
+    int dpi_check = label_dpi(hdc);
+    if (outline_pen_px(c, dpi_check, tl->size) == 0) {
+        checker_fill(hdc, tl, checker_cell_px(c, dpi_check, tl->size));
+        return;
+    }
 
     // Работаем со ВСЕЙ этикеткой — иначе часть текста за пределами tl
     // остаётся сплошной (второй '0' и точка в "100.").
@@ -959,11 +995,9 @@ static void apply_checker_with_outline(HDC hdc, const wchar_t *text,
     int got = GetDIBits(mem, bmp, 0, h, bits, &bi, DIB_RGB_COLORS);
 
     if (got) {
-        int dpi = GetDeviceCaps(hdc, LOGPIXELSX);
-        int cell = (int)((c->checker_mm_x10 / 10.0) / 25.4 * dpi + 0.5);
-        if (cell < 1) cell = 1;
-        int pen = (int)((c->outline_mm_x10 / 10.0) / 25.4 * dpi + 0.5);
-        if (pen < 1) pen = 1;
+        int dpi = label_dpi(hdc);
+        int cell = checker_cell_px(c, dpi, tl->size);
+        int pen = outline_pen_px(c, dpi, tl->size);
 
         // Карта чёрных пикселей.
         BYTE *black = (BYTE *)HeapAlloc(GetProcessHeap(), 0, (size_t)w * h);
@@ -1049,9 +1083,7 @@ static BOOL draw_label(HDC hdc, const Config *c, const LabelData *d) {
             apply_checker_with_outline(hdc, d->main_text, &tl, &s, c);
         } else {
             int dpi_x = GetDeviceCaps(hdc, LOGPIXELSX);
-            int cell = (int)((c->checker_mm_x10 / 10.0) / 25.4 * dpi_x + 0.5);
-            if (cell < 1) cell = 1;
-            checker_fill(hdc, &tl, cell);
+            checker_fill(hdc, &tl, checker_cell_px(c, dpi_x, tl.size));
         }
     }
     return TRUE;
@@ -1083,9 +1115,7 @@ static void render_text_label(HDC hdc, int w, int h, const wchar_t *text,
         if (c->outline) {
             apply_checker_with_outline(hdc, d.main_text, &tl, &s, c);
         } else {
-            int cell = (int)((c->checker_mm_x10 / 10.0) / 25.4 * 203 + 0.5);
-            if (cell < 1) cell = 1;
-            checker_fill(hdc, &tl, cell);
+            checker_fill(hdc, &tl, checker_cell_px(c, 203, tl.size));
         }
     }
 }
@@ -2834,7 +2864,7 @@ static void draw_number_qr_core(HDC hdc, const wchar_t *text,
     PnQrImage qr;
     if (!pn_qr_encode(ascii, &qr)) return;   // слишком длинное значение
 
-    int dpi_x = GetDeviceCaps(hdc, LOGPIXELSX);
+    int dpi_x = label_dpi(hdc);
     int margin_x = (int)(w * 0.05);
     int margin_y = (int)(h * 0.05);
     int avail_h = h - 2 * margin_y;
@@ -2909,9 +2939,7 @@ static void draw_number_qr_core(HDC hdc, const wchar_t *text,
                 // Контур по рельефу глифа + шахматка внутри.
                 apply_checker_with_outline(text_dc, d.main_text, &tl, &s, c);
             } else {
-                int cell = (int)((c->checker_mm_x10 / 10.0) / 25.4 * dpi_x + 0.5);
-                if (cell < 1) cell = 1;
-                checker_fill(text_dc, &tl, cell);
+                checker_fill(text_dc, &tl, checker_cell_px(c, dpi_x, tl.size));
             }
         }
         BitBlt(hdc, 0, 0, text_w, h, text_dc, 0, 0, SRCCOPY);

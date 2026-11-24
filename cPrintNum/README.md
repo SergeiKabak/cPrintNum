@@ -113,8 +113,7 @@ cPrintNum/
 │                            # (единый архив: расширение + exe + config)
 ├── printnum-win7.exe        # артефакт сборки: служба (подсистема Windows)
 ├── printnum-diag.exe        # артефакт сборки (-mconsole, для Wine/диагностики)
-├── demo_qr_label.bmp        # пример вывода --demo-qr (344×200, 43×25 мм @203dpi)
-├── demo_cell_qr_label.bmp   # пример --demo-cell-qr: «163» (шахматка+обводка) + QR ii…
+├── (демо-BMP не хранятся в репозитории: генерируются через --demo-*)
 ├── generate_compile_commands.py  # генератор compile_commands.json для clangd
 ├── compile_commands.json    # БД компиляции для clangd (пути/цели устаревшие)
 ├── .cache/clangd/index/     # локальный кэш clangd — не трогать, не коммитить
@@ -311,12 +310,12 @@ PrintNum-win7.zip
 | `running` | bool | `true` | глобальный выключатель печати |
 | `papers` | string[] | 8 значений | список размеров для `GET /papers` (до 16, имя ≤31 символа) |
 | `checker` | bool | **`true`** | шахматная заливка цифры (экономия термоголовки) |
-| `checkerMm` | number | `10` | клетка шахматки в 0.1 мм (10 = 1.0 мм, минимум 1) |
+| `checkerMm` | number | `10` | клетка шахматки в 0.1 мм (10 = 1.0 мм); фактически не крупнее ~1/20 высоты цифры |
 | `outline` | bool | `true` | сплошная обводка по контуру глифа (работает вместе с `checker`) |
-| `outlineMm` | number | `5` | толщина обводки в 0.1 мм (5 = 0.5 мм, минимум 1) |
+| `outlineMm` | number | `5` | толщина обводки в 0.1 мм (5 = 0.5 мм); не толще ~1/32 кегля, минимум 1 px |
 | `qrWithNumber` | bool | **`true`** | печатать QR товара рядом с номером ячейки (без точки) |
 | `printerMode` | string | `"gdi"` | `"gdi"` — печать через драйвер Windows; `"escpos"` — raw ESC/POS без настроек драйвера |
-| `labelGapMm` | number (0.1 мм) | `20` | зазор между этикетками (die-cut), 20 = 2 мм; только `escpos` |
+| `labelGapMm` | number (0.1 мм) | `30` | зазор между этикетками (die-cut), 30 = 3 мм; только `escpos` |
 | `rawXOffsetMm` | number (0.1 мм) | `0` | сдвиг картинки вправо внутри ленты; только `escpos` |
 | `rawTransport` | string | `"spooler"` | `"spooler"` (USB/LAN/BT через спулер, `pDatatype:RAW`) или `"tcp"` |
 | `rawHost` | string | `""` | IP принтера для `rawTransport:"tcp"` |
@@ -474,6 +473,18 @@ expand` → bold + рокировка (число в `main`, префикс в `
   размера 100 px (`by_w`, `by_h`), затем цикл уменьшения до вписывания,
   минимум 6 px; шрифт Arial, `FW_BOLD` при bold, `underline` при endLine.
   Это 2–3 GDI-вызова вместо ~50 шагов «+1 px» — важно для старого железа.
+- Клетка шахматки и толщина обводки **масштабируются под кегль**
+  (`checker_cell_px` / `outline_pen_px`):
+  `клетка = min(checkerMm, max(2px, высота_глифа/20))`,
+  `обводка = min(outlineMm, max(1px, высота_глифа/32))` — контур остаётся
+  всегда (просто тонкий), шахматке хватает места внутри штриха; совсем без
+  контура — только при `outlineMm:0`.
+  Поэтому на длинных полках (`-1234`) шрифт мельче — и клетка/обводка меньше,
+  шахматка остаётся видимой (без этого штрих съедался контуром и цифры были
+  сплошными).
+- DPI для пересчёта мм→px берётся из DC, но у memory-DC (демо, ESC/POS)
+  поднимается до 203 (`label_dpi`): иначе превью рисовало бы клетку и зазор
+  вдвое мельче, чем реальная печать на 203 dpi.
 - `checker:true` + `outline:true` (`apply_checker_with_outline`):
   1. вся этикетка рисуется в memory-DC;
   2. читаются пиксели (`GetDIBits`, 24-bit top-down);
@@ -1166,7 +1177,7 @@ python3 -c "import json;m=json.load(open('output/chrome-mv3/manifest.json'));pri
 | Демо QR-этикетки | `wine printnum-diag.exe --demo-qr "ii19382868529" label.bmp` |
 | Демо «номер + QR товара» | `wine printnum-diag.exe --demo-cell-qr "163-1" "ii19382868529" label.bmp` → `zbarimg` декодирует ШК |
 | Разбор ответов Ozon + `findBarcode` | esbuild-бандл теста в node: 13 проверок (ячейка, полка, без ШК, глубокий ШК, мусор, бюджет обхода) |
-| RAW-поток ESC/POS | `--raw-dump "163-1" "ii…" label.bin` → разобрать байты: `ESC @`, `GS v 0` (344×200), `ESC J` (2 мм); растр декодируется `zbarimg` |
+| RAW-поток ESC/POS | `--raw-dump "163-1" "ii…" label.bin` → разобрать байты: `ESC @`, `GS v 0` (344×200), `ESC J` (3 мм); растр декодируется `zbarimg` |
 | Предупреждения C (`-Wextra`) | `x86_64-w64-mingw32-gcc … -Wall -Wextra …` → **0 предупреждений** |
 | Корректность QR-энкодера | `sips -s format png label.bmp --out q.png && zbarimg -q --raw q.png` → `ii19382868529` |
 | Типы без мёртвых locals | `npx tsc --noEmit --noUnusedLocals --noUnusedParameters` → 0 ошибок |
