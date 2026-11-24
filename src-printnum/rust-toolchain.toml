@@ -1,8 +1,0 @@
-# Ночной toolchain нужен для боевой сборки под Windows 7:
-# таргет x86_64-win7-windows-msvc требует `-Z build-std`, а это nightly-only.
-# Компонент rust-src даёт исходники std для пересборки с vendor = "win7".
-#
-# Обычная сборка (cargo build / cargo test) на этом toolchain тоже работает.
-[toolchain]
-channel = "nightly"
-components = ["rust-src"]

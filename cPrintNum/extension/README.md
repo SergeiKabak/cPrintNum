@@ -1,0 +1,71 @@
+# PrintNum Extension
+
+> 📘 **Документация объединена.** Единая база знаний проекта (сервер + клиент,
+> контракт API, автопечать, отладка, мёртвый код) теперь живёт в
+> [`../README.md`](../README.md).
+>
+> Этот файл оставлен как точка входа для тех, кто открыл папку `extension/`:
+> здесь только то, что нужно для запуска сборки.
+
+## Что это
+
+Браузерное расширение (Chromium: Chrome, Яндекс Браузер, Edge, Opera) для
+`https://turbo-pvz.ozon.ru/*`. Ловит номера ячеек/полок и отправляет их в
+desktop-службу PrintNum (`http://127.0.0.1:5000`) для печати этикеток.
+
+**Без запущенного PrintNum печать не работает** — popup покажет
+«Печать не активна».
+
+## Быстрый старт (разработка)
+
+```bash
+npm install          # или pnpm install
+npm run dev          # WXT: output/chrome-mv3 + браузер
+npm run compile      # tsc --noEmit
+npm run build        # production → output/chrome-mv3
+npm run zip          # output/chrome-mv3.zip
+```
+
+Загрузить распакованное расширение: `chrome://extensions` → режим
+разработчика → «Загрузить распакованное» → `output/chrome-mv3`.
+
+## Порт
+
+Расширение обращается к `http://127.0.0.1:${VITE_PRINTNUM_PORT}` (по умолчанию
+`5000`). Значение подставляется **на этапе сборки**:
+
+```bash
+cp .env.example .env      # VITE_PRINTNUM_PORT=5000
+npm run build             # без пересборки изменение не подхватится
+```
+
+Порт сервера должен совпадать (сейчас в C-службе он зашит как `5000`).
+
+## Что собирается
+
+Список entrypoint'ов задан в `wxt.config.ts` (`filterEntrypoints`):
+`background`, `popup`, `sendPrintNum`, `labelCopy`, `pageHook`.
+Файлы `hide*.content.ts`, `qr*.content.ts`, `autoscript*.content.ts` лежат в
+`src/entrypoints/`, но **в сборку не попадают** — как их вернуть, см.
+раздел «Отключённые, но сохранённые функции» в [`../README.md`](../README.md).
+
+## Где что искать в общей документации
+
+| Тема | Раздел в [`../README.md`](../README.md) |
+|---|---|
+| Карта всех файлов и папок | §2 |
+| Потоки данных (XHR / DOM / popup / labelCopy) | §4.4 |
+| HTTP-клиент и `PrintSettings` | §4.5 |
+| Ключи `chrome.storage.local` | §4.6 |
+| Автопечать: режимы, дедупликация, `shelf-dash` | §4.7 |
+| `pageHook` (MAIN world) и перехват ответов Ozon | §4.8 |
+| Popup, панели, превью QR | §4.11–4.12 |
+| Native messaging (в C-службе не реализовано) | §4.13 |
+| QR-команды, автоскрипты, скрытие элементов | §4.14 |
+| Эмулятор сканера, `window.PrintNumHook` | §4.15 |
+| Связь сервер ↔ клиент, диагностика, чек-лист | §5 |
+| Инварианты, рецепты, проверка | §6–8 |
+
+## Автор
+
+**Кирилл** — Telegram: `@aim_stars`. Лицензия MIT.
