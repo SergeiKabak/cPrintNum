@@ -181,6 +181,14 @@ cmd_test() {
     # в проверку готовности, а не в 400. Поэтому временно выключаем службу.
     t "config running=false" 200 POST /config '{"running":false}'
     t "shelf -88 (валидна)"  503 POST /print-number '{"text":"-88"}'
+    # Ограничение: не больше 4 цифр в номере ячейки (максимум 9999).
+    t "cell 1234 (валидна)"  503 POST /print-number '{"text":"1234"}'
+    t "cell 12345 (>4)"      400 POST /print-number '{"text":"12345"}'
+    t "cell 1234-1234"       503 POST /print-number '{"text":"1234-1234"}'
+    t "cell 12345-1 (>4)"    400 POST /print-number '{"text":"12345-1"}'
+    t "cell 1-12345 (>4)"    400 POST /print-number '{"text":"1-12345"}'
+    t "shelf -12345 (>4)"    400 POST /print-number '{"text":"-12345"}'
+
     t "config running=true"  200 POST /config '{"running":true}'
 
     t "print Возврат-1"      400 POST /print-number '{"text":"Возврат-1"}'

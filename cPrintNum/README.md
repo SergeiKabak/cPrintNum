@@ -3,7 +3,7 @@
 > Единый источник правды по проекту для людей и ИИ-агентов.
 > Объединяет прежний `README.md` (C-служба) и `extension/README.md` (браузерное
 > расширение). Всё, что описано ниже, проверено по исходникам и по живому
-> прогону службы под Wine (`./wine-ctl.sh test` → `21 passed, 0 failed`).
+> прогону службы под Wine (`./wine-ctl.sh test` → `27 passed, 0 failed`).
 
 **Что это:** два компонента, которые работают только вместе.
 
@@ -83,7 +83,7 @@ SKIP_EXTENSION=1 ./build.sh     # только exe (если нет Node.js)
 
 # живой прогон службы под Wine
 ./wine-ctl.sh start             # сборка (если нужно) + запуск в фоне
-./wine-ctl.sh test              # smoke-тест всех эндпоинтов (21 проверка)
+./wine-ctl.sh test              # smoke-тест всех эндпоинтов (27 проверок)
 ./wine-ctl.sh logs | stop | reset | restart
 
 # клиент
@@ -310,9 +310,10 @@ PrintNum-win7.zip
 | `running` | bool | `true` | глобальный выключатель печати |
 | `papers` | string[] | 8 значений | список размеров для `GET /papers` (до 16, имя ≤31 символа) |
 | `checker` | bool | **`true`** | шахматная заливка цифры (экономия термоголовки) |
-| `checkerMm` | number | `10` | клетка шахматки в 0.1 мм (10 = 1.0 мм); фактически не крупнее ~1/20 высоты цифры |
+| `checkerMm` | number | `10` | верхняя граница клетки в 0.1 мм; сам размер зависит от числа цифр (см. §3.10) |
 | `outline` | bool | `true` | сплошная обводка по контуру глифа (работает вместе с `checker`) |
-| `outlineMm` | number | `5` | толщина обводки в 0.1 мм (5 = 0.5 мм); не толще ~1/32 кегля, минимум 1 px |
+| `outlineMm` | number | `5` | толщина обводки в **0.01 мм** (5 = 0.05 мм ≈ 1 px) — одинаковая для любого числа цифр |
+|  |  |  | ⚠️ единица изменилась: раньше было 0.1 мм (5 = 0.5 мм), теперь 0.01 мм; значения 1–12 = 0.01–0.12 мм (при 203 dpi всё ≤0.125 мм рисуется 1 px) |
 | `qrWithNumber` | bool | **`true`** | печатать QR товара рядом с номером ячейки (без точки) |
 | `printerMode` | string | `"gdi"` | `"gdi"` — печать через драйвер Windows; `"escpos"` — raw ESC/POS без настроек драйвера |
 | `labelGapMm` | number (0.1 мм) | `30` | зазор между этикетками (die-cut), 30 = 3 мм; только `escpos` |
@@ -379,7 +380,7 @@ Access-Control-Allow-Headers: Content-Type
 | GET | `/config` | — | `200` полный конфиг + `"features":["shelf-dash","qr-number"]` | — |
 | GET | `/service` | — | `200` `{"installed": true\|false}` | — |
 | POST | `/config` | частичный JSON-объект | `200` полный конфиг + `features` | `400` `{"error": "ожидается JSON-объект"}` |
-| POST | `/print-number` | `{"text":"163-1", "qr":"ii19382868529"}` (`qr` необязателен) | `200` `OK` (text/plain) | `400` `no text` / `not a cell number` / `empty` / `non-ascii qr`; `503` `stopped` / `no printer` / `printer offline`; `500` `print failed` |
+| POST | `/print-number` | `{"text":"163-1", "qr":"ii19382868529"}` (`qr` необязателен) | `200` `OK` (text/plain) | `400` `no text` / `not a cell number` / `empty` / `cell digits 1..4` / `non-ascii qr`; `503` `stopped` / `no printer` / `printer offline`; `500` `print failed` |
 | POST | `/print-barcode` | `{"text":"ii19382868529"}` | `200` `OK` | `400` `no text` / `non-ascii`; `503` как выше; `500` `print failed` |
 | POST | `/service/install` | `{}` (тело не читается) | `200` `{"ok": true, "path": "..."}` | `500` `{"error":"ошибка установки"}` |
 | POST | `/service/uninstall` | `{}` | `200` `{"ok": true}` | `500` `{"error":"ошибка удаления"}` |
@@ -430,6 +431,9 @@ curl -s -X POST http://127.0.0.1:5000/print-number \
    `ii18725308927`, `---`);
 3. санитизация: остаются только цифры и `-` (пробелы **удаляются**);
    пусто → `400 empty`;
+   **в каждой части номера не больше 4 цифр** (максимум ячейки 9999):
+   `163-1`, `1234`, `1234-1234`, `-1234` — ок; `12345`, `12345-1`, `1-12345`,
+   `-12345` → `400 cell digits 1..4`;
    необязательный `qr` (штрихкод товара) проверяется на ASCII 32..127 →
    иначе `400 non-ascii qr`; пустой `qr` = печатать как обычно;
 4. `running == false` → `503 stopped`;
@@ -473,15 +477,24 @@ expand` → bold + рокировка (число в `main`, префикс в `
   размера 100 px (`by_w`, `by_h`), затем цикл уменьшения до вписывания,
   минимум 6 px; шрифт Arial, `FW_BOLD` при bold, `underline` при endLine.
   Это 2–3 GDI-вызова вместо ~50 шагов «+1 px» — важно для старого железа.
-- Клетка шахматки и толщина обводки **масштабируются под кегль**
-  (`checker_cell_px` / `outline_pen_px`):
-  `клетка = min(checkerMm, max(2px, высота_глифа/20))`,
-  `обводка = min(outlineMm, max(1px, высота_глифа/32))` — контур остаётся
-  всегда (просто тонкий), шахматке хватает места внутри штриха; совсем без
-  контура — только при `outlineMm:0`.
-  Поэтому на длинных полках (`-1234`) шрифт мельче — и клетка/обводка меньше,
-  шахматка остаётся видимой (без этого штрих съедался контуром и цифры были
-  сплошными).
+- **Клетка шахматки зависит от количества цифр** в крупной строке
+  (`checker_cell_px`), 203 dpi:
+
+  | Цифр | Клетка | В пикселях |
+  |---|---|---|
+  | 1 | 0.5 мм | 4 px |
+  | 2 | 0.25 мм | 2 px |
+  | 3 | 0.125 мм | 1 px |
+  | 4+ | 0.05 мм | 1 px (минимум) |
+
+  `checkerMm` работает как **верхняя граница**: если в настройках меньше —
+  берётся настройка. Цифры считаются в `main_text` (дефис, точка, пробелы не
+  учитываются), поэтому `-1234` = 4 цифры.
+- **Толщина обводки** — ровно `outlineMm` для любого количества цифр, без
+  масштабирования (`outline_pen_px`). Единица — **0.01 мм**, по умолчанию
+  `5` = 0.05 мм; при 203 dpi это меньше пикселя, поэтому рисуется 1 px
+  (минимально возможный контур). Такой тонкий контур не съедает штрих:
+  шахматка видна и на 4-значных полках. `outlineMm: 0` — без контура.
 - DPI для пересчёта мм→px берётся из DC, но у memory-DC (демо, ESC/POS)
   поднимается до 203 (`label_dpi`): иначе превью рисовало бы клетку и зазор
   вдвое мельче, чем реальная печать на 203 dpi.
@@ -717,7 +730,7 @@ Ozon XHR/fetch (2xx)
 страница /receiving-v2/main
   → MutationObserver(document.body)
   → SELECTORS.numprint = 'div[class^="_list_"] div[class^="_shelfTag_"]'
-  → тексты фильтруются CELL_PRINTABLE_RE, первые 10
+  → тексты фильтруются CELL_CODE_RE (1–4 цифры), первые 10
   → первый запуск = только запоминание; далее при изменении списка
     печатается первый текст (origin "dom", dedupe "none")
   → тот же sendMessage → background → POST /print-number
@@ -1093,7 +1106,7 @@ cd cPrintNum
 curl -s http://127.0.0.1:5000/            # {"status": true}
 curl -s http://127.0.0.1:5000/config      # ... "features":["shelf-dash"]
 
-# 2. Контракт целиком (21 проверка, включая CORS/валидацию/полки)
+# 2. Контракт целиком (27 проверок, включая CORS/валидацию/полки)
 ./wine-ctl.sh test
 
 # 3. Расширение собирается и типизируется
@@ -1139,7 +1152,7 @@ python3 -c "import json;m=json.load(open('output/chrome-mv3/manifest.json'));pri
     только 4 панели; возврат функций = импорт + запись в `filterEntrypoints`.
 15. **Кириллица нигде в печати не поддерживается** (ни Code128, ни QR, ни
     `/print-number`). Текстовые ячейки (`Возврат-1`) отбрасываются на клиенте
-    (`CELL_PRINTABLE_RE`) и на сервере.
+    (`CELL_CODE_RE`: 1–4 цифры в каждой части, макс. 9999) и на сервере.
 16. **Селекторы Ozon хэшируются** (`_copyButton_o3a5g_142`) — использовать
     частичные (`*=`), все они собраны в `utils/constants.ts`.
 
@@ -1157,7 +1170,7 @@ python3 -c "import json;m=json.load(open('output/chrome-mv3/manifest.json'));pri
 | Новая панель popup | `entrypoints/popup/*` + импорт в `App.tsx` | стили Tailwind, тёмная тема |
 | Включить QR/автоскрипты/скрытие | `wxt.config.ts` `INCLUDED_ENTRYPOINTS` (+ панель в `App.tsx`) | перезагрузить вкладки Ozon |
 | Поменять геометрию QR-этикетки | `draw_qr_label_core` (C) **и** `qrLabel.ts` (preview) | держать константы синхронными (0.5/0.125/4/6 мм, 88 px) |
-| Поменять формат номера ячейки | `is_printable`-блок в `handle_request` + `prepare_label_data` | клиент: `CELL_PRINTABLE_RE`, `normalizePlacement` |
+| Поменять формат номера ячейки | `is_printable`-блок в `handle_request` (там же лимит 4 цифры) + `prepare_label_data` | клиент: `CELL_CODE_RE`, `normalizePlacement` |
 | Вернуть native messaging | `wWinMain` (`--native-host`) + клиентский модуль + `permissions` (см. §4.13) | host-манифест, реестр/каталог хостов |
 
 ---
@@ -1170,7 +1183,7 @@ python3 -c "import json;m=json.load(open('output/chrome-mv3/manifest.json'));pri
 |---|---|
 | Сборка сервера + расширения + 2 zip | `./build.sh` (`SKIP_EXTENSION=1` — только exe) |
 | Живой сервер | `./wine-ctl.sh start` / `stop` / `status` / `logs` / `reset` |
-| Контракт API (21 проверка) | `./wine-ctl.sh test` (проверено: `21 passed, 0 failed`) |
+| Контракт API (27 проверок) | `./wine-ctl.sh test` (проверено: `27 passed, 0 failed`) |
 | Типы расширения | `cd extension && npm run compile` (сейчас 0 ошибок) |
 | Сборка расширения | `npm run build` → `output/chrome-mv3` |
 | Демо-этикетка без принтера | `wine printnum-diag.exe --demo-file "45" label.bmp` |
@@ -1184,7 +1197,7 @@ python3 -c "import json;m=json.load(open('output/chrome-mv3/manifest.json'));pri
 | Сквозной тест без сканера | dev-сборка + `PrintNumScanner.simulate("123-47")` |
 
 Проверено на текущем состоянии: `./build.sh` — 0 ошибок/0 предупреждений
-(`-Wall -Wextra`), `./wine-ctl.sh test` — `21 passed, 0 failed`,
+(`-Wall -Wextra`), `./wine-ctl.sh test` — `27 passed, 0 failed`,
 `npm run compile` и `npm run build` — без ошибок, `manifest.icons` на месте,
 QR-этикетка декодируется `zbarimg` в исходное значение.
 

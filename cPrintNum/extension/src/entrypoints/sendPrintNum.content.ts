@@ -1,6 +1,6 @@
 declare const chrome: any;
 
-import { SELECTORS, CELL_PRINTABLE_RE, workPathNames } from "@/utils/constants";
+import { SELECTORS, CELL_CODE_RE, workPathNames } from "@/utils/constants";
 import { subscribe } from "@/utils/observer";
 import { registerScannerSimulator, onSimulatedScan } from "@/utils/scannerSimulator";
 import {
@@ -146,7 +146,7 @@ export default defineContentScript({
         .filter(Boolean)
         // Исключаем текстовые ячейки ('Возврат-1', 'Прямой поток-5'):
         // они не являются номером ячейки.
-        .filter((text) => CELL_PRINTABLE_RE.test(text))
+        .filter((text) => CELL_CODE_RE.test(text))
         .slice(0, 10);
     }
 
@@ -242,7 +242,7 @@ export default defineContentScript({
     onSimulatedScan((value) => {
       // Эмулированное сканирование тоже не должно отправлять
       // текстовые ячейки: иначе в консоли придётся видеть мусор.
-      if (!CELL_PRINTABLE_RE.test(value)) {
+      if (!CELL_CODE_RE.test(value)) {
         console.info(
           `[PrintNum:scanner] пропущено (текстовая ячейка): "${value}"`,
         );

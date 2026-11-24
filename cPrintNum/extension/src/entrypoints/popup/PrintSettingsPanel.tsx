@@ -330,7 +330,7 @@ export default function PrintSettingsPanel() {
             />
             {settings.checker && (
               <MmInput
-                label="Клетка, мм"
+                label="Макс. клетка, мм"
                 valueX10={settings.checkerMm}
                 fallbackX10={10}
                 onChange={(v) => patch({ checkerMm: v })}
@@ -346,11 +346,15 @@ export default function PrintSettingsPanel() {
                 label="Толщина, мм"
                 valueX10={settings.outlineMm}
                 fallbackX10={5}
+                scale={100}
+                step={0.01}
                 onChange={(v) => patch({ outlineMm: v })}
               />
             )}
             <span className="text-[10px] text-muted-foreground leading-tight">
-              Работает и вместе с QR: шахматка заливает только цифры.
+              Работает и вместе с QR. Клетка зависит от числа цифр: 1 → 0.5 мм,
+              2 → 0.25 мм, 3 → 0.125 мм, 4+ → 0.05 мм; значение выше — только
+              верхняя граница.
             </span>
           </div>
 
@@ -446,15 +450,20 @@ function MmInput({
   valueX10,
   fallbackX10,
   min = 0.1,
+  scale = 10,
+  step = 0.1,
   onChange,
 }: {
   label: string;
   valueX10: number | undefined;
   fallbackX10: number;
   min?: number;
+  /** Во сколько раз значение в конфиге больше миллиметров (10 = 0.1 мм). */
+  scale?: number;
+  step?: number;
   onChange: (valueX10: number) => void;
 }) {
-  const mm = (valueX10 ?? fallbackX10) / 10;
+  const mm = (valueX10 ?? fallbackX10) / scale;
 
   return (
     <label className="flex items-center justify-between gap-2 pl-6">
@@ -462,13 +471,13 @@ function MmInput({
       <input
         type="number"
         min={min}
-        step={0.1}
+        step={step}
         value={mm}
         onChange={(e) => {
           const parsed = parseFloat((e.target as HTMLInputElement).value);
           if (Number.isNaN(parsed)) return;
-          const x10 = Math.max(Math.round(min * 10), Math.round(parsed * 10));
-          onChange(x10);
+          const units = Math.max(0, Math.round(parsed * scale));
+          onChange(units);
         }}
         className="h-7 w-20 rounded-md border border-border bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-ring"
       />

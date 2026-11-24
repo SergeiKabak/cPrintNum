@@ -49,7 +49,7 @@ export type PrintSettings = {
   checkerMm: number;
   /** Сплошная обводка по контуру глифа. */
   outline: boolean;
-  /** Толщина обводки в 0.1 мм (5 = 0.5 мм). */
+  /** Толщина обводки в 0.01 мм (5 = 0.05 мм); 0 — без контура. */
   outlineMm: number;
   /** Как печатать: "gdi" — через драйвер Windows, "escpos" — raw ESC/POS. */
   printerMode: string;

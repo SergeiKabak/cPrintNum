@@ -41,3 +41,7 @@ src-printnum/PrintNum/
 *.njsproj
 *.sln
 *.sw?
+
+# Демо-артефакты PrintNum (--demo-*, --raw-dump)
+cPrintNum/*.bmp
+cPrintNum/*.bin

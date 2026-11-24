@@ -146,7 +146,7 @@ typedef struct {
     BOOL    checker;        // шахматная заливка цифры (экономия термоголовки)
     long    checker_mm_x10; // размер клетки шахматки, 0.1 мм (10 = 1.0 мм)
     BOOL    outline;        // сплошная обводка по контуру цифры
-    long    outline_mm_x10; // толщина обводки, 0.1 мм (5 = 0.5 мм)
+    long    outline_mm_x100;// толщина обводки, 0.01 мм (5 = 0.05 мм)
     long    expand;
     BOOL    running;
     BOOL    qr_with_number; // QR товара рядом с номером ячейки (без точки)
@@ -172,7 +172,7 @@ static void cfg_defaults(Config *c) {
     c->checker = TRUE;           // по умолчанию шахматка (экономия термоголовки)
     c->checker_mm_x10 = 10;      // 1.0 мм клетка шахматки
     c->outline = TRUE;           // обводка по контуру включена
-    c->outline_mm_x10 = 5;       // 0.5 мм тонкая линия
+    c->outline_mm_x100 = 5;      // 0.05 мм — тонкий контур, шахматка видна
     c->expand = 500;
     c->running = TRUE;
     c->qr_with_number = TRUE;    // по умолчанию QR товара рядом с номером
@@ -370,8 +370,8 @@ static void cfg_load(void) {
     }
     json_bool(json, L"outline", &g_cfg.outline);
     {
-        long v = g_cfg.outline_mm_x10;
-        if (json_long(json, L"outlineMm", &v)) g_cfg.outline_mm_x10 = v < 1 ? 1 : v;
+        long v = g_cfg.outline_mm_x100;
+        if (json_long(json, L"outlineMm", &v)) g_cfg.outline_mm_x100 = v < 0 ? 0 : v;
     }
     json_bool(json, L"running", &g_cfg.running);
     json_bool(json, L"qrWithNumber", &g_cfg.qr_with_number);
@@ -425,7 +425,7 @@ static void cfg_to_json(Config *c, wchar_t *out, int cap) {
     scat(out, cap, num);
     scat(out, cap, L",\"outline\":");
     scat(out, cap, c->outline ? L"true" : L"false");
-    itos(c->outline_mm_x10, num, 32);
+    itos(c->outline_mm_x100, num, 32);
     scat(out, cap, L",\"outlineMm\":");
     scat(out, cap, num);
     itos(c->expand, num, 32);
@@ -489,8 +489,8 @@ static void cfg_apply_json(const wchar_t *body) {
     }
     json_bool(body, L"outline", &g_cfg.outline);
     {
-        long v = g_cfg.outline_mm_x10;
-        if (json_long(body, L"outlineMm", &v)) g_cfg.outline_mm_x10 = v < 1 ? 1 : v;
+        long v = g_cfg.outline_mm_x100;
+        if (json_long(body, L"outlineMm", &v)) g_cfg.outline_mm_x100 = v < 0 ? 0 : v;
     }
     json_bool(body, L"running", &g_cfg.running);
     json_bool(body, L"qrWithNumber", &g_cfg.qr_with_number);
@@ -923,25 +923,38 @@ static int label_dpi(HDC hdc) {
     return dpi < 150 ? 203 : dpi;
 }
 
-// Клетка шахматки: размер из конфига (0.1 мм), но не крупнее ~1/20 кегля —
-// при уменьшении шрифта клетка уменьшается вместе с цифрами.
-static int checker_cell_px(const Config *c, int dpi, int font_size) {
-    int cell = (int)((c->checker_mm_x10 / 10.0) / 25.4 * dpi + 0.5);
-    int by_size = font_size / 20;
-    if (by_size < 2) by_size = 2;      // меньше 2 px на термобумаге смазывается
-    if (cell > by_size) cell = by_size;
+// Сколько цифр в крупной строке этикетки (дефисы, точки, пробелы не считаем).
+static int count_digits(const wchar_t *s) {
+    int n = 0;
+    for (int i = 0; s && s[i]; i++)
+        if (s[i] >= L'0' && s[i] <= L'9') n++;
+    return n;
+}
+
+// Клетка шахматки зависит от количества цифр (чем крупнее цифры, тем крупнее
+// клетка): 1 → 0.5 мм, 2 → 0.25 мм, 3 → 0.125 мм, 4+ → 0.05 мм.
+// Минимум 1 px (на 203 dpi 0.05 мм меньше пикселя), сверху — checkerMm.
+static int checker_cell_px(const Config *c, int dpi, int digits) {
+    double mm;
+    if (digits <= 1)      mm = 0.5;
+    else if (digits == 2) mm = 0.25;
+    else if (digits == 3) mm = 0.125;
+    else                  mm = 0.05;
+
+    int cell = (int)(mm / 25.4 * dpi + 0.5);
     if (cell < 1) cell = 1;
+
+    int cfg = (int)((c->checker_mm_x10 / 10.0) / 25.4 * dpi + 0.5);
+    if (cfg >= 1 && cell > cfg) cell = cfg;   // checkerMm — верхняя граница
     return cell;
 }
 
-// Толщина обводки: не толще ~1/32 кегля, но не меньше 1 px — контур
-// остаётся всегда (просто тонкий), шахматке хватает места внутри штриха.
-static int outline_pen_px(const Config *c, int dpi, int font_size) {
-    int pen = (int)((c->outline_mm_x10 / 10.0) / 25.4 * dpi + 0.5);
-    int by_size = font_size / 32;
-    if (by_size < 1) by_size = 1;
-    if (pen > by_size) pen = by_size;
-    if (pen < 0) pen = 0;       // outlineMm = 0 → без контура (явное выключение)
+// Толщина обводки — ровно из настроек (по умолчанию 0.5 мм), одинаково для
+// любого количества цифр. 0 = контур выключен.
+static int outline_pen_px(const Config *c, int dpi) {
+    int pen = (int)((c->outline_mm_x100 / 100.0) / 25.4 * dpi + 0.5);
+    if (c->outline_mm_x100 > 0 && pen < 1) pen = 1;   // 0.05 мм < 1 px → 1 px
+    if (pen < 0) pen = 0;
     return pen;
 }
 
@@ -957,8 +970,8 @@ static void apply_checker_with_outline(HDC hdc, const wchar_t *text,
 
     // outlineMm = 0 (явно выключено) → только шахматка, без memory-DC.
     int dpi_check = label_dpi(hdc);
-    if (outline_pen_px(c, dpi_check, tl->size) == 0) {
-        checker_fill(hdc, tl, checker_cell_px(c, dpi_check, tl->size));
+    if (outline_pen_px(c, dpi_check) == 0) {
+        checker_fill(hdc, tl, checker_cell_px(c, dpi_check, count_digits(text)));
         return;
     }
 
@@ -996,8 +1009,8 @@ static void apply_checker_with_outline(HDC hdc, const wchar_t *text,
 
     if (got) {
         int dpi = label_dpi(hdc);
-        int cell = checker_cell_px(c, dpi, tl->size);
-        int pen = outline_pen_px(c, dpi, tl->size);
+        int cell = checker_cell_px(c, dpi, count_digits(text));
+        int pen = outline_pen_px(c, dpi);
 
         // Карта чёрных пикселей.
         BYTE *black = (BYTE *)HeapAlloc(GetProcessHeap(), 0, (size_t)w * h);
@@ -1082,8 +1095,8 @@ static BOOL draw_label(HDC hdc, const Config *c, const LabelData *d) {
         if (c->outline) {
             apply_checker_with_outline(hdc, d->main_text, &tl, &s, c);
         } else {
-            int dpi_x = GetDeviceCaps(hdc, LOGPIXELSX);
-            checker_fill(hdc, &tl, checker_cell_px(c, dpi_x, tl.size));
+            int dpi_x = label_dpi(hdc);
+            checker_fill(hdc, &tl, checker_cell_px(c, dpi_x, count_digits(d->main_text)));
         }
     }
     return TRUE;
@@ -1115,7 +1128,7 @@ static void render_text_label(HDC hdc, int w, int h, const wchar_t *text,
         if (c->outline) {
             apply_checker_with_outline(hdc, d.main_text, &tl, &s, c);
         } else {
-            checker_fill(hdc, &tl, checker_cell_px(c, 203, tl.size));
+            checker_fill(hdc, &tl, checker_cell_px(c, 203, count_digits(d.main_text)));
         }
     }
 }
@@ -1460,6 +1473,34 @@ static void handle_request(SOCKET s, Request *r) {
             clean[j] = 0;
 
             if (!clean[0]) { send_text(s, 400, "empty"); return; }
+
+            // Номер ячейки — не больше 4 цифр в каждой части (максимум 9999):
+            // "163-1", "1234", "-1234" — ок; "12345", "12345-1", "-12345" — 400.
+            {
+                const wchar_t *t = clean;
+                if (*t == L'-') t++;                    // полка: "-1234"
+                int n = 0;
+                while (t[n] >= L'0' && t[n] <= L'9') n++;
+
+                BOOL digits_ok = n >= 1 && n <= 4;
+
+                if (digits_ok) {
+                    const wchar_t *dash = t + n;
+                    if (*dash == L'-') {
+                        const wchar_t *u = dash + 1;
+                        int m = 0;
+                        while (u[m] >= L'0' && u[m] <= L'9') m++;
+                        digits_ok = m >= 1 && m <= 4 && u[m] == 0;
+                    } else {
+                        digits_ok = *dash == 0;
+                    }
+                }
+
+                if (!digits_ok) {
+                    send_text(s, 400, "cell digits 1..4");
+                    return;
+                }
+            }
 
             // Необязательный QR товара: {"text":"163-1","qr":"ii19382868529"}.
             // Расширение кладёт сюда штрихкод из ответа Ozon; печатается
@@ -2939,7 +2980,7 @@ static void draw_number_qr_core(HDC hdc, const wchar_t *text,
                 // Контур по рельефу глифа + шахматка внутри.
                 apply_checker_with_outline(text_dc, d.main_text, &tl, &s, c);
             } else {
-                checker_fill(text_dc, &tl, checker_cell_px(c, dpi_x, tl.size));
+                checker_fill(text_dc, &tl, checker_cell_px(c, dpi_x, count_digits(d.main_text)));
             }
         }
         BitBlt(hdc, 0, 0, text_w, h, text_dc, 0, 0, SRCCOPY);

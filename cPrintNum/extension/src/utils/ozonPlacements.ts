@@ -13,7 +13,7 @@
  *   проходит валидацию `/print-number` (только цифры/дефис/пробел).
  */
 
-import { CELL_PRINTABLE_RE, LABEL_BARCODE_RE } from "@/utils/constants";
+import { CELL_CODE_RE, LABEL_BARCODE_RE } from "@/utils/constants";
 
 /** Подстроки URL, по которым узнаём нужные ответы Ozon. */
 export const OZON_ENDPOINTS = {
@@ -123,9 +123,9 @@ export function normalizePlacement(value: unknown): Placement | null {
   const kind: PlacementKind = SHELF_CODE_RE.test(text) ? "shelf" : "cell";
 
   if (kind === "cell") {
-    if (!CELL_PRINTABLE_RE.test(text) || !/\d/.test(text)) return null;
+    // Максимум 4 цифры в номере ячейки (9999), опционально «-» и 1–4 цифры.
     // Ячейки не начинаются с дефиса: это зарезервировано под полку.
-    if (text.startsWith("-")) return null;
+    if (!CELL_CODE_RE.test(text)) return null;
   }
 
   const endpoint: PlacementEndpoint =
