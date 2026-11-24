@@ -51,6 +51,18 @@ export type PrintSettings = {
   outline: boolean;
   /** Толщина обводки в 0.1 мм (5 = 0.5 мм). */
   outlineMm: number;
+  /** Как печатать: "gdi" — через драйвер Windows, "escpos" — raw ESC/POS. */
+  printerMode: string;
+  /** Зазор между этикетками (die-cut) в 0.1 мм (20 = 2 мм), только ESC/POS. */
+  labelGapMm: number;
+  /** Сдвиг картинки вправо в 0.1 мм, только ESC/POS. */
+  rawXOffsetMm: number;
+  /** Транспорт raw-печати: "spooler" (USB/LAN/BT через драйвер) или "tcp". */
+  rawTransport: string;
+  /** IP принтера для rawTransport = "tcp". */
+  rawHost: string;
+  /** TCP-порт raw-печати (обычно 9100). */
+  rawPort: number;
   papers: string[];
   /**
    * Возможности backend'а. Например, `shelf-dash` — поддержка полок `-88`.

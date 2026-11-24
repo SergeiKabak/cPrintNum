@@ -249,6 +249,78 @@ export default function PrintSettingsPanel() {
             </span>
           )}
 
+          {/* Режим печати: драйвер Windows или raw ESC/POS (без настроек). */}
+          <div className="flex flex-col gap-2 pt-2 mt-1 border-t border-border/50">
+            <label className="flex flex-col gap-1">
+              <span className="text-[11px] font-medium text-muted-foreground">
+                Режим печати
+              </span>
+              <select
+                value={settings.printerMode || "gdi"}
+                onChange={(e) =>
+                  patch({ printerMode: (e.target as HTMLSelectElement).value })
+                }
+                className="h-8 w-full rounded-md border border-border bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value="gdi">Через драйвер Windows (GDI)</option>
+                <option value="escpos">ESC/POS (raw, без настроек драйвера)</option>
+              </select>
+              <span className="text-[10px] text-muted-foreground leading-tight">
+                ESC/POS печатает картинку напрямую: размер этикетки, зазор и
+                сдвиг задаются здесь, а не в свойствах принтера.
+              </span>
+            </label>
+
+            {settings.printerMode === "escpos" && (
+              <>
+                <MmInput
+                  label="Зазор, мм"
+                  valueX10={settings.labelGapMm}
+                  fallbackX10={20}
+                  onChange={(v) => patch({ labelGapMm: v })}
+                />
+                <MmInput
+                  label="Сдвиг вправо, мм"
+                  valueX10={settings.rawXOffsetMm}
+                  fallbackX10={0}
+                  min={0}
+                  onChange={(v) => patch({ rawXOffsetMm: v })}
+                />
+                <label className="flex flex-col gap-1">
+                  <span className="text-[11px] font-medium text-muted-foreground">
+                    Транспорт
+                  </span>
+                  <select
+                    value={settings.rawTransport || "spooler"}
+                    onChange={(e) =>
+                      patch({ rawTransport: (e.target as HTMLSelectElement).value })
+                    }
+                    className="h-8 w-full rounded-md border border-border bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-ring"
+                  >
+                    <option value="spooler">Спулер (USB/LAN/BT)</option>
+                    <option value="tcp">TCP :9100 (сеть)</option>
+                  </select>
+                </label>
+                {settings.rawTransport === "tcp" && (
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[11px] font-medium text-muted-foreground">
+                      IP принтера
+                    </span>
+                    <input
+                      type="text"
+                      defaultValue={settings.rawHost || ""}
+                      placeholder="192.168.1.50"
+                      onBlur={(e) =>
+                        patch({ rawHost: (e.target as HTMLInputElement).value.trim() })
+                      }
+                      className="h-8 w-full rounded-md border border-border bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-ring"
+                    />
+                  </label>
+                )}
+              </>
+            )}
+          </div>
+
           {/* Шахматка + обводка: раньше задавались только в config.json. */}
           <div className="flex flex-col gap-2 pt-2 mt-1 border-t border-border/50">
             <Checkbox
@@ -373,27 +445,29 @@ function MmInput({
   label,
   valueX10,
   fallbackX10,
+  min = 0.1,
   onChange,
 }: {
   label: string;
   valueX10: number | undefined;
   fallbackX10: number;
+  min?: number;
   onChange: (valueX10: number) => void;
 }) {
   const mm = (valueX10 ?? fallbackX10) / 10;
 
   return (
-    <label className="flex items-center gap-2 pl-6">
+    <label className="flex items-center justify-between gap-2 pl-6">
       <span className="text-[11px] text-muted-foreground">{label}</span>
       <input
         type="number"
-        min={0.1}
+        min={min}
         step={0.1}
         value={mm}
         onChange={(e) => {
           const parsed = parseFloat((e.target as HTMLInputElement).value);
           if (Number.isNaN(parsed)) return;
-          const x10 = Math.max(1, Math.round(parsed * 10));
+          const x10 = Math.max(Math.round(min * 10), Math.round(parsed * 10));
           onChange(x10);
         }}
         className="h-7 w-20 rounded-md border border-border bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-ring"

@@ -57,8 +57,9 @@ Ozon (turbo-pvz.ozon.ru)
    `C:\PrintNum\`. В корне архива лежат **и расширение** (`manifest.json`,
    `background.js`, `content-scripts/`, `chunks/`, `assets/`, `icon/`),
    **и приложение** (`printnum-win7.exe`, `printnum-diag.exe`, `config.json`).
-2. Запустить `printnum-win7.exe` — поднимается HTTP-сервер `127.0.0.1:5000`
-   без окон и консоли. Лог: `%APPDATA%\PrintNum\log.txt`.
+2. Запустить `printnum-win7.exe` — сразу служба (режим по умолчанию, флаг
+   `--service` не обязателен): HTTP-сервер `127.0.0.1:5000`, без окон и
+   консоли. Графического интерфейса нет. Лог: `%APPDATA%\PrintNum\log.txt`.
 3. Установить расширение: Chrome Web Store **или** из того же архива —
    `chrome://extensions` → «Режим разработчика» → «Загрузить распакованное» →
    выбрать **эту же папку** (manifest.json в её корне). Перезагрузить
@@ -110,7 +111,7 @@ cPrintNum/
 ├── config.json              # рабочий конфиг для сборки (копируется в dist/)
 ├── dist/                    # 2 exe + config.json + PrintNum-win7.zip
 │                            # (единый архив: расширение + exe + config)
-├── printnum-win7.exe        # артефакт сборки (GUI, -mwindows)
+├── printnum-win7.exe        # артефакт сборки: служба (подсистема Windows)
 ├── printnum-diag.exe        # артефакт сборки (-mconsole, для Wine/диагностики)
 ├── demo_qr_label.bmp        # пример вывода --demo-qr (344×200, 43×25 мм @203dpi)
 ├── demo_cell_qr_label.bmp   # пример --demo-cell-qr: «163» (шахматка+обводка) + QR ii…
@@ -200,7 +201,7 @@ extension/
 
 | Артефакт | Флаги | Назначение |
 |---|---|---|
-| `printnum-win7.exe` | `-mwindows` | GUI-подсистема, без окна и консоли; служба |
+| `printnum-win7.exe` | `-mwindows` | подсистема Windows: ни окна, ни консоли; служба (GUI нет) |
 | `printnum-diag.exe` | `-mconsole` | то же + консоль (удобно под Wine/для диагностики) |
 
 Общие флаги:
@@ -314,6 +315,13 @@ PrintNum-win7.zip
 | `outline` | bool | `true` | сплошная обводка по контуру глифа (работает вместе с `checker`) |
 | `outlineMm` | number | `5` | толщина обводки в 0.1 мм (5 = 0.5 мм, минимум 1) |
 | `qrWithNumber` | bool | **`true`** | печатать QR товара рядом с номером ячейки (без точки) |
+| `printerMode` | string | `"gdi"` | `"gdi"` — печать через драйвер Windows; `"escpos"` — raw ESC/POS без настроек драйвера |
+| `labelGapMm` | number (0.1 мм) | `20` | зазор между этикетками (die-cut), 20 = 2 мм; только `escpos` |
+| `rawXOffsetMm` | number (0.1 мм) | `0` | сдвиг картинки вправо внутри ленты; только `escpos` |
+| `rawTransport` | string | `"spooler"` | `"spooler"` (USB/LAN/BT через спулер, `pDatatype:RAW`) или `"tcp"` |
+| `rawHost` | string | `""` | IP принтера для `rawTransport:"tcp"` |
+| `rawPort` | number | `9100` | TCP-порт raw-печати |
+| `rawInitHex` | string | `""` | hex-байты после `ESC @` (сервисные команды модели, напр. калибровка) |
 
 Дефолтный список `papers`: `43*25, 30*20, 40*30, 50*70, 58*40, 60*40, 75*120, 100*150`.
 
@@ -549,18 +557,55 @@ wine printnum-diag.exe --demo-cell-qr "-88"   "ii8923223139"  shelf.bmp
 sips -s format png label.bmp --out label.png && zbarimg -q --raw label.png
 ```
 
-### 3.13. CLI, демо-режимы, служба
+### 3.13. RAW-печать ESC/POS (`printerMode: "escpos"`)
+
+Зачем: при печати через GDI размер «холста» задаёт драйвер Windows — в нём
+нужно один раз выставить размер этикетки, иначе будет пусто/смещено.
+В raw-режиме приложение **само** формирует поток команд и отдаёт его спулеру
+с `pDatatype = "RAW"` (драйвер — просто труба) или шлёт в TCP `:9100`.
+Ни драйверных настроек бумаги, ни статуса спулера не требуется.
+
+Поток (80-мм ESC/POS-принтеры, 203 dpi, 576 точек печатной ширины):
+
+```
+ESC @                       сброс
+[rawInitHex]                необязательные байты (калибровка/режим модели)
+GS v 0 0 xL xH yL yH data   растр: bytes_per_row = ceil((offset+width)/8)
+ESC J n (×N)                протяжка на зазор (labelGapMm)
+```
+
+- Картинка рисуется тем же кодом, что и GDI-печать: номер + QR + шахматка
+  (`render_text_label` / `draw_number_qr_core`), `--print-barcode` —
+  `draw_qr_label_core`.
+- Размер этикетки — из `paper` (`Ш*В`), конвертация мм → точки по 203 dpi.
+- `rawXOffsetMm` — сдвиг вправо (если этикетка на ленте не с краю).
+- `labelGapMm` — протяжка после растра (die-cut зазор).
+- `rawTransport: "spooler"` — `OpenPrinter` + `StartDocPrinter(DOC_INFO_1{
+  pDatatype:"RAW"})` + `WritePrinter`; работает для USB/LAN/Bluetooth, если
+  принтер установлен в Windows. `"tcp"` — прямой `connect` на `rawHost:rawPort`
+  (нужен IP, не имя).
+- В лог: `RAW ESC/POS: <N> байт отправлено: 163-1 / ii…`.
+- Проверка без бумаги: `--raw-dump` / `--raw-dump-barcode` (см. §3.14).
+
+> ⚠️ Die-cut лента без датчика зазора: printer сам зазор не ищет — позиция
+> держится на точности протяжки. Если накапливается сдвиг, один раз
+> откалибруйте принтер (кнопка/утилита производителя) и при необходимости
+> доложите сервисные байты в `rawInitHex`, а протяжку подстройте `labelGapMm`.
+
+### 3.14. CLI, демо-режимы, служба
 
 | Команда | Поведение |
 |---|---|
-| `printnum-win7.exe` (без аргументов) | служба: HTTP-сервер, без окон |
-| `printnum-win7.exe --service` | то же (флаг для автозагрузки/`CreateProcess`) |
+| `printnum-win7.exe` (без аргументов) | служба: HTTP-сервер, без окон — **режим по умолчанию** |
+| `printnum-win7.exe --service` | то же явно (флаг для автозагрузки/`CreateProcess`); в лог пишется `Режим: служба (--service)` |
 | `printnum-win7.exe --print "163-1"` | разовая печать; та же валидация; код выхода 0/1 |
 | `set PRINTNUM_DRY_RUN=1` + `--print` | ничего не печатает, сразу `return 0` |
 | `printnum-diag.exe --demo-file "45" label.bmp` | рендер обычной этикетки в BMP (344×200, 43×25 мм @203 dpi), без принтера |
 | `printnum-diag.exe --demo-file "-88" shelf.bmp` | то же для полки |
 | `printnum-diag.exe --demo-qr "ii19382868529" label.bmp` | рендер QR-этикетки в BMP |
 | `printnum-diag.exe --demo-cell-qr "163-1" "ii19382868529" out.bmp` | рендер этикетки «номер + QR товара» в BMP |
+| `printnum-diag.exe --raw-dump "163-1" "ii19382868529" label.bin` | готовый ESC/POS-поток в файл (`-` вместо ШК = без QR) |
+| `printnum-diag.exe --raw-dump-barcode "ii19382868529" bc.bin` | ESC/POS-поток комбинированной QR-этикетки |
 
 Демо использует **те же** GDI-функции, что и печать (`prepare_label_data`,
 `draw_label`, `draw_qr_label_core`), поэтому это честный предпросмотр.
@@ -570,7 +615,7 @@ sips -s format png label.bmp --out label.png && zbarimg -q --raw label.png
 bind/listen/WSAStartup пишутся в лог и завершают процесс. `SO_REUSEADDR`
 включён, чтобы перезапуск был мгновенным.
 
-### 3.14. Ограничения сервера (важно для планирования правок)
+### 3.15. Ограничения сервера (важно для планирования правок)
 
 | Ограничение | Следствие |
 |---|---|
@@ -707,7 +752,8 @@ const API_BASE = `http://127.0.0.1:${PORT}`;
 
 `PrintSettings`: `printer`, `paper`, `idNum`, `endLine`, `hybrid`, `expand`,
 `running`, `qrWithNumber`, `checker`, `checkerMm`, `outline`, `outlineMm`,
-`papers`, `features?` — имена совпадают с `config.json`.
+`printerMode`, `labelGapMm`, `rawXOffsetMm`, `rawTransport`, `rawHost`,
+`rawPort`, `papers`, `features?` — имена совпадают с `config.json`.
 Все функции «мягко» глотают сетевые ошибки: popup показывает
 «Приложение PrintNum не запущено» вместо исключения.
 
@@ -835,6 +881,8 @@ const API_BASE = `http://127.0.0.1:${PORT}`;
    кнопка «Обновить», блок автозагрузки (`/service/install|uninstall`).
    Патчи оптимистичные: сначала локально, потом `POST /config`; при ошибке —
    перечитывание реального состояния. Fallback-список бумаги `["30*20"]`.
+   Есть выбор **«Режим печати»** — `gdi` / `escpos` (raw ESC/POS) — и для
+   `escpos`: «Зазор, мм», «Сдвиг вправо, мм», «Транспорт», «IP принтера».
    Есть чекбоксы **«QR товара рядом с номером»** (`qrWithNumber`),
    **«Шахматка (экономия термоголовки)»** (`checker` + `checkerMm`, мм) и
    **«Обводка по контуру»** (`outline` + `outlineMm`, мм).
@@ -1016,6 +1064,8 @@ popup-панели (`Help`, `qrCommands`, `autoscript`, `SettingSection`, `hide/
 | автопечать молчит | `autoPrint.mode = off`, не та страница, выключены `shelf`/`packing`, дедуп | `chrome.storage.local.autoPrint`, `lastAutoPrintEvent` | выбрать режим `xhr`, открыть нужный раздел |
 | после обновления расширения ничего не ловится | старые content scripts/pageHook в открытой вкладке | консоль: `Extension context invalidated` | перезагрузить вкладку Ozon (F5) |
 | нет QR на этикетке | `qrWithNumber` выключен, расширение не перезагружено или в ответе Ozon не было ШК | лог: `QR не напечатан: qrWithNumber выключен` / `Печать с QR выполнена` | включить чекбокс в popup, перезагрузить расширение и вкладку; в логе проверить строку печати |
+| raw-печать: `500 print failed` | спулер не открыл принтер (`OpenPrinter`) или не соединился TCP | лог: `RAW ESC/POS: N байт — ошибка отправки` | проверить имя принтера в Windows (spooler) или `rawHost`/`rawPort` (tcp) |
+| raw-печать: этикетка съезжает | неверный зазор или сдвиг | `labelGapMm`, `rawXOffsetMm` | подстроить в popup; при накоплении сдвига откалибровать принтер |
 | нет шахматной заливки | `checker:false` в конфиге | `GET /config` → `checker` | включить «Шахматка» в popup (раньше этого не было в UI) |
 | шахматка есть, но цифры пропали | `checker:true` + `outline:false` (старый баг: заливались все клетки) | демо `--demo-file` /`--demo-cell-qr` | обновить exe (исправлено в `checker_fill`); либо включить «Обводка по контуру» |
 | ШК не подставляется в поле генератора | значение лежит в атрибуте `value`, а код читал только `.value`; либо старый content script | консоль вкладки: `[PrintNum:label] подхвачен штрихкод: ii…` | обновить сборку, перезагрузить расширение и вкладку; проверить `chrome.storage.local.lastCopiedLabel` |
@@ -1116,6 +1166,7 @@ python3 -c "import json;m=json.load(open('output/chrome-mv3/manifest.json'));pri
 | Демо QR-этикетки | `wine printnum-diag.exe --demo-qr "ii19382868529" label.bmp` |
 | Демо «номер + QR товара» | `wine printnum-diag.exe --demo-cell-qr "163-1" "ii19382868529" label.bmp` → `zbarimg` декодирует ШК |
 | Разбор ответов Ozon + `findBarcode` | esbuild-бандл теста в node: 13 проверок (ячейка, полка, без ШК, глубокий ШК, мусор, бюджет обхода) |
+| RAW-поток ESC/POS | `--raw-dump "163-1" "ii…" label.bin` → разобрать байты: `ESC @`, `GS v 0` (344×200), `ESC J` (2 мм); растр декодируется `zbarimg` |
 | Предупреждения C (`-Wextra`) | `x86_64-w64-mingw32-gcc … -Wall -Wextra …` → **0 предупреждений** |
 | Корректность QR-энкодера | `sips -s format png label.bmp --out q.png && zbarimg -q --raw q.png` → `ii19382868529` |
 | Типы без мёртвых locals | `npx tsc --noEmit --noUnusedLocals --noUnusedParameters` → 0 ошибок |
@@ -1139,7 +1190,8 @@ QR-этикетка декодируется `zbarimg` в исходное зн�
 Что изменилось и почему в README больше нет старых обещаний:
 
 - **Rust/Slint/tiny_http версия** (`src-printnum/`) и **Python/Flask**
-  (`amvera/`) удалены из рабочей папки. Этот README описывает **только**
+  (`amvera/`) удалены из рабочей папки. Графический интерфейс (окно Slint)
+  больше не поддерживается: приложение — только служба, окно не создаётся. Этот README описывает **только**
   C-службу и расширение. Упоминания `printnum.exe` относятся к прежнему
   Rust-бинарнику — сейчас артефакты называются `printnum-win7.exe` /
   `printnum-diag.exe`.

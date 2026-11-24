@@ -6,6 +6,13 @@
   "hybrid": false,
   "expand": 500,
   "running": true,
+  "printerMode": "gdi",
+  "labelGapMm": 20,
+  "rawXOffsetMm": 0,
+  "rawTransport": "spooler",
+  "rawHost": "",
+  "rawPort": 9100,
+  "rawInitHex": "",
   "papers": [
     "43*25",
     "30*20",

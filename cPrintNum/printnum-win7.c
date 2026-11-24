@@ -1,10 +1,11 @@
-// printnum-win7.c — PrintNum в виде чистой службы для Windows 7 x64.
+// printnum-win7.c — PrintNum: служба без графического интерфейса (Win7 x64).
 //
 // Один файл, без CRT (-nostartfiles -nodefaultlibs), только системные DLL.
-// Заменяет Rust-версию printnum.exe на машинах, где нельзя собрать Rust.
 //
 // Режим работы: HTTP-сервер на 127.0.0.1:5000 (Winsock), управляется
-// браузерным расширением. Контракт API 1:1 с Rust-сервером (server.rs):
+// браузерным расширением. Графического окна нет и не планируется:
+// запуск без аргументов ИЛИ с --service — служба (это режим по умолчанию).
+// Контракт API совместим с прежней Rust-версией (server.rs):
 //
 //   GET  /                  -> {"status": true}
 //   GET  /status-printer    -> {"printerOnline": bool}
@@ -149,6 +150,13 @@ typedef struct {
     long    expand;
     BOOL    running;
     BOOL    qr_with_number; // QR товара рядом с номером ячейки (без точки)
+    wchar_t printer_mode[16];   // "gdi" (драйвер) | "escpos" (raw, без драйвера)
+    long    label_gap_mm_x10;   // зазор между этикетками, 0.1 мм (20 = 2 мм)
+    long    raw_x_offset_mm_x10;// сдвиг растра вправо, 0.1 мм
+    wchar_t raw_transport[16];  // "spooler" (USB/LAN через спулер) | "tcp"
+    wchar_t raw_host[64];       // IP принтера для tcp
+    long    raw_port;           // порт (9100)
+    wchar_t raw_init_hex[256];  // необязательные байты после ESC @ (калибровка)
     wchar_t papers[MAX_PAPERS][32];
     int     papers_count;
 } Config;
@@ -168,6 +176,13 @@ static void cfg_defaults(Config *c) {
     c->expand = 500;
     c->running = TRUE;
     c->qr_with_number = TRUE;    // по умолчанию QR товара рядом с номером
+    scpy(c->printer_mode, 16, L"gdi");
+    c->label_gap_mm_x10 = 20;    // 2 мм между этикетками (die-cut)
+    c->raw_x_offset_mm_x10 = 0;  // без сдвига
+    scpy(c->raw_transport, 16, L"spooler");
+    c->raw_host[0] = 0;
+    c->raw_port = 9100;
+    c->raw_init_hex[0] = 0;
     static const wchar_t *def[] = {
         L"43*25", L"30*20", L"40*30", L"50*70",
         L"58*40", L"60*40", L"75*120", L"100*150",
@@ -361,6 +376,25 @@ static void cfg_load(void) {
     json_bool(json, L"running", &g_cfg.running);
     json_bool(json, L"qrWithNumber", &g_cfg.qr_with_number);
     {
+        wchar_t t[64];
+        if (json_str(json, L"printerMode", t, 16)) scpy(g_cfg.printer_mode, 16, t);
+        if (json_str(json, L"rawTransport", t, 16)) scpy(g_cfg.raw_transport, 16, t);
+        if (json_str(json, L"rawHost", t, 64)) scpy(g_cfg.raw_host, 64, t);
+        if (json_str(json, L"rawInitHex", t, 64)) scpy(g_cfg.raw_init_hex, 64, t);
+    }
+    {
+        long v = g_cfg.label_gap_mm_x10;
+        if (json_long(json, L"labelGapMm", &v)) g_cfg.label_gap_mm_x10 = v < 0 ? 0 : v;
+    }
+    {
+        long v = g_cfg.raw_x_offset_mm_x10;
+        if (json_long(json, L"rawXOffsetMm", &v)) g_cfg.raw_x_offset_mm_x10 = v < 0 ? 0 : v;
+    }
+    {
+        long v = g_cfg.raw_port;
+        if (json_long(json, L"rawPort", &v) && v >= 1 && v <= 65535) g_cfg.raw_port = v;
+    }
+    {
         long e = g_cfg.expand;
         if (json_long(json, L"expand", &e)) g_cfg.expand = e < 1 ? 1 : e;
     }
@@ -401,6 +435,21 @@ static void cfg_to_json(Config *c, wchar_t *out, int cap) {
     scat(out, cap, c->running ? L"true" : L"false");
     scat(out, cap, L",\"qrWithNumber\":");
     scat(out, cap, c->qr_with_number ? L"true" : L"false");
+
+    scat(out, cap, L",\"printerMode\":\"");
+    jesc(c->printer_mode, esc, 512); scat(out, cap, esc);
+    scat(out, cap, L"\",\"rawTransport\":\"");
+    jesc(c->raw_transport, esc, 512); scat(out, cap, esc);
+    scat(out, cap, L"\",\"rawHost\":\"");
+    jesc(c->raw_host, esc, 512); scat(out, cap, esc);
+    scat(out, cap, L"\",\"rawInitHex\":\"");
+    jesc(c->raw_init_hex, esc, 512); scat(out, cap, esc);
+    scat(out, cap, L"\",\"labelGapMm\":");
+    itos(c->label_gap_mm_x10, num, 32); scat(out, cap, num);
+    scat(out, cap, L",\"rawXOffsetMm\":");
+    itos(c->raw_x_offset_mm_x10, num, 32); scat(out, cap, num);
+    scat(out, cap, L",\"rawPort\":");
+    itos(c->raw_port, num, 32); scat(out, cap, num);
     scat(out, cap, L",\"papers\":[");
 
     for (int i = 0; i < c->papers_count; i++) {
@@ -445,6 +494,25 @@ static void cfg_apply_json(const wchar_t *body) {
     }
     json_bool(body, L"running", &g_cfg.running);
     json_bool(body, L"qrWithNumber", &g_cfg.qr_with_number);
+    {
+        wchar_t t[64];
+        if (json_str(body, L"printerMode", t, 16)) scpy(g_cfg.printer_mode, 16, t);
+        if (json_str(body, L"rawTransport", t, 16)) scpy(g_cfg.raw_transport, 16, t);
+        if (json_str(body, L"rawHost", t, 64)) scpy(g_cfg.raw_host, 64, t);
+        if (json_str(body, L"rawInitHex", t, 64)) scpy(g_cfg.raw_init_hex, 64, t);
+    }
+    {
+        long v = g_cfg.label_gap_mm_x10;
+        if (json_long(body, L"labelGapMm", &v)) g_cfg.label_gap_mm_x10 = v < 0 ? 0 : v;
+    }
+    {
+        long v = g_cfg.raw_x_offset_mm_x10;
+        if (json_long(body, L"rawXOffsetMm", &v)) g_cfg.raw_x_offset_mm_x10 = v < 0 ? 0 : v;
+    }
+    {
+        long v = g_cfg.raw_port;
+        if (json_long(body, L"rawPort", &v) && v >= 1 && v <= 65535) g_cfg.raw_port = v;
+    }
     {
         long e;
         if (json_long(body, L"expand", &e)) g_cfg.expand = e < 1 ? 1 : e;
@@ -989,6 +1057,39 @@ static BOOL draw_label(HDC hdc, const Config *c, const LabelData *d) {
     return TRUE;
 }
 
+// Рисует обычную этикетку (номер) на готовом DC размера w×h (203 dpi).
+// Используется демо-рендером и raw-печатью ESC/POS.
+static void render_text_label(HDC hdc, int w, int h, const wchar_t *text,
+                              const Config *c) {
+    Sizes s;
+    s.width_px = w;
+    s.height_px = h;
+    s.margin_x = (int)(w * 0.05);
+    s.margin_y = (int)(h * 0.05);
+    s.max_allowed_w = w - s.margin_x * 2;
+
+    LabelData d;
+    prepare_label_data(text, c, &d);
+
+    SetBkMode(hdc, TRANSPARENT);
+    int y_start = s.margin_y;
+    if (d.show_header && d.header_text[0])
+        y_start = draw_header(hdc, d.header_text, &s, d.force_left_header);
+
+    TextLayout tl;
+    draw_main_text(hdc, d.main_text, &s, y_start, d.is_underlined, d.is_bold, &tl);
+
+    if (c->checker && tl.w > 0 && tl.h > 0) {
+        if (c->outline) {
+            apply_checker_with_outline(hdc, d.main_text, &tl, &s, c);
+        } else {
+            int cell = (int)((c->checker_mm_x10 / 10.0) / 25.4 * 203 + 0.5);
+            if (cell < 1) cell = 1;
+            checker_fill(hdc, &tl, cell);
+        }
+    }
+}
+
 // Печать текстовой этикетки.
 static BOOL print_text(const wchar_t *text, const Config *c) {
     if (!c->printer[0]) {
@@ -1062,6 +1163,11 @@ static BOOL print_text_with_qr(const wchar_t *text, const wchar_t *qr_text,
 static void draw_number_qr_core(HDC hdc, const wchar_t *text,
                                 const wchar_t *qr_text, const Config *c,
                                 int w, int h);
+
+// RAW-печать ESC/POS (printerMode = "escpos"): без драйвера печати.
+static BOOL raw_ready(const Config *c);
+static BOOL print_raw(const wchar_t *text, const wchar_t *qr, BOOL qr_label,
+                      const Config *c);
 
 // Отправка ответа с CORS-заголовками. body — UTF-8.
 static void send_response(SOCKET s, int status, const char *ctype,
@@ -1338,6 +1444,15 @@ static void handle_request(SOCKET s, Request *r) {
             }
 
             if (!g_cfg.running) { send_text(s, 503, "stopped"); return; }
+
+            // RAW (ESC/POS): размер бумаги и статус спулера не нужны.
+            if (seq(g_cfg.printer_mode, L"escpos")) {
+                if (!raw_ready(&g_cfg)) { send_text(s, 503, "no printer"); return; }
+                if (print_raw(clean, qr_text, FALSE, &g_cfg)) send_text(s, 200, "OK");
+                else send_text(s, 500, "print failed");
+                return;
+            }
+
             if (!g_cfg.printer[0]) { send_text(s, 503, "no printer"); return; }
             if (!status_printer(g_cfg.printer)) { send_text(s, 503, "printer offline"); return; }
 
@@ -1372,6 +1487,14 @@ static void handle_request(SOCKET s, Request *r) {
             if (!ascii_ok) { send_text(s, 400, "non-ascii"); return; }
 
             if (!g_cfg.running) { send_text(s, 503, "stopped"); return; }
+
+            if (seq(g_cfg.printer_mode, L"escpos")) {
+                if (!raw_ready(&g_cfg)) { send_text(s, 503, "no printer"); return; }
+                if (print_raw(text, NULL, TRUE, &g_cfg)) send_text(s, 200, "OK");
+                else send_text(s, 500, "print failed");
+                return;
+            }
+
             if (!g_cfg.printer[0]) { send_text(s, 503, "no printer"); return; }
             if (!status_printer(g_cfg.printer)) { send_text(s, 503, "printer offline"); return; }
 
@@ -1384,7 +1507,7 @@ static void handle_request(SOCKET s, Request *r) {
                 send_json(s, 500, L"{\"error\": \"ошибка установки\"}");
                 return;
             }
-            spawn_detached_service();  // ошибка не фатальна (как в GUI-версии)
+            spawn_detached_service();  // ошибка не фатальна
 
             wchar_t esc[1100];
             jesc(tmp, esc, 1100);
@@ -2865,6 +2988,277 @@ static BOOL print_text_with_qr(const wchar_t *text, const wchar_t *qr_text,
 }
 
 // ============================================================
+// RAW-печать ESC/POS (printerMode = "escpos")
+//
+// Зачем: при печати через GDI размер «холста» задаёт драйвер Windows, поэтому
+// в нём нужно один раз выставить размер этикетки. В raw-режиме мы сами
+// формируем ESC/POS-поток (растр GS v 0) и отдаём его спулеру с типом "RAW",
+// либо шлём напрямую в TCP :9100. Драйвер при этом — просто труба,
+// а размер/зазор/сдвиг задаются командами и настройками PrintNum.
+// ============================================================
+
+typedef struct {
+    BYTE *p;
+    int   len;
+    int   cap;
+} ByteBuf;
+
+static void bb_free(ByteBuf *b) {
+    if (b->p) HeapFree(GetProcessHeap(), 0, b->p);
+    b->p = NULL;
+    b->len = 0;
+    b->cap = 0;
+}
+
+static BOOL bb_reserve(ByteBuf *b, int need) {
+    if (b->len + need <= b->cap) return TRUE;
+
+    int cap = b->cap > 0 ? b->cap : 4096;
+    while (cap < b->len + need) cap *= 2;
+
+    BYTE *np = (BYTE *)HeapAlloc(GetProcessHeap(), 0, (size_t)cap);
+    if (!np) return FALSE;
+    if (b->p) {
+        memcpy(np, b->p, (size_t)b->len);
+        HeapFree(GetProcessHeap(), 0, b->p);
+    }
+    b->p = np;
+    b->cap = cap;
+    return TRUE;
+}
+
+static BOOL bb_put(ByteBuf *b, BYTE v) {
+    if (!bb_reserve(b, 1)) return FALSE;
+    b->p[b->len++] = v;
+    return TRUE;
+}
+
+static BOOL bb_put_data(ByteBuf *b, const void *data, int n) {
+    if (n <= 0) return TRUE;
+    if (!bb_reserve(b, n)) return FALSE;
+    memcpy(b->p + b->len, data, (size_t)n);
+    b->len += n;
+    return TRUE;
+}
+
+// "1B 40 1D 76 30 00" → байты (пробелы, запятые, 0x и дефисы игнорируются).
+static void raw_init_bytes(const wchar_t *hex, ByteBuf *out) {
+    int hi = -1;
+    for (int i = 0; hex[i]; i++) {
+        wchar_t ch = hex[i];
+        int v;
+        if (ch >= L'0' && ch <= L'9') v = ch - L'0';
+        else if (ch >= L'a' && ch <= L'f') v = ch - L'a' + 10;
+        else if (ch >= L'A' && ch <= L'F') v = ch - L'A' + 10;
+        else if (ch == L' ' || ch == L',' || ch == L'-' || ch == L'x' || ch == L'X') continue;
+        else return;                       // мусор — игнорируем строку целиком
+        if (hi < 0) hi = v;
+        else { bb_put(out, (BYTE)((hi << 4) | v)); hi = -1; }
+    }
+}
+
+// Готов ли транспорт (для ответа 503 no printer).
+static BOOL raw_ready(const Config *c) {
+    if (seq(c->raw_transport, L"tcp")) return c->raw_host[0] != 0;
+    return c->printer[0] != 0;
+}
+
+// Отправка байтов: спулер RAW (USB/LAN/BT через установленный драйвер)
+// или прямой TCP на rawPort (обычно 9100).
+static BOOL raw_send(const Config *c, const BYTE *data, int len) {
+    if (len <= 0) return FALSE;
+
+    if (seq(c->raw_transport, L"tcp")) {
+        if (!c->raw_host[0]) return FALSE;
+
+        char host[128];
+        if (!wide_to_utf8(c->raw_host, host, 128)) return FALSE;
+
+        WSADATA wsa;
+        if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return FALSE;
+
+        SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        BOOL ok = FALSE;
+
+        if (s != INVALID_SOCKET) {
+            struct sockaddr_in a;
+            int i = 0;
+            while (i < (int)sizeof(a)) ((unsigned char *)&a)[i++] = 0;
+            a.sin_family = AF_INET;
+            a.sin_port = htons((unsigned short)c->raw_port);
+            a.sin_addr.s_addr = inet_addr(host);
+
+            if (a.sin_addr.s_addr != INADDR_NONE &&
+                connect(s, (struct sockaddr *)&a, sizeof(a)) == 0) {
+                int sent = 0;
+                ok = TRUE;
+                while (sent < len) {
+                    int n = send(s, (const char *)data + sent, len - sent, 0);
+                    if (n <= 0) { ok = FALSE; break; }
+                    sent += n;
+                }
+            }
+            closesocket(s);
+        }
+
+        WSACleanup();
+        return ok;
+    }
+
+    // Спулер: pDatatype = "RAW" — драйвер не трогает содержимое.
+    if (!c->printer[0]) return FALSE;
+
+    HANDLE h = NULL;
+    PRINTER_DEFAULTSW pd;
+    pd.pDatatype = NULL;
+    pd.pDevMode = NULL;
+    pd.DesiredAccess = PRINTER_ACCESS_USE;
+    if (!OpenPrinterW((LPWSTR)c->printer, &h, &pd)) return FALSE;
+
+    DOC_INFO_1W di;
+    di.pDocName = L"PrintNum label";
+    di.pOutputFile = NULL;
+    di.pDatatype = L"RAW";
+
+    BOOL ok = FALSE;
+    if (StartDocPrinterW(h, 1, (LPBYTE)&di)) {
+        if (StartPagePrinter(h)) {
+            DWORD written = 0;
+            if (WritePrinter(h, (LPVOID)data, (DWORD)len, &written) &&
+                written == (DWORD)len)
+                ok = TRUE;
+            EndPagePrinter(h);
+        }
+        EndDocPrinter(h);
+    }
+    ClosePrinter(h);
+    return ok;
+}
+
+// Собирает ESC/POS-поток: ESC @ [+ init hex] + GS v 0 (растр) + протяжка.
+// qr_label = TRUE — комбинированная QR-этикетка (/print-barcode).
+static BOOL escpos_build(const wchar_t *text, const wchar_t *qr, BOOL qr_label,
+                         const Config *c, ByteBuf *out) {
+    int w_mm = 0, h_mm = 0;
+    if (!parse_paper(c->paper, &w_mm, &h_mm)) return FALSE;
+
+    const int dpi = 203;                       // 80-мм термопринтеры: 203 dpi
+    int lw = (int)((double)w_mm / 25.4 * dpi + 0.5);
+    int lh = (int)((double)h_mm / 25.4 * dpi + 0.5);
+    if (lw < 16 || lh < 16) return FALSE;
+
+    int off = (int)((c->raw_x_offset_mm_x10 / 10.0) / 25.4 * dpi + 0.5);
+    if (off < 0) off = 0;
+    int total_w = lw + off;
+    if (total_w > 4096) return FALSE;
+
+    HDC mem = CreateCompatibleDC(NULL);
+    if (!mem) return FALSE;
+    HBITMAP bmp = CreateCompatibleBitmap(mem, lw, lh);
+    if (!bmp) { DeleteDC(mem); return FALSE; }
+    HGDIOBJ old = SelectObject(mem, bmp);
+    PatBlt(mem, 0, 0, lw, lh, WHITENESS);
+
+    if (qr_label) {
+        draw_qr_label_core(mem, text, lw, lh, 0 /* авто */, 4, 1, 32, 48);
+    } else if (c->qr_with_number && qr && qr[0]) {
+        draw_number_qr_core(mem, text, qr, c, lw, lh);
+    } else {
+        render_text_label(mem, lw, lh, text, c);
+    }
+
+    BITMAPINFO bi;
+    int z = 0;
+    while (z < (int)sizeof(bi)) ((BYTE *)&bi)[z++] = 0;
+    bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bi.bmiHeader.biWidth = lw;
+    bi.bmiHeader.biHeight = -lh;
+    bi.bmiHeader.biPlanes = 1;
+    bi.bmiHeader.biBitCount = 24;
+    bi.bmiHeader.biCompression = BI_RGB;
+
+    BYTE *bits = (BYTE *)HeapAlloc(GetProcessHeap(), 0, (size_t)lw * lh * 3);
+    int got = bits ? GetDIBits(mem, bmp, 0, lh, bits, &bi, DIB_RGB_COLORS) : 0;
+
+    int bytes_per_row = (total_w + 7) / 8;
+    BOOL ok = got > 0;
+
+    if (ok) ok = bb_put(out, 0x1B) && bb_put(out, 0x40);          // ESC @
+    if (ok && c->raw_init_hex[0]) raw_init_bytes(c->raw_init_hex, out);
+
+    if (ok) {
+        ok = bb_put_data(out, "\x1D\x76\x30\x00", 4)             // GS v 0 m=0
+          && bb_put(out, (BYTE)(bytes_per_row & 0xFF))
+          && bb_put(out, (BYTE)((bytes_per_row >> 8) & 0xFF))
+          && bb_put(out, (BYTE)(lh & 0xFF))
+          && bb_put(out, (BYTE)((lh >> 8) & 0xFF));
+    }
+
+    if (ok) {
+        static BYTE row[8192];
+        for (int y = 0; y < lh && ok; y++) {
+            for (int i = 0; i < bytes_per_row; i++) row[i] = 0;
+            for (int x = 0; x < lw; x++) {
+                BYTE *px = bits + ((size_t)y * lw + x) * 3;
+                int g = (30 * px[0] + 59 * px[1] + 11 * px[2]) / 100;
+                if (g < 128) {
+                    int bit = x + off;
+                    int bi_ = bit >> 3;
+                    if (bi_ < bytes_per_row) row[bi_] |= (BYTE)(0x80 >> (bit & 7));
+                }
+            }
+            ok = bb_put_data(out, row, bytes_per_row);
+        }
+    }
+
+    if (ok) {
+        // Протяжка на зазор: ESC J n (n до 255 точек), несколько подряд.
+        int feed = (int)((c->label_gap_mm_x10 / 10.0) / 25.4 * dpi + 0.5);
+        while (feed > 0 && ok) {
+            int n = feed > 255 ? 255 : feed;
+            ok = bb_put(out, 0x1B) && bb_put(out, 0x4A) && bb_put(out, (BYTE)n);
+            feed -= n;
+        }
+    }
+
+    SelectObject(mem, old);
+    DeleteObject(bmp);
+    DeleteDC(mem);
+    if (bits) HeapFree(GetProcessHeap(), 0, bits);
+    return ok;
+}
+
+// Печать через raw-транспорт (ESC/POS).
+static BOOL print_raw(const wchar_t *text, const wchar_t *qr, BOOL qr_label,
+                      const Config *c) {
+    ByteBuf buf;
+    buf.p = NULL;
+    buf.len = 0;
+    buf.cap = 0;
+
+    if (!escpos_build(text, qr, qr_label, c, &buf)) {
+        log_line(L"ОШИБКА raw: не удалось собрать ESC/POS поток");
+        bb_free(&buf);
+        return FALSE;
+    }
+
+    BOOL ok = raw_send(c, buf.p, buf.len);
+
+    wchar_t m[420];
+    wchar_t num[32];
+    itos(buf.len, num, 32);
+    scpy(m, 420, L"RAW ESC/POS: ");
+    scat(m, 420, num);
+    scat(m, 420, ok ? L" байт отправлено: " : L" байт — ошибка отправки: ");
+    scat(m, 420, text);
+    if (!qr_label && qr && qr[0]) { scat(m, 420, L" / "); scat(m, 420, qr); }
+    log_line(m);
+
+    bb_free(&buf);
+    return ok;
+}
+
+// ============================================================
 // Демо: рендер этикетки в файл без принтера (--demo-file)
 // ============================================================
 
@@ -2915,6 +3309,17 @@ static BOOL demo_bmp_save(const wchar_t *path, const BYTE *gray, int w, int h) {
     return ok;
 }
 
+// Запись произвольного бинарного файла (для --raw-dump).
+static BOOL write_bin_file(const wchar_t *path, const BYTE *data, int len) {
+    HANDLE h = CreateFileW(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
+                           FILE_ATTRIBUTE_NORMAL, NULL);
+    if (h == INVALID_HANDLE_VALUE) return FALSE;
+    DWORD wrote = 0;
+    BOOL ok = WriteFile(h, data, (DWORD)len, &wrote, NULL) && wrote == (DWORD)len;
+    CloseHandle(h);
+    return ok;
+}
+
 // Рендерит номер ячейки в BMP через те же GDI-функции, что и реальная печать.
 static BOOL demo_render_bmp(const wchar_t *text, const wchar_t *path, const Config *c) {
     const int dpi = 203;
@@ -2928,32 +3333,8 @@ static BOOL demo_render_bmp(const wchar_t *text, const wchar_t *path, const Conf
     HGDIOBJ old = SelectObject(hdc, hbm);
     PatBlt(hdc, 0, 0, w, h, WHITENESS);
 
-    // Те же размеры и подготовка данных, что в print_text/draw_label.
-    Sizes s;
-    s.width_px = w;
-    s.height_px = h;
-    s.margin_x = (int)(w * 0.05);
-    s.margin_y = (int)(h * 0.05);
-    s.max_allowed_w = w - s.margin_x * 2;
-
-    LabelData d;
-    prepare_label_data(text, c, &d);
-
-    SetBkMode(hdc, TRANSPARENT);
-    int y_start = s.margin_y;
-    if (d.show_header && d.header_text[0])
-        y_start = draw_header(hdc, d.header_text, &s, d.force_left_header);
-    TextLayout tl;
-    draw_main_text(hdc, d.main_text, &s, y_start, d.is_underlined, d.is_bold, &tl);
-    if (c->checker && tl.w > 0 && tl.h > 0) {
-        if (c->outline) {
-            apply_checker_with_outline(hdc, d.main_text, &tl, &s, c);
-        } else {
-            int cell = (int)((c->checker_mm_x10 / 10.0) / 25.4 * 203 + 0.5);
-            if (cell < 1) cell = 1;
-            checker_fill(hdc, &tl, cell);
-        }
-    }
+    // Тот же код, что и в печати (номер + шахматка/обводка).
+    render_text_label(hdc, w, h, text, c);
 
     // Считываем пиксели обратно (bottom-up DIB → top-down строками).
     BITMAPINFO bi;
@@ -3027,10 +3408,15 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR cmdline, int show) 
     static wchar_t arg_print[256], arg_demo_text[256], arg_demo_path[MAX_PATH];
     static wchar_t arg_qr_text[256], arg_qr_path[MAX_PATH];
     static wchar_t arg_cell_text[256], arg_cell_qr[256], arg_cell_path[MAX_PATH];
+    static wchar_t arg_dump_text[256], arg_dump_qr[256], arg_dump_path[MAX_PATH];
+    static wchar_t arg_dumpb_text[256], arg_dumpb_path[MAX_PATH];
     const wchar_t *print_arg = NULL;
     const wchar_t *demo_text = NULL, *demo_path = NULL;
     const wchar_t *qr_text = NULL, *qr_path = NULL;
     const wchar_t *cell_text = NULL, *cell_qr = NULL, *cell_path = NULL;
+    const wchar_t *dump_text = NULL, *dump_qr = NULL, *dump_path = NULL;
+    const wchar_t *dumpb_text = NULL, *dumpb_path = NULL;
+    BOOL service_arg = FALSE;
 
     if (argv) {
         for (int i = 1; i < argc; i++) {
@@ -3047,6 +3433,20 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR cmdline, int show) 
                 scpy(arg_qr_path, MAX_PATH, argv[++i]);
                 qr_text = arg_qr_text;
                 qr_path = arg_qr_path;
+            } else if (seq(argv[i], L"--service")) {
+                service_arg = TRUE;
+            } else if (seq(argv[i], L"--raw-dump") && i + 3 < argc) {
+                scpy(arg_dump_text, 256, argv[++i]);   // номер ячейки/полки
+                scpy(arg_dump_qr, 256, argv[++i]);     // ШК товара или "-"
+                scpy(arg_dump_path, MAX_PATH, argv[++i]);
+                dump_text = arg_dump_text;
+                dump_qr = arg_dump_qr;
+                dump_path = arg_dump_path;
+            } else if (seq(argv[i], L"--raw-dump-barcode") && i + 2 < argc) {
+                scpy(arg_dumpb_text, 256, argv[++i]);
+                scpy(arg_dumpb_path, MAX_PATH, argv[++i]);
+                dumpb_text = arg_dumpb_text;
+                dumpb_path = arg_dumpb_path;
             } else if (seq(argv[i], L"--demo-cell-qr") && i + 3 < argc) {
                 scpy(arg_cell_text, 256, argv[++i]);   // номер ячейки/полки
                 scpy(arg_cell_qr, 256, argv[++i]);     // штрихкод товара
@@ -3060,6 +3460,34 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR cmdline, int show) 
     }
 
     cfg_load();
+
+    // Дамп ESC/POS-потока в файл (проверка raw-печати без принтера).
+    if ((dump_text && dump_path) || (dumpb_text && dumpb_path)) {
+        ByteBuf buf;
+        buf.p = NULL;
+        buf.len = 0;
+        buf.cap = 0;
+
+        BOOL qr_label = dumpb_text != NULL;
+        const wchar_t *dt = qr_label ? dumpb_text : dump_text;
+        const wchar_t *dq = qr_label ? NULL : (seq(dump_qr, L"-") ? NULL : dump_qr);
+        const wchar_t *dp = qr_label ? dumpb_path : dump_path;
+
+        BOOL ok = escpos_build(dt, dq, qr_label, &g_cfg, &buf) &&
+                  write_bin_file(dp, buf.p, buf.len);
+
+        wchar_t m[MAX_PATH + 96];
+        wchar_t num[32];
+        itos(buf.len, num, 32);
+        scpy(m, MAX_PATH + 96, ok ? L"ESC/POS поток сохранён (" : L"ОШИБКА raw-dump (");
+        scat(m, MAX_PATH + 96, num);
+        scat(m, MAX_PATH + 96, L" байт): ");
+        scat(m, MAX_PATH + 96, dp);
+        log_line(m);
+
+        bb_free(&buf);
+        return ok ? 0 : 1;
+    }
 
     // Демо-режим: QR по бокам + значение по центру (последние 4 символа жирно).
     if (qr_text && qr_path) {
@@ -3120,9 +3548,12 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR cmdline, int show) 
         return 1;
     }
 
-    // По умолчанию (без аргументов или с --service) — чистый режим службы:
-    // HTTP-сервер без окон и консоли. Одноразовая печать — только по флагам.
+    // Служба — режим по умолчанию (и единственный постоянный): графического
+    // окна нет. Флаг --service поддерживается для автозагрузки/скриптов и
+    // пишется в лог для наглядности. Одноразовая печать — только по флагам.
     if (!print_arg) {
+        log_line(service_arg ? L"Режим: служба (--service)"
+                             : L"Режим: служба (по умолчанию)");
         run_server();
         return 0;
     }
