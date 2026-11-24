@@ -105,6 +105,7 @@ cPrintNum/
 ├── printnum-win7.exe        # артефакт сборки (GUI, -mwindows)
 ├── printnum-diag.exe        # артефакт сборки (-mconsole, для Wine/диагностики)
 ├── demo_qr_label.bmp        # пример вывода --demo-qr (344×200, 43×25 мм @203dpi)
+├── demo_cell_qr_label.bmp   # пример вывода --demo-cell-qr: «163» + QR ii…, без точки
 ├── generate_compile_commands.py  # генератор compile_commands.json для clangd
 ├── compile_commands.json    # БД компиляции для clangd (пути/цели устаревшие)
 ├── .cache/clangd/index/     # локальный кэш clangd — не трогать, не коммитить
@@ -139,7 +140,7 @@ extension/
 │   │   ├── api.ts               # HTTP-клиент сервера + тип PrintSettings
 │   │   ├── autoPrint.ts         # обработка события печати в background
 │   │   ├── autoPrintSettings.ts # ключи storage, дефолты, нормализация, типы
-│   │   ├── ozonPlacements.ts    # парсинг ответов Ozon → Placement (чистый модуль)
+│   │   ├── ozonPlacements.ts    # парсинг ответов Ozon → Placement (+ findBarcode для QR)
 │   │   ├── constants.ts         # SELECTORS (3 шт.), regex ячейки/ШК, путь приёмки
 │   │   ├── qrLabel.ts           # SVG-превью QR-этикетки (геометрия как в C)
 │   │   ├── observer.ts          # подписка на смену URL + observe(document.body)
@@ -264,6 +265,7 @@ x86_64-w64-mingw32-gcc -municode -Os -s -Wall -static \
 | `checkerMm` | number | `10` | клетка шахматки в 0.1 мм (10 = 1.0 мм, минимум 1) |
 | `outline` | bool | `true` | сплошная обводка по контуру глифа (работает вместе с `checker`) |
 | `outlineMm` | number | `5` | толщина обводки в 0.1 мм (5 = 0.5 мм, минимум 1) |
+| `qrWithNumber` | bool | `false` | печатать QR товара рядом с номером ячейки (без точки) |
 
 Дефолтный список `papers`: `43*25, 30*20, 40*30, 50*70, 58*40, 60*40, 75*120, 100*150`.
 
@@ -314,10 +316,10 @@ Access-Control-Allow-Headers: Content-Type
 | GET | `/status-printer` | — | `200` `{"printerOnline": true\|false}` | — |
 | GET | `/listPrinters` | — | `200` `{"listPrinters":["..."]}` (до 8) | — |
 | GET | `/papers` | — | `200` `{"papers":["43*25",...]}` | — |
-| GET | `/config` | — | `200` полный конфиг + `"features":["shelf-dash"]` | — |
+| GET | `/config` | — | `200` полный конфиг + `"features":["shelf-dash","qr-number"]` | — |
 | GET | `/service` | — | `200` `{"installed": true\|false}` | — |
 | POST | `/config` | частичный JSON-объект | `200` полный конфиг + `features` | `400` `{"error": "ожидается JSON-объект"}` |
-| POST | `/print-number` | `{"text":"163-1"}` | `200` `OK` (text/plain) | `400` `no text` / `not a cell number` / `empty`; `503` `stopped` / `no printer` / `printer offline`; `500` `print failed` |
+| POST | `/print-number` | `{"text":"163-1", "qr":"ii19382868529"}` (`qr` необязателен) | `200` `OK` (text/plain) | `400` `no text` / `not a cell number` / `empty` / `non-ascii qr`; `503` `stopped` / `no printer` / `printer offline`; `500` `print failed` |
 | POST | `/print-barcode` | `{"text":"ii19382868529"}` | `200` `OK` | `400` `no text` / `non-ascii`; `503` как выше; `500` `print failed` |
 | POST | `/service/install` | `{}` (тело не читается) | `200` `{"ok": true, "path": "..."}` | `500` `{"error":"ошибка установки"}` |
 | POST | `/service/uninstall` | `{}` | `200` `{"ok": true}` | `500` `{"error":"ошибка удаления"}` |
@@ -368,6 +370,8 @@ curl -s -X POST http://127.0.0.1:5000/print-number \
    `ii18725308927`, `---`);
 3. санитизация: остаются только цифры и `-` (пробелы **удаляются**);
    пусто → `400 empty`;
+   необязательный `qr` (штрихкод товара) проверяется на ASCII 32..127 →
+   иначе `400 non-ascii qr`; пустой `qr` = печатать как обычно;
 4. `running == false` → `503 stopped`;
 5. `printer == ""` → `503 no printer`;
 6. принтер offline/error/paper jam/paper out → `503 printer offline`;
@@ -446,7 +450,39 @@ expand` → bold + рокировка (число в `main`, префикс в `
   (`pnqr_*`, статические таблицы, свой `pnqr_memset/memcpy/strlen`).
   Матрица проверена побитово против оригинала.
 
-### 3.12. CLI, демо-режимы, служба
+### 3.12. Этикетка «номер + QR товара» (`qrWithNumber`)
+
+Включается флагом `qrWithNumber` (popup → «QR товара рядом с номером»).
+Печатается, только если в запросе есть `qr` (штрихкод товара из ответа Ozon)
+и флаг включён; иначе — обычная этикетка.
+
+Раскладка (`draw_number_qr_core`):
+
+```
+┌─────────────────────────────┐
+│                             │
+│   163            ▓▓▓▓▓▓     │   номер слева (авто-кегль),
+│                  ▓▓▓▓▓▓     │   QR справа (ECC Medium, авто-версия),
+│                  ▓▓▓▓▓▓     │   точка в конце НЕ рисуется
+└─────────────────────────────┘
+```
+
+- QR кодирует штрихкод товара целиком (`ii…`), тихая зона 4 модуля,
+  квадрат ≤48% ширины и ≤ доступной высоты, модуль — авто (целое число px).
+- Номер занимает область слева (зазор ~2 мм), кегль подбирается тем же
+  `draw_main_text`, что и в обычной этикетке; `endLine` (подчёркивание)
+  работает, точка — нет.
+- `checker`/`outline` в этом режиме **не применяются**: контур/шахматка
+  строятся по всему растру и затёрли бы белым часть QR.
+- Проверить без принтера:
+
+```bash
+wine printnum-diag.exe --demo-cell-qr "163-1" "ii19382868529" label.bmp
+wine printnum-diag.exe --demo-cell-qr "-88"   "ii8923223139"  shelf.bmp
+sips -s format png label.bmp --out label.png && zbarimg -q --raw label.png
+```
+
+### 3.13. CLI, демо-режимы, служба
 
 | Команда | Поведение |
 |---|---|
@@ -457,6 +493,7 @@ expand` → bold + рокировка (число в `main`, префикс в `
 | `printnum-diag.exe --demo-file "45" label.bmp` | рендер обычной этикетки в BMP (344×200, 43×25 мм @203 dpi), без принтера |
 | `printnum-diag.exe --demo-file "-88" shelf.bmp` | то же для полки |
 | `printnum-diag.exe --demo-qr "ii19382868529" label.bmp` | рендер QR-этикетки в BMP |
+| `printnum-diag.exe --demo-cell-qr "163-1" "ii19382868529" out.bmp` | рендер этикетки «номер + QR товара» в BMP |
 
 Демо использует **те же** GDI-функции, что и печать (`prepare_label_data`,
 `draw_label`, `draw_qr_label_core`), поэтому это честный предпросмотр.
@@ -466,7 +503,7 @@ expand` → bold + рокировка (число в `main`, префикс в `
 bind/listen/WSAStartup пишутся в лог и завершают процесс. `SO_REUSEADDR`
 включён, чтобы перезапуск был мгновенным.
 
-### 3.13. Ограничения сервера (важно для планирования правок)
+### 3.14. Ограничения сервера (важно для планирования правок)
 
 | Ограничение | Следствие |
 |---|---|
@@ -547,7 +584,7 @@ Ozon XHR/fetch (2xx)
       → настройки из chrome.storage (autoPrint)
       → проверка режима/полок/упаковки и дедупликации
       → GET /config (кэш features 30 с) — только для полок
-      → POST /print-number {text}
+      → POST /print-number {text, qr?}   # qr — ШК товара из того же ответа
       → запись lastAutoPrintEvent / lastAutoPrint
 ```
 
@@ -602,7 +639,7 @@ const API_BASE = `http://127.0.0.1:${PORT}`;
 | `uninstallService()` | `POST /service/uninstall` | `{ok, error?}` |
 
 `PrintSettings`: `printer`, `paper`, `idNum`, `endLine`, `hybrid`, `expand`,
-`running`, `papers`, `features?` — имена совпадают с `config.json`.
+`running`, `qrWithNumber`, `papers`, `features?` — имена совпадают с `config.json`.
 Все функции «мягко» глотают сетевые ошибки: popup показывает
 «Приложение PrintNum не запущено» вместо исключения.
 
@@ -672,6 +709,13 @@ const API_BASE = `http://127.0.0.1:${PORT}`;
 | `…/MicroFFTransferApi/TransferByBarcodeArticle` | `transferSuccess.cell` | полка `-88` |
 | `…/MicroFFTransferApi/TransferPackingArticle` | `success.cell` | полка `-57` (переупаковка) |
 
+Дополнительно из **того же** ответа извлекается штрихкод товара
+(`findBarcode`): обход JSON в глубину (≤6, ≤400 узлов) и первое совпадение
+с `^ii\d{9,14}$`. Он попадает в `Placement.qr` и уходит в
+`POST /print-number` — сервер печатает его как QR рядом с номером
+(если включён `qrWithNumber`). Если ШК в ответе нет — печатается обычная
+этикетка. В DOM-режиме `qr` нет (в разметке страницы ШК не берём).
+
 `"Ozon Полка-88"` → `-88` (`shelfToCode`, поддерживает `Полка 88`,
 `Полка—88` и т.п.). Тип (`cell`/`shelf`) определяется **по тексту**, а не по
 сообщению страницы.
@@ -724,6 +768,7 @@ const API_BASE = `http://127.0.0.1:${PORT}`;
    Патчи оптимистичные: сначала локально, потом `POST /config`; при ошибке —
    перечитывание реального состояния. Fallback-список бумаги `["30*20"]`.
    `checker`/`outline` в UI **не выводятся** (только файл/API).
+   Есть чекбокс **«QR товара рядом с номером»** (`qrWithNumber`).
 3. **AutoPrintPanel** — режим (`xhr`/`dom`/`both`/`off`), «Полки (-88)»,
    «При упаковке», `dedupeMs`, предупреждение при старом сервере, последнее
    событие автопечати.
@@ -866,7 +911,7 @@ popup-панели (`Help`, `qrCommands`, `autoscript`, `SettingSection`, `hide/
 | `PrintSettingsPanel` | кнопка автозагрузки | `POST /service/install` \| `/service/uninstall` | `200` | текст ошибки |
 | `AutoPrintPanel` | открытие popup | `GET /config` | `200`, `features` | `shelfSupported = null` (без предупреждения) |
 | `autoPrint.handleAutoPrint` | размещение товара | `GET /config` (кэш 30 с) | `features` | `null` — возможности неизвестны: полка всё равно печатается, ячейки печатаются без проверки |
-| `autoPrint.handleAutoPrint` | размещение товара | `POST /print-number` | `200 OK` | событие с `ok:false` + `lastAutoPrintEvent` |
+| `autoPrint.handleAutoPrint` | размещение товара | `POST /print-number` (`text`, `qr?`) | `200 OK` | событие с `ok:false` + `lastAutoPrintEvent` |
 | `BarcodeGenerator` | «Печать через PrintNum» | `POST /print-barcode` | `200 OK` | «PrintNum недоступен…» / «вернул ошибку N» |
 
 Ответы `503` (служба выключена, принтер не выбран/offline) расширение
@@ -997,6 +1042,8 @@ python3 -c "import json;m=json.load(open('output/chrome-mv3/manifest.json'));pri
 | Сборка расширения | `npm run build` → `output/chrome-mv3` |
 | Демо-этикетка без принтера | `wine printnum-diag.exe --demo-file "45" label.bmp` |
 | Демо QR-этикетки | `wine printnum-diag.exe --demo-qr "ii19382868529" label.bmp` |
+| Демо «номер + QR товара» | `wine printnum-diag.exe --demo-cell-qr "163-1" "ii19382868529" label.bmp` → `zbarimg` декодирует ШК |
+| Разбор ответов Ozon + `findBarcode` | esbuild-бандл теста в node: 13 проверок (ячейка, полка, без ШК, глубокий ШК, мусор, бюджет обхода) |
 | Предупреждения C (`-Wextra`) | `x86_64-w64-mingw32-gcc … -Wall -Wextra …` → **0 предупреждений** |
 | Корректность QR-энкодера | `sips -s format png label.bmp --out q.png && zbarimg -q --raw q.png` → `ii19382868529` |
 | Типы без мёртвых locals | `npx tsc --noEmit --noUnusedLocals --noUnusedParameters` → 0 ошибок |

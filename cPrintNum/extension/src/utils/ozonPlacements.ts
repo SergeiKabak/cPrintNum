@@ -13,7 +13,7 @@
  *   проходит валидацию `/print-number` (только цифры/дефис/пробел).
  */
 
-import { CELL_PRINTABLE_RE } from "@/utils/constants";
+import { CELL_PRINTABLE_RE, LABEL_BARCODE_RE } from "@/utils/constants";
 
 /** Подстроки URL, по которым узнаём нужные ответы Ozon. */
 export const OZON_ENDPOINTS = {
@@ -36,6 +36,11 @@ export type Placement = {
   dedupe: PlacementDedupe;
   /** Исходное значение из ответа — только для логов. */
   raw: string;
+  /**
+   * Штрихкод товара (`ii…`), если он есть в том же ответе Ozon.
+   * Печатается как QR рядом с номером (config → `qrWithNumber`).
+   */
+  qr?: string;
 };
 
 /** Полка: ведущий дефис + 1–4 цифры. */
@@ -53,6 +58,42 @@ export function shelfToCode(raw: unknown): string | null {
   const m = /Полка\s*[-\u2010-\u2015\u2212]?\s*(\d{1,4})/i.exec(raw);
   const digits = m?.[1];
   return digits ? `-${digits}` : null;
+}
+
+/**
+ * Ищет первый штрихкод товара (`ii` + 9–14 цифр) в JSON-ответе Ozon.
+ *
+ * Поля у Ozon отличаются от сборки к сборке, поэтому не привязываемся к
+ * путям: обходим объект в глубину с жёстким бюджетом (глубина ≤ 6,
+ * ≤ 20 элементов массива, ≤ 40 ключей объекта, ≤ 400 узлов всего).
+ *
+ * @returns ШК либо `null`, если в ответе его нет.
+ */
+export function findBarcode(value: unknown): string | null {
+  const budget = { nodes: 400 };
+
+  const walk = (node: unknown, depth: number): string | null => {
+    if (budget.nodes-- <= 0 || depth > 6 || node == null) return null;
+
+    if (typeof node === "string") {
+      const trimmed = node.trim();
+      return LABEL_BARCODE_RE.test(trimmed) ? trimmed : null;
+    }
+
+    if (typeof node !== "object") return null;
+
+    const items = Array.isArray(node)
+      ? node.slice(0, 20)
+      : Object.values(node as Record<string, unknown>).slice(0, 40);
+
+    for (const item of items) {
+      const found = walk(item, depth + 1);
+      if (found) return found;
+    }
+    return null;
+  };
+
+  return walk(value, 0);
 }
 
 /** Быстрый префильтр URL до `JSON.parse`. */
@@ -105,6 +146,13 @@ export function normalizePlacement(value: unknown): Placement | null {
         ? "consecutive"
         : "none";
 
+  // Штрихкод товара приходит из того же ответа (findBarcode);
+  // из postMessage его тоже принимаем, но только в формате `ii…`.
+  const qr =
+    typeof p.qr === "string" && LABEL_BARCODE_RE.test(p.qr.trim())
+      ? p.qr.trim()
+      : undefined;
+
   return {
     text,
     kind,
@@ -112,6 +160,7 @@ export function normalizePlacement(value: unknown): Placement | null {
     origin,
     dedupe,
     raw: typeof p.raw === "string" ? p.raw.slice(0, 256) : text,
+    ...(qr ? { qr } : {}),
   };
 }
 
@@ -127,6 +176,9 @@ export function parsePlacement(
   data: unknown,
   origin: PlacementOrigin = "xhr",
 ): Placement | null {
+  // Штрихкод товара ищем один раз для любого из эндпоинтов.
+  const qr = findBarcode(data) ?? undefined;
+
   if (url.includes(OZON_ENDPOINTS.movement)) {
     const raw = (data as any)?.articlePositions?.[0]?.address;
     if (typeof raw !== "string") return null;
@@ -138,6 +190,7 @@ export function parsePlacement(
       origin,
       dedupe: "consecutive",
       raw,
+      qr,
     });
   }
 
@@ -153,6 +206,7 @@ export function parsePlacement(
       origin,
       dedupe: "none",
       raw: String(raw ?? ""),
+      qr,
     });
   }
 
@@ -168,6 +222,7 @@ export function parsePlacement(
       origin,
       dedupe: "none",
       raw: String(raw ?? ""),
+      qr,
     });
   }
 

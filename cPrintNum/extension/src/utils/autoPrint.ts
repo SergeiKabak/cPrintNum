@@ -149,7 +149,12 @@ export async function handleAutoPrint(value: unknown): Promise<AutoPrintEvent | 
   }
 
   try {
-    const res = await sendServer.post("print-number", { text: placement.text });
+    // qr — необязательный штрихкод товара: сервер напечатает его рядом
+    // с номером, если включён `qrWithNumber` (см. §print-number).
+    const res = await sendServer.post("print-number", {
+      text: placement.text,
+      ...(placement.qr ? { qr: placement.qr } : {}),
+    });
     const event = makeEvent(
       placement,
       res.ok,
@@ -167,7 +172,10 @@ export async function handleAutoPrint(value: unknown): Promise<AutoPrintEvent | 
           at: event.at,
         } satisfies LastAutoPrint,
       });
-      console.info(`[PrintNum:auto] напечатано: ${placement.text}`);
+      console.info(
+        `[PrintNum:auto] напечатано: ${placement.text}` +
+          (placement.qr ? ` + QR ${placement.qr}` : ""),
+      );
     } else {
       console.error(`[PrintNum:auto] ошибка печати ${placement.text}: ${res.status}`);
     }

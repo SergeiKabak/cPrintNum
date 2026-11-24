@@ -236,6 +236,19 @@ export default function PrintSettingsPanel() {
             onChange={(v) => patch({ hybrid: v })}
           />
 
+          {/* QR товара рядом с номером ячейки (config → qrWithNumber). */}
+          <Checkbox
+            label="QR товара рядом с номером"
+            checked={!!settings.qrWithNumber}
+            onChange={(v) => patch({ qrWithNumber: v })}
+          />
+          {settings.qrWithNumber && (
+            <span className="text-[10px] text-muted-foreground leading-tight pl-6">
+              Номер печатается без точки, QR — справа. Нужен штрихкод в ответе
+              Ozon (режим автопечати «Перехват ответов Ozon»).
+            </span>
+          )}
+
           {/* Порог показываем только когда он влияет на печать. */}
           {settings.hybrid && (
             <label className="flex items-center gap-2 pl-6">

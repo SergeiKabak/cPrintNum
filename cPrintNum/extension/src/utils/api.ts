@@ -41,6 +41,8 @@ export type PrintSettings = {
   hybrid: boolean;
   expand: number;
   running: boolean;
+  /** Печатать QR товара рядом с номером (без точки). */
+  qrWithNumber: boolean;
   papers: string[];
   /**
    * Возможности backend'а. Например, `shelf-dash` — поддержка полок `-88`.

@@ -13,7 +13,9 @@
 //   GET  /config            -> полный конфиг
 //   GET  /service           -> {"installed": bool}
 //   POST /config            -> частичный JSON, возвращает полный конфиг
-//   POST /print-number      -> "OK"  (тело: {"text": "..."})
+//   POST /print-number      -> "OK"  (тело: {"text": "...", "qr": "ii..."})
+//                                      qr — необязательный штрихкод товара;
+//                                      печатается только при qrWithNumber
 //   POST /print-barcode     -> "OK"  (тело: {"text", "moduleMm", "heightMm"})
 //   POST /service/install   -> {"ok": true, "path": "..."}
 //   POST /service/uninstall -> {"ok": true}
@@ -146,6 +148,7 @@ typedef struct {
     long    outline_mm_x10; // толщина обводки, 0.1 мм (5 = 0.5 мм)
     long    expand;
     BOOL    running;
+    BOOL    qr_with_number; // QR товара рядом с номером ячейки (без точки)
     wchar_t papers[MAX_PAPERS][32];
     int     papers_count;
 } Config;
@@ -164,6 +167,7 @@ static void cfg_defaults(Config *c) {
     c->outline_mm_x10 = 5;       // 0.5 мм тонкая линия
     c->expand = 500;
     c->running = TRUE;
+    c->qr_with_number = FALSE;   // по умолчанию печатаем как раньше
     static const wchar_t *def[] = {
         L"43*25", L"30*20", L"40*30", L"50*70",
         L"58*40", L"60*40", L"75*120", L"100*150",
@@ -355,6 +359,7 @@ static void cfg_load(void) {
         if (json_long(json, L"outlineMm", &v)) g_cfg.outline_mm_x10 = v < 1 ? 1 : v;
     }
     json_bool(json, L"running", &g_cfg.running);
+    json_bool(json, L"qrWithNumber", &g_cfg.qr_with_number);
     {
         long e = g_cfg.expand;
         if (json_long(json, L"expand", &e)) g_cfg.expand = e < 1 ? 1 : e;
@@ -394,6 +399,8 @@ static void cfg_to_json(Config *c, wchar_t *out, int cap) {
     scat(out, cap, num);
     scat(out, cap, L",\"running\":");
     scat(out, cap, c->running ? L"true" : L"false");
+    scat(out, cap, L",\"qrWithNumber\":");
+    scat(out, cap, c->qr_with_number ? L"true" : L"false");
     scat(out, cap, L",\"papers\":[");
 
     for (int i = 0; i < c->papers_count; i++) {
@@ -414,7 +421,7 @@ static void cfg_to_api_json(wchar_t *out, int cap) {
     int n = slen(out);
     if (n > 0 && out[n - 1] == L'}') {
         out[--n] = 0;
-        scat(out, cap, L",\"features\":[\"shelf-dash\"]}");
+        scat(out, cap, L",\"features\":[\"shelf-dash\", \"qr-number\"]}");
     }
 }
 
@@ -437,6 +444,7 @@ static void cfg_apply_json(const wchar_t *body) {
         if (json_long(body, L"outlineMm", &v)) g_cfg.outline_mm_x10 = v < 1 ? 1 : v;
     }
     json_bool(body, L"running", &g_cfg.running);
+    json_bool(body, L"qrWithNumber", &g_cfg.qr_with_number);
     {
         long e;
         if (json_long(body, L"expand", &e)) g_cfg.expand = e < 1 ? 1 : e;
@@ -1028,6 +1036,13 @@ static BOOL print_text(const wchar_t *text, const Config *c) {
 // Печать комбинированной этикетки (QR слева/справа + значение по центру).
 static BOOL print_qr_label(const wchar_t *text, const Config *c);
 
+// Печать этикетки «номер ячейки + QR товара» (qrWithNumber).
+static BOOL print_text_with_qr(const wchar_t *text, const wchar_t *qr_text,
+                               const Config *c);
+static void draw_number_qr_core(HDC hdc, const wchar_t *text,
+                                const wchar_t *qr_text, const Config *c,
+                                int w, int h);
+
 // Отправка ответа с CORS-заголовками. body — UTF-8.
 static void send_response(SOCKET s, int status, const char *ctype,
                           const char *body, int body_len) {
@@ -1289,9 +1304,28 @@ static void handle_request(SOCKET s, Request *r) {
             clean[j] = 0;
 
             if (!clean[0]) { send_text(s, 400, "empty"); return; }
+
+            // Необязательный QR товара: {"text":"163-1","qr":"ii19382868529"}.
+            // Расширение кладёт сюда штрихкод из ответа Ozon; печатается
+            // только если включён qrWithNumber.
+            wchar_t qr_text[256];
+            qr_text[0] = 0;
+            if (json_str(r->body, L"qr", qr_text, 256) && qr_text[0]) {
+                BOOL qr_ok = TRUE;
+                for (int i = 0; qr_text[i]; i++)
+                    if (qr_text[i] < 32 || qr_text[i] > 127) { qr_ok = FALSE; break; }
+                if (!qr_ok) { send_text(s, 400, "non-ascii qr"); return; }
+            }
+
             if (!g_cfg.running) { send_text(s, 503, "stopped"); return; }
             if (!g_cfg.printer[0]) { send_text(s, 503, "no printer"); return; }
             if (!status_printer(g_cfg.printer)) { send_text(s, 503, "printer offline"); return; }
+
+            if (g_cfg.qr_with_number && qr_text[0]) {
+                if (print_text_with_qr(clean, qr_text, &g_cfg)) send_text(s, 200, "OK");
+                else send_text(s, 500, "print failed");
+                return;
+            }
 
             if (print_text(clean, &g_cfg)) send_text(s, 200, "OK");
             else send_text(s, 500, "print failed");
@@ -2473,22 +2507,8 @@ static void draw_qr_label_core(HDC hdc, const wchar_t *text, int w, int h,
     center_text(hdc, suffix, cx, y0 + ph + line_gap, FW_BOLD, suffix_size);
 }
 
-// Рендерит комбинированную этикетку 43x25 мм @ 203 dpi (344x200) в BMP.
-// text — полное значение, например "ii19382868529".
-static BOOL demo_qr_label_render(const wchar_t *text, const wchar_t *path, const Config *c) {
-    (void)c;
-
-    const int w = 344, h = 200;
-    HDC hdc = CreateCompatibleDC(NULL);
-    if (!hdc) return FALSE;
-    HBITMAP hbm = CreateCompatibleBitmap(hdc, w, h);
-    if (!hbm) { DeleteDC(hdc); return FALSE; }
-    HGDIOBJ old = SelectObject(hdc, hbm);
-    PatBlt(hdc, 0, 0, w, h, WHITENESS);
-    SetBkMode(hdc, TRANSPARENT);
-
-    draw_qr_label_core(hdc, text, w, h, 0 /* авто */, 4, 1, 32, 48);
-
+// Сохраняет содержимое memory-DC (24-bit) в 8-битный grayscale BMP.
+static BOOL demo_dc_save(HDC hdc, HBITMAP hbm, const wchar_t *path, int w, int h) {
     // Считываем пиксели и сохраняем BMP.
     BITMAPINFO bi;
     int z = 0;
@@ -2505,7 +2525,6 @@ static BOOL demo_qr_label_render(const wchar_t *text, const wchar_t *path, const
     if (!bits || !gray) {
         if (bits) HeapFree(GetProcessHeap(), 0, bits);
         if (gray) HeapFree(GetProcessHeap(), 0, gray);
-        SelectObject(hdc, old); DeleteObject(hbm); DeleteDC(hdc);
         return FALSE;
     }
 
@@ -2522,13 +2541,52 @@ static BOOL demo_qr_label_render(const wchar_t *text, const wchar_t *path, const
         for (size_t i = 0; i < (size_t)w * h; i++) gray[i] = 255;
     }
 
-    SelectObject(hdc, old);
-    DeleteObject(hbm);
-    DeleteDC(hdc);
-
     BOOL ok = demo_bmp_save(path, gray, w, h);
     HeapFree(GetProcessHeap(), 0, bits);
     HeapFree(GetProcessHeap(), 0, gray);
+    return ok;
+}
+
+// Рендерит QR-этикетку в BMP: создаёт memory-DC, рисует и сохраняет.
+static BOOL demo_qr_label_render(const wchar_t *text, const wchar_t *path, const Config *c) {
+    (void)c;
+
+    const int w = 344, h = 200;
+    HDC hdc = CreateCompatibleDC(NULL);
+    if (!hdc) return FALSE;
+    HBITMAP hbm = CreateCompatibleBitmap(hdc, w, h);
+    if (!hbm) { DeleteDC(hdc); return FALSE; }
+    HGDIOBJ old = SelectObject(hdc, hbm);
+    PatBlt(hdc, 0, 0, w, h, WHITENESS);
+    SetBkMode(hdc, TRANSPARENT);
+
+    draw_qr_label_core(hdc, text, w, h, 0 /* авто */, 4, 1, 32, 48);
+
+    BOOL ok = demo_dc_save(hdc, hbm, path, w, h);
+    SelectObject(hdc, old);
+    DeleteObject(hbm);
+    DeleteDC(hdc);
+    return ok;
+}
+
+// Демо этикетки «номер + QR товара» (--demo-cell-qr).
+static BOOL demo_cell_qr_render(const wchar_t *text, const wchar_t *qr_text,
+                                const wchar_t *path, const Config *c) {
+    const int w = 344, h = 200;
+    HDC hdc = CreateCompatibleDC(NULL);
+    if (!hdc) return FALSE;
+    HBITMAP hbm = CreateCompatibleBitmap(hdc, w, h);
+    if (!hbm) { DeleteDC(hdc); return FALSE; }
+    HGDIOBJ old = SelectObject(hdc, hbm);
+    PatBlt(hdc, 0, 0, w, h, WHITENESS);
+    SetBkMode(hdc, TRANSPARENT);
+
+    draw_number_qr_core(hdc, text, qr_text, c, w, h);
+
+    BOOL ok = demo_dc_save(hdc, hbm, path, w, h);
+    SelectObject(hdc, old);
+    DeleteObject(hbm);
+    DeleteDC(hdc);
     return ok;
 }
 
@@ -2598,6 +2656,142 @@ static BOOL print_qr_label(const wchar_t *text, const Config *c) {
     wchar_t m[320];
     scpy(m, 320, L"Печать QR-этикетки выполнена: ");
     scat(m, 320, text);
+    log_line(m);
+    return TRUE;
+}
+
+// ============================================================
+// Этикетка «номер ячейки + QR товара» (config.json -> qrWithNumber)
+// ============================================================
+
+// Раскладка: номер слева, QR справа, без точки в конце.
+// Шахматка/обводка здесь не применяются (они работают по всему растру
+// этикетки и рассчитаны на одну крупную строку).
+static void draw_number_qr_core(HDC hdc, const wchar_t *text,
+                                const wchar_t *qr_text, const Config *c,
+                                int w, int h) {
+    // QR кодирует только ASCII (как /print-barcode).
+    char ascii[256];
+    int n = 0;
+    for (; qr_text[n] && n < 255; n++) {
+        if (qr_text[n] < 32 || qr_text[n] > 127) return;
+        ascii[n] = (char)qr_text[n];
+    }
+    ascii[n] = 0;
+    if (n < 1) return;
+
+    PnQrImage qr;
+    if (!pn_qr_encode(ascii, &qr)) return;   // слишком длинное значение
+
+    int dpi_x = GetDeviceCaps(hdc, LOGPIXELSX);
+    int margin_x = (int)(w * 0.05);
+    int margin_y = (int)(h * 0.05);
+    int avail_h = h - 2 * margin_y;
+
+    // Квадрат QR: не больше ~48% ширины и не выше доступной высоты.
+    int target = (w - 2 * margin_x) * 48 / 100;
+    if (target > avail_h) target = avail_h;
+    int modules = qr.qr.size + 8;            // + тихая зона 4 модуля
+    int module_px = target / modules;
+    if (module_px < 1) module_px = 1;
+    int side = modules * module_px;
+
+    int qr_x = w - margin_x - side;
+    int qr_y = (h - side) / 2;
+    draw_qr(hdc, &qr, qr_x, qr_y, module_px);
+
+    // Область под номер — слева от QR, с зазором ~2 мм.
+    int gap = (int)(2.0 / 25.4 * dpi_x + 0.5);
+    if (gap < 2) gap = 2;
+    int text_w = qr_x - gap;
+    if (text_w < margin_x * 2 + 8) return;
+
+    Sizes s;
+    s.width_px = text_w;
+    s.height_px = h;
+    s.margin_x = margin_x;
+    s.margin_y = margin_y;
+    s.max_allowed_w = text_w - margin_x * 2;
+
+    LabelData d;
+    prepare_label_data(text, c, &d);
+
+    // В этом режиме точка не нужна (подчёркивание при endLine остаётся).
+    int len = slen(d.main_text);
+    if (!d.is_underlined && len > 0 && d.main_text[len - 1] == L'.')
+        d.main_text[len - 1] = 0;
+
+    int y_start = s.margin_y;
+    if (d.show_header && d.header_text[0])
+        y_start = draw_header(hdc, d.header_text, &s, d.force_left_header);
+
+    TextLayout tl;
+    draw_main_text(hdc, d.main_text, &s, y_start, d.is_underlined, d.is_bold, &tl);
+
+    // Шахматка/обводка пропускаются осознанно: контур строится по всему
+    // растру, а здесь рядом QR — белая заливка затёрла бы часть кода.
+    (void)tl;
+}
+
+// Печать этикетки «номер + QR товара».
+static BOOL print_text_with_qr(const wchar_t *text, const wchar_t *qr_text,
+                               const Config *c) {
+    if (!c->printer[0]) {
+        log_line(L"ОШИБКА печати (номер+QR): принтер не выбран");
+        return FALSE;
+    }
+
+    HDC hdc = CreateDCW(c->printer, c->printer, NULL, NULL);
+    if (!hdc) {
+        wchar_t m[320];
+        scpy(m, 320, L"ОШИБКА печати (номер+QR): CreateDCW не удался для ");
+        scat(m, 320, c->printer);
+        log_line(m);
+        return FALSE;
+    }
+
+    Sizes s;
+    if (!calc_sizes(hdc, c->paper, &s)) {
+        log_line(L"ОШИБКА печати (номер+QR): неверный размер бумаги");
+        DeleteDC(hdc);
+        return FALSE;
+    }
+
+    static wchar_t doc[400];
+    doc[0] = 0;
+    scat(doc, 400, L"Ячейка+QR: ");
+    scat(doc, 400, text);
+
+    DOCINFOW di;
+    int i = 0;
+    while (i < (int)sizeof(di)) ((unsigned char *)&di)[i++] = 0;
+    di.cbSize = sizeof(DOCINFOW);
+    di.lpszDocName = doc;
+
+    if (StartDocW(hdc, &di) <= 0) {
+        log_line(L"ОШИБКА печати (номер+QR): StartDocW не удался");
+        DeleteDC(hdc);
+        return FALSE;
+    }
+    if (StartPage(hdc) <= 0) {
+        log_line(L"ОШИБКА печати (номер+QR): StartPage не удался");
+        AbortDoc(hdc);
+        DeleteDC(hdc);
+        return FALSE;
+    }
+
+    SetBkMode(hdc, TRANSPARENT);
+    draw_number_qr_core(hdc, text, qr_text, c, s.width_px, s.height_px);
+
+    EndPage(hdc);
+    EndDoc(hdc);
+    DeleteDC(hdc);
+
+    wchar_t m[420];
+    scpy(m, 420, L"Печать с QR выполнена: ");
+    scat(m, 420, text);
+    scat(m, 420, L" / ");
+    scat(m, 420, qr_text);
     log_line(m);
     return TRUE;
 }
@@ -2713,7 +2907,6 @@ static BOOL demo_render_bmp(const wchar_t *text, const wchar_t *path, const Conf
     if (!bits || !gray) {
         if (bits) HeapFree(GetProcessHeap(), 0, bits);
         if (gray) HeapFree(GetProcessHeap(), 0, gray);
-        SelectObject(hdc, old); DeleteObject(hbm); DeleteDC(hdc);
         return FALSE;
     }
 
@@ -2730,10 +2923,7 @@ static BOOL demo_render_bmp(const wchar_t *text, const wchar_t *path, const Conf
         for (size_t i = 0; i < (size_t)w * h; i++) gray[i] = 255;
     }
 
-    SelectObject(hdc, old);
-    DeleteObject(hbm);
-    DeleteDC(hdc);
-
+    (void)old;
     BOOL ok = demo_bmp_save(path, gray, w, h);
     HeapFree(GetProcessHeap(), 0, bits);
     HeapFree(GetProcessHeap(), 0, gray);
@@ -2772,9 +2962,11 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR cmdline, int show) 
 
     static wchar_t arg_print[256], arg_demo_text[256], arg_demo_path[MAX_PATH];
     static wchar_t arg_qr_text[256], arg_qr_path[MAX_PATH];
+    static wchar_t arg_cell_text[256], arg_cell_qr[256], arg_cell_path[MAX_PATH];
     const wchar_t *print_arg = NULL;
     const wchar_t *demo_text = NULL, *demo_path = NULL;
     const wchar_t *qr_text = NULL, *qr_path = NULL;
+    const wchar_t *cell_text = NULL, *cell_qr = NULL, *cell_path = NULL;
 
     if (argv) {
         for (int i = 1; i < argc; i++) {
@@ -2791,6 +2983,13 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR cmdline, int show) 
                 scpy(arg_qr_path, MAX_PATH, argv[++i]);
                 qr_text = arg_qr_text;
                 qr_path = arg_qr_path;
+            } else if (seq(argv[i], L"--demo-cell-qr") && i + 3 < argc) {
+                scpy(arg_cell_text, 256, argv[++i]);   // номер ячейки/полки
+                scpy(arg_cell_qr, 256, argv[++i]);     // штрихкод товара
+                scpy(arg_cell_path, MAX_PATH, argv[++i]);
+                cell_text = arg_cell_text;
+                cell_qr = arg_cell_qr;
+                cell_path = arg_cell_path;
             }
         }
         LocalFree(argv);
@@ -2808,6 +3007,29 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR cmdline, int show) 
             return 0;
         }
         log_line(L"ОШИБКА демо QR: не удалось сохранить файл");
+        return 1;
+    }
+
+    // Демо-режим: номер ячейки + QR товара (тот же расклад, что в печати).
+    if (cell_text && cell_qr && cell_path) {
+        BOOL has_digit = FALSE, ok_chars = cell_text[0] != 0;
+        for (int i = 0; cell_text[i] && ok_chars; i++) {
+            wchar_t ch = cell_text[i];
+            if (ch >= L'0' && ch <= L'9') has_digit = TRUE;
+            else if (ch != L'-' && ch != L' ') ok_chars = FALSE;
+        }
+        if (!ok_chars || !has_digit) {
+            log_line(L"ОТКАЗ демо (номер+QR): не номер ячейки");
+            return 1;
+        }
+        if (demo_cell_qr_render(cell_text, cell_qr, cell_path, &g_cfg)) {
+            wchar_t m[MAX_PATH + 64];
+            scpy(m, MAX_PATH + 64, L"Этикетка «номер+QR» сохранена: ");
+            scat(m, MAX_PATH + 64, cell_path);
+            log_line(m);
+            return 0;
+        }
+        log_line(L"ОШИБКА демо (номер+QR): не удалось сохранить файл");
         return 1;
     }
 
