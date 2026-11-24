@@ -2925,15 +2925,20 @@ static BOOL pn_qr_encode(const char *ascii, PnQrImage *out) {
     return rc == 0;
 }
 
-// Последняя закодированная матрица: частая перепечатка того же ШК не
-// пересчитывает QR заново.
+// LRU-кэш QR-матриц: при печати разных ШК по очереди кодирование QR —
+// самая дорогая часть рендера, а пересчёт одной и той же матрицы не нужен.
+// 8 слотов × ~0.6 КБ = ~5 КБ статической памяти.
+#define QR_CACHE_SLOTS 8
+
 typedef struct {
     char     ascii[128];
     PnQrImage img;
+    DWORD    used;
     BOOL     valid;
-} QrCache;
+} QrCacheSlot;
 
-static QrCache g_qr_cache;
+static QrCacheSlot g_qr[QR_CACHE_SLOTS];
+static DWORD g_qr_tick;
 
 static BOOL ascii_same(const char *a, const char *b) {
     int i = 0;
@@ -2941,24 +2946,43 @@ static BOOL ascii_same(const char *a, const char *b) {
     return a[i] == b[i];
 }
 
-// Матрица QR из кэша либо кодирование с запоминанием.
+// Матрица QR из кэша либо кодирование с запоминанием (вытесняется самая
+// давно использованная запись).
 static PnQrImage *qr_image(const char *ascii) {
-    if (g_qr_cache.valid && ascii_same(g_qr_cache.ascii, ascii))
-        return &g_qr_cache.img;
+    int slot = -1;
 
-    if (!pn_qr_encode(ascii, &g_qr_cache.img)) {
-        g_qr_cache.valid = FALSE;
+    // 1) попадание в кэш
+    for (int i = 0; i < QR_CACHE_SLOTS; i++) {
+        if (g_qr[i].valid && ascii_same(g_qr[i].ascii, ascii)) {
+            g_qr[i].used = ++g_qr_tick;
+            return &g_qr[i].img;
+        }
+    }
+
+    // 2) свободный слот, иначе — самая давно использованная запись
+    for (int i = 0; i < QR_CACHE_SLOTS; i++) {
+        if (!g_qr[i].valid) { slot = i; break; }
+    }
+    if (slot < 0) {
+        slot = 0;
+        for (int i = 1; i < QR_CACHE_SLOTS; i++)
+            if (g_qr[i].used < g_qr[slot].used) slot = i;
+    }
+
+    if (!pn_qr_encode(ascii, &g_qr[slot].img)) {
+        g_qr[slot].valid = FALSE;
         return NULL;
     }
 
     int i = 0;
-    while (ascii[i] && i < (int)sizeof(g_qr_cache.ascii) - 1) {
-        g_qr_cache.ascii[i] = ascii[i];
+    while (ascii[i] && i < (int)sizeof(g_qr[slot].ascii) - 1) {
+        g_qr[slot].ascii[i] = ascii[i];
         i++;
     }
-    g_qr_cache.ascii[i] = 0;
-    g_qr_cache.valid = TRUE;
-    return &g_qr_cache.img;
+    g_qr[slot].ascii[i] = 0;
+    g_qr[slot].used = ++g_qr_tick;
+    g_qr[slot].valid = TRUE;
+    return &g_qr[slot].img;
 }
 
 // Рисует QR в (x,y) с заданным размером модуля; добавляет тихую зону 4 модуля.
