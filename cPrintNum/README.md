@@ -53,12 +53,17 @@ Ozon (turbo-pvz.ozon.ru)
 
 ### 1.1. Пользователь (Windows 7/10/11)
 
-1. Распаковать `dist/PrintNum-win7.zip` (внутри `printnum-win7.exe`,
-   `printnum-diag.exe`, `config.json`) в любую папку, например `C:\PrintNum\`.
+1. Распаковать `dist/PrintNum-win7.zip` в любую папку, например
+   `C:\PrintNum\`. В корне архива лежат **и расширение** (`manifest.json`,
+   `background.js`, `content-scripts/`, `chunks/`, `assets/`, `icon/`),
+   **и приложение** (`printnum-win7.exe`, `printnum-diag.exe`, `config.json`).
 2. Запустить `printnum-win7.exe` — поднимается HTTP-сервер `127.0.0.1:5000`
    без окон и консоли. Лог: `%APPDATA%\PrintNum\log.txt`.
-3. Установить расширение (Chrome Web Store или `output/chrome-mv3` в режиме
-   разработчика), перезагрузить открытые вкладки Ozon.
+3. Установить расширение: Chrome Web Store **или** из того же архива —
+   `chrome://extensions` → «Режим разработчика» → «Загрузить распакованное» →
+   выбрать **эту же папку** (manifest.json в её корне). Перезагрузить
+   открытые вкладки Ozon. В репозитории сборка расширения лежит в
+   `extension/output/chrome-mv3`.
 4. В popup расширения: «Настройки печати» → выбрать принтер и размер этикетки
    (по умолчанию `43*25`), при желании включить автозагрузку службы.
 5. В драйвере принтера **вручную задать тот же размер бумаги**, иначе этикетка
@@ -71,7 +76,8 @@ Ozon (turbo-pvz.ozon.ru)
 ```bash
 # сервер
 brew install mingw-w64
-./build.sh                      # → printnum-win7.exe, printnum-diag.exe, dist/
+./build.sh                      # exe + сборка расширения + dist/*.zip
+SKIP_EXTENSION=1 ./build.sh     # только exe (если нет Node.js)
 
 # живой прогон службы под Wine
 ./wine-ctl.sh start             # сборка (если нужно) + запуск в фоне
@@ -98,10 +104,11 @@ npm run zip                     # output/chrome-mv3.zip
 ```
 cPrintNum/
 ├── printnum-win7.c          # ВЕСЬ сервер: HTTP, конфиг, GDI-печать, QR (~2900 строк)
-├── build.sh                 # кросс-сборка (GUI + консольный diag) + zip в dist/
+├── build.sh                 # кросс-сборка exe + сборка расширения + единый zip
 ├── wine-ctl.sh              # запуск/остановка/логи/smoke-тест службы под Wine
 ├── config.json              # рабочий конфиг для сборки (копируется в dist/)
-├── dist/                    # артефакты: 2 exe + config.json + PrintNum-win7.zip
+├── dist/                    # 2 exe + config.json + PrintNum-win7.zip
+│                            # (единый архив: расширение + exe + config)
 ├── printnum-win7.exe        # артефакт сборки (GUI, -mwindows)
 ├── printnum-diag.exe        # артефакт сборки (-mconsole, для Wine/диагностики)
 ├── demo_qr_label.bmp        # пример вывода --demo-qr (344×200, 43×25 мм @203dpi)
@@ -149,9 +156,13 @@ extension/
 │   ├── hooks/useStorageValue.ts # одиночное значение в chrome.storage (AutoPrintPanel)
 │   ├── lib/utils.ts             # cn() = clsx + tailwind-merge
 │   └── assets/main.css          # Tailwind + CSS-переменные темы (подключён в popup)
-├── output/                  # сборка WXT: chrome-mv3/{manifest.json,background.js,
-│                            #   content-scripts/{sendPrintNum,labelCopy}.js,pageHook.js,
-│                            #   popup.html,chunks/,assets/,icon/} + chrome-mv3.zip
+├── output/chrome-mv3/       # ГОТОВОЕ расширение (production-сборка WXT):
+│                            #   manifest.json, background.js, pageHook.js,
+│                            #   content-scripts/{sendPrintNum,labelCopy}.js,
+│                            #   popup.html, chunks/, assets/, icon/
+│                            # именно ЭТА папка грузится как unpacked extension
+│                            # и именно её содержимое попадает в dist-архив;
+│                            # `npm run zip` дополнительно делает output/chrome-mv3.zip
 ├── .wxt/                    # сгенерированные типы WXT (wxt prepare), не редактировать
 ├── example.html             # сохранённая страница Ozon (дамп, в .gitignore)
 ├── example_files/           # CSS/JS-ассеты того дампа (в .gitignore)
@@ -202,7 +213,43 @@ x86_64-w64-mingw32-gcc -municode -Os -s -Wall -static \
 ```
 
 `build.sh` после сборки проверяет отсутствие `api-ms-win-crt*` в импортах,
-копирует exe + `config.json` в `dist/` и пакует `dist/PrintNum-win7.zip`.
+собирает расширение и пакует **один** архив `dist/PrintNum-win7.zip`:
+
+```
+PrintNum-win7.zip
+├── manifest.json          ← расширение в корне архива
+├── background.js
+├── content-scripts/
+├── chunks/  assets/  icon/
+├── printnum-win7.exe      ← приложение рядом
+├── printnum-diag.exe
+└── config.json
+```
+
+Почему так: распаковал один раз — запускаешь exe и **эту же папку** грузишь
+как unpacked extension (`chrome://extensions` → «Загрузить распакованное»).
+Отдельного zip-а расширения больше нет (`PrintNum-extension-chrome.zip`
+удаляется из `dist/`, если остался от прошлых сборок).
+
+> `extension/output/chrome-mv3` — это и есть **папка готового расширения**
+> (production-сборка WXT). Её содержимое `build.sh` кладёт в корень архива.
+> Для Chrome Web Store нужен архив **без** `.exe`: `cd extension && npm run zip`
+> → `extension/output/printnum-<версия>-chrome.zip` (manifest в корне).
+>
+> ⚠️ `npm run dev` пишет в ту же папку **dev**-сборку (с эмулятором сканера).
+> `./build.sh` пересобирает production, но если запускали только `npm run dev`,
+> в архив попадёт dev-версия — перед релизом делайте `npm run build`.
+
+Порядок в `build.sh`: exe → расширение → упаковка.
+
+- Расширение собирается через `npm run build` (WXT), если есть
+  `extension/node_modules` и `npm`. Если npm нет — используется готовая
+  сборка `extension/output/chrome-mv3` (с предупреждением).
+- Совсем без сборки расширения скрипт падает с подсказкой, чтобы релизный
+  архив не остался без расширения. Собрать только exe:
+  `SKIP_EXTENSION=1 ./build.sh` (архив будет без файлов расширения).
+- Версия расширения в логе берётся из `output/chrome-mv3/manifest.json`.
+- `.DS_Store`/`__MACOSX` в архивы не попадают.
 
 **Не использовать `-fdata-sections`**: множество static-буферов в отдельных
 секциях раздувает PE из-за выравнивания.
@@ -1035,7 +1082,7 @@ python3 -c "import json;m=json.load(open('output/chrome-mv3/manifest.json'));pri
 
 | Что | Команда |
 |---|---|
-| Сборка сервера + проверка DLL | `./build.sh` |
+| Сборка сервера + расширения + 2 zip | `./build.sh` (`SKIP_EXTENSION=1` — только exe) |
 | Живой сервер | `./wine-ctl.sh start` / `stop` / `status` / `logs` / `reset` |
 | Контракт API (21 проверка) | `./wine-ctl.sh test` (проверено: `21 passed, 0 failed`) |
 | Типы расширения | `cd extension && npm run compile` (сейчас 0 ошибок) |
