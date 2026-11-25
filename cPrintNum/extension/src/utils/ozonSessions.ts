@@ -9,8 +9,11 @@
  * Модуль чистый (без DOM/chrome) — используется в MAIN-world hook.
  */
 
-/** Эндпоинт списка сессий выдачи. */
+/** Эндпоинт списка сессий выдачи (clientId ↔ sessionId). */
 export const SESSIONS_ENDPOINT = "/api2/giveout/Sessions";
+
+/** Эндпоинт отправлений сессии (`?sessionId=…` → список заказов). */
+export const POSTINGS_ENDPOINT = "/api2/giveout/Postings";
 
 /** Номер отправления Ozon: `78060603-0180-1`. */
 export const ORDER_NUMBER_RE = /^\d{6,12}-\d{3,5}-\d$/;
@@ -197,6 +200,93 @@ export function extractSessionOrdersFromText(raw: string): SessionOrder[] {
     }
   }
 
+  return out;
+}
+
+/** Сессия выдачи: `sessionId → clientId` (+ имя для плашки). */
+export type SessionInfo = {
+  sessionId: string;
+  clientId: string;
+  clientName?: string;
+};
+
+/**
+ * Сессии из ответа `/giveout/Sessions` (`sessionId`, `clientId`,
+ * `clientShortName`). Отправлений в этом ответе нет — они приходят из
+ * `/giveout/Postings?sessionId=…`.
+ */
+export function extractSessions(data: unknown): SessionInfo[] {
+  const out: SessionInfo[] = [];
+  const seen = new Set<string>();
+  let budget = 4000;
+
+  const walk = (node: unknown, depth: number) => {
+    if (depth > 6 || budget-- <= 0 || node == null) return;
+    if (typeof node !== "object") return;
+
+    if (Array.isArray(node)) {
+      for (let i = 0; i < node.length && i < 60; i++) walk(node[i], depth + 1);
+      return;
+    }
+
+    const obj = node as Record<string, unknown>;
+    const clientId = clientIdOf(obj.clientId);
+    const sessionId = clientIdOf(obj.sessionId);
+
+    if (clientId && sessionId && !seen.has(sessionId)) {
+      seen.add(sessionId);
+      const clientName = clientNameOf(obj);
+      out.push({ sessionId, clientId, ...(clientName ? { clientName } : {}) });
+    }
+
+    let keys = 0;
+    for (const key in obj) {
+      if (keys++ >= 60) break;
+      if (key === "clientId" || key === "sessionId") continue;
+      walk(obj[key], depth + 1);
+    }
+  };
+
+  walk(data, 0);
+  return out;
+}
+
+/**
+ * Все номера отправлений/штрихкоды из ответа (`/giveout/Postings`).
+ * Схему полей не знаем, поэтому берём любые строки нужного формата.
+ */
+export function extractOrderCodes(data: unknown): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  let budget = 4000;
+
+  const walk = (node: unknown, depth: number) => {
+    if (depth > 8 || budget-- <= 0 || node == null) return;
+
+    if (typeof node === "string") {
+      const v = node.trim();
+      if (isOrderCode(v) && !seen.has(v)) {
+        seen.add(v);
+        out.push(v);
+      }
+      return;
+    }
+
+    if (typeof node !== "object") return;
+
+    if (Array.isArray(node)) {
+      for (let i = 0; i < node.length && i < 60; i++) walk(node[i], depth + 1);
+      return;
+    }
+
+    let keys = 0;
+    for (const key in node as Record<string, unknown>) {
+      if (keys++ >= 60) break;
+      walk((node as Record<string, unknown>)[key], depth + 1);
+    }
+  };
+
+  walk(data, 0);
   return out;
 }
 

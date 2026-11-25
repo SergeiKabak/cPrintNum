@@ -1125,12 +1125,16 @@ popup-панели (`Help`, `qrCommands`, `autoscript`, `SettingSection`, `hide/
 
 **Данные.** `pageHook` разбирает ответы выдачи (`utils/ozonSessions.ts`):
 
-- `/api2/giveout/Sessions` отдаёт **только сессии** — `clientId`,
-  `clientShortName` («Алексей М.»), флаги (`allPrepaid` и т.п.), но без
-  отправлений. Из него берём справочник `clientId → имя`;
-- пары «clientId ↔ номер отправления» ищутся в любом ответе, чей URL содержит
-  `/giveout/`, `/inbound/` или `/Resolver/`: сначала ищем объект с `clientId`,
-  затем рядом (глубина ≤6) строки `NNNNNNNN-NNNN-N` или `ii…`;
+- `/api2/giveout/Sessions` — сессии: `sessionId`, `clientId`,
+  `clientShortName` («Алексей М.»), флаги (`allPrepaid` и т.п.);
+- `/api2/giveout/Postings?sessionId=…` — отправления этой сессии
+  (`postingNumber`, `barcode` и т.п.);
+- связка: `sessionId` из URL `Postings` → `clientId` из `Sessions` → все коды
+  отправлений этой сессии. Если `Postings` пришёл раньше `Sessions`, коды
+  буферизуются (`pendingBySession`) и досылаются после;
+- дополнительно пары «clientId ↔ номер отправления» ищутся в любом ответе,
+  чей URL содержит `/giveout/`, `/inbound/` или `/Resolver/` (вдруг Ozon
+  положит их рядом);
 - `clientId` у Ozon — число до 18+ цифр, а `JSON.parse` округляет его
   (2^53). Если точность потеряна, пары берутся из **сырого текста ответа**
   (`extractSessionOrdersFromText`) — без потери разрядов.

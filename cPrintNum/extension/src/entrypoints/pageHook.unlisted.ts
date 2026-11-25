@@ -25,10 +25,13 @@ import {
   type Placement,
 } from "@/utils/ozonPlacements";
 import {
+  POSTINGS_ENDPOINT,
   SESSIONS_ENDPOINT,
+  extractOrderCodes,
   extractSessionClients,
   extractSessionOrders,
   extractSessionOrdersFromText,
+  extractSessions,
   isOrderCode,
   losesPrecision,
 } from "@/utils/ozonSessions";
@@ -199,10 +202,60 @@ export default defineUnlistedScript({
         if (precise.length) orders = precise;
       }
 
+      // sessionId → clientId: связка для Postings
+      for (const info of extractSessions(data)) {
+        sessionClients.set(info.sessionId, {
+          clientId: info.clientId,
+          ...(info.clientName ? { clientName: info.clientName } : {}),
+        });
+
+        const pending = pendingBySession.get(info.sessionId);
+        if (pending) {
+          pendingBySession.delete(info.sessionId);
+          postSessionPairs(info.sessionId, pending);
+        }
+      }
+
       if (!orders.length && !clients.length) return;
 
       window.postMessage(
         { source: "PrintNum", type: "SESSIONS", payload: { orders, clients } },
+        location.origin,
+      );
+    };
+
+    /**
+     * `sessionId → clientId` из `/giveout/Sessions`.
+     *
+     * Самые важные данные для должников: `Sessions` знает клиента сессии,
+     * `Postings?sessionId=…` — отправления этой сессии.
+     */
+    const sessionClients = new Map<string, { clientId: string; clientName?: string }>();
+    /** Отправления, пришедшие раньше, чем клиент сессии. */
+    const pendingBySession = new Map<string, string[]>();
+
+    /** `?sessionId=…` из URL ответа Postings. */
+    const urlSessionId = (url: string): string => {
+      try {
+        return new URL(url, location.href).searchParams.get("sessionId") ?? "";
+      } catch {
+        return "";
+      }
+    };
+
+    /** Отправляет пары «clientId ↔ отправление» для указанной сессии. */
+    const postSessionPairs = (sessionId: string, codes: string[]) => {
+      const client = sessionClients.get(sessionId);
+      if (!client || !codes.length) return;
+
+      const orders = codes.map((code) => ({
+        clientId: client.clientId,
+        code,
+        ...(client.clientName ? { clientName: client.clientName } : {}),
+      }));
+
+      window.postMessage(
+        { source: "PrintNum", type: "SESSIONS", payload: { orders, clients: [] } },
         location.origin,
       );
     };
@@ -227,7 +280,33 @@ export default defineUnlistedScript({
       url.includes("/inbound/") ||
       url.includes("/Resolver/");
 
+    /**
+     * Что вообще передаём в `handle`.
+     *
+     * `isInterestingUrl` знает только про размещения, а для должников нужны
+     * ещё `Sessions` и `Postings` — иначе fetch/XHR-обёртки их отбрасывали.
+     */
+    const shouldHandle = (url: string) =>
+      isInterestingUrl(url) ||
+      url.includes(SESSIONS_ENDPOINT) ||
+      url.includes(POSTINGS_ENDPOINT) ||
+      isGiveoutUrl(url);
+
     const handle = (url: string, data: unknown, body?: string, rawText?: string) => {
+      if (url.includes(POSTINGS_ENDPOINT)) {
+        const sessionId = urlSessionId(url);
+        const codes = extractOrderCodes(data);
+        if (!sessionId || !codes.length) return;
+
+        if (sessionClients.has(sessionId)) {
+          postSessionPairs(sessionId, codes);
+        } else {
+          // Клиент сессии ещё не пришёл — запомним и дошлём после Sessions.
+          pendingBySession.set(sessionId, codes.slice(0, 200));
+        }
+        return;
+      }
+
       if (url.includes(SESSIONS_ENDPOINT) || isGiveoutUrl(url)) {
         postSessions(data, rawText);
         if (!isInterestingUrl(url)) return;
@@ -285,7 +364,7 @@ export default defineUnlistedScript({
           if (this.status < 200 || this.status >= 300) return;
 
           const url = this.responseURL || xhrUrls.get(this) || "";
-          if (!isInterestingUrl(url)) return;
+          if (!shouldHandle(url)) return;
 
           const isText =
             this.responseType === "" || this.responseType === "text";
@@ -312,7 +391,7 @@ export default defineUnlistedScript({
 
         return (originalFetch as any).apply(this, args).then(async (response: Response) => {
           try {
-            if (response.ok && isInterestingUrl(url)) {
+            if (response.ok && shouldHandle(url)) {
               handle(url, await response.clone().json(), body);
             }
           } catch {
