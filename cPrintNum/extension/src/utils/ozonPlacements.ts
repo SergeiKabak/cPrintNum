@@ -18,7 +18,7 @@
  * отдаёт и адрес, и ШК сразу.
  */
 
-import { CELL_CODE_RE, LABEL_BARCODE_RE } from "@/utils/constants";
+import { CELL_CODE_RE, LABEL_BARCODE_RE, QR_PAYLOAD_RE } from "@/utils/constants";
 
 /** Подстроки URL, по которым узнаём нужные ответы Ozon. */
 export const OZON_ENDPOINTS = {
@@ -113,6 +113,21 @@ export function findBarcode(value: unknown): string | null {
   return walk(value, 0);
 }
 
+/**
+ * ШК из ответа о полке: `barcode`, иначе `label` внутри указанного объекта.
+ * Резолвер для ячеек отдаёт его же в `article.*`.
+ */
+function shelfQr(data: unknown, key: string): string | null {
+  const obj = (data as Record<string, any> | null)?.[key];
+  const code =
+    typeof obj?.barcode === "string" && obj.barcode
+      ? obj.barcode
+      : typeof obj?.label === "string"
+        ? obj.label
+        : "";
+  return code && QR_PAYLOAD_RE.test(code.trim()) ? code.trim() : null;
+}
+
 /** Быстрый префильтр URL до `JSON.parse`. */
 export function isInterestingUrl(url: string): boolean {
   return (
@@ -163,10 +178,11 @@ export function normalizePlacement(value: unknown): Placement | null {
         ? "consecutive"
         : "none";
 
-  // Штрихкод товара приходит из того же ответа (findBarcode);
-  // из postMessage его тоже принимаем, но только в формате `ii…`.
+  // QR-полезная нагрузка: печатный ASCII до 64 символов. Это может быть
+  // `ii…` (штрихкод товара) или номер отправления вида `78060603-0180-1` —
+  // резолвер приёмки отдаёт именно его в `article.barcode`.
   const qr =
-    typeof p.qr === "string" && LABEL_BARCODE_RE.test(p.qr.trim())
+    typeof p.qr === "string" && QR_PAYLOAD_RE.test(p.qr.trim())
       ? p.qr.trim()
       : undefined;
 
@@ -201,7 +217,7 @@ export function parsePlacement(
     const raw = (data as any)?.transferSuccess?.cell;
     const text = shelfToCode(raw);
     if (!text) return null;
-    qr = findBarcode(data) ?? undefined;
+    qr = shelfQr(data, "transferSuccess") ?? findBarcode(data) ?? undefined;
 
     return normalizePlacement({
       text,
@@ -243,7 +259,7 @@ export function parsePlacement(
     const raw = (data as any)?.success?.cell;
     const text = shelfToCode(raw);
     if (!text) return null;
-    qr = findBarcode(data) ?? undefined;
+    qr = shelfQr(data, "success") ?? findBarcode(data) ?? undefined;
 
     return normalizePlacement({
       text,

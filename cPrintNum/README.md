@@ -847,6 +847,11 @@ const API_BASE = `http://127.0.0.1:${PORT}`;
 `Movement/put/v2` **не используется**: его ответ короткий (`articlePositions`,
 ~105 байт) и штрихкода не содержит.
 
+**Что попадает в QR.** Не только `ii…`: в ответе резолвера
+`article.barcode` часто равен номеру отправления (`78060603-0180-1`), и он
+тоже кодируется. Правило — печатный ASCII 32..127, до 64 символов
+(`QR_PAYLOAD_RE`); сервер принимает любую такую строку в поле `qr`.
+
 Резолвер срабатывает на каждый скан, поэтому печать по нему можно выключить
 галочкой «По резолверу приёмки (GetResolveEntity)» (`resolve`).
 
@@ -901,7 +906,7 @@ const API_BASE = `http://127.0.0.1:${PORT}`;
 |---|---|---|
 | `…/MicroFFTransferApi/TransferByBarcodeArticle` | `transferSuccess.cell` | полка `-88` |
 | `…/MicroFFTransferApi/TransferPackingArticle` | `success.cell` | полка `-57` (переупаковка) |
-| `/p-api/inbound/Resolver/GetResolveEntity` | `article.address` | ячейка `1`, а ШК — из `article.barcode` / `article.label` того же ответа (основной источник) |
+| `/p-api/inbound/Resolver/GetResolveEntity` | `article.address` | ячейка `1`, а QR — из `article.barcode` / `article.label` (`ii…` или номер отправления) |
 
 Дополнительно из **того же** ответа извлекается штрихкод товара
 (`findBarcode`): обход JSON в глубину (≤6, ≤400 узлов) и первое совпадение
