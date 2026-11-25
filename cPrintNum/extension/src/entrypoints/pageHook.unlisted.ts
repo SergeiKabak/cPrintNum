@@ -73,6 +73,93 @@ function barcodeFromBody(body: string): string | null {
   return m ? m[0] : null;
 }
 
+/**
+ * Эмуляция сканера: «печатает» символы в сфокусированное поле и жмёт Enter.
+ *
+ * Живёт в MAIN world (этот файл инжектится туда), поэтому вызывается из
+ * консоли страницы без переключения контекста:
+ *
+ * ```js
+ * PrintNumScan.pick("78060603-0180-1");
+ * PrintNumScan.pickList(["ii20391124108", "ii20391124404"], 1500);
+ * ```
+ *
+ * Дальше всё идёт обычным путём Ozon: страница отправляет свой запрос,
+ * `pageHook` ловит ответ резолвера и печатает этикетку. То есть это проверка
+ * настоящей цепочки, а не подмена HTTP.
+ *
+ * Если ничего не сфокусировано, события уходят в `document.body` — Ozon такой
+ * ввод проигнорирует, поэтому сначала кликните в поле сканирования.
+ */
+function dispatchKey(target: EventTarget, key: string): void {
+  target.dispatchEvent(
+    new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }),
+  );
+  target.dispatchEvent(
+    new KeyboardEvent("keyup", { key, bubbles: true, cancelable: true }),
+  );
+}
+
+/**
+ * Синтетические keydown/keyup НЕ вставляют текст в поле (это делает браузер
+ * только для доверенных событий). Поэтому для input/textarea дополнительно
+ * пишем значение через нативный сеттер и шлём `input` — так это видит React
+ * и любой onInput-обработчик Ozon.
+ */
+function typeIntoField(el: Element | null, text: string): void {
+  if (!el) return;
+
+  const isInput = el instanceof HTMLInputElement;
+  const isArea = el instanceof HTMLTextAreaElement;
+  if (!isInput && !isArea) return;
+
+  const proto = isArea ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+  if (!setter) return;
+
+  setter.call(el, (el as HTMLInputElement).value + text);
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+function scanTarget(): EventTarget {
+  const active = document.activeElement;
+  return active && active !== document.body ? active : document.body;
+}
+
+/** Один «скан»: посимвольно + Enter. */
+function pick(barcode: string): void {
+  if (!barcode) return;
+
+  const target = scanTarget();
+  console.info(`[PrintNum:scan] сканирую: ${barcode}`);
+
+  for (const char of barcode) {
+    dispatchKey(target, char);
+    typeIntoField(document.activeElement, char);
+  }
+
+  // Enter — так же, как сканер завершает ввод.
+  target.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "Enter",
+      keyCode: 13,
+      which: 13,
+      bubbles: true,
+      cancelable: true,
+    }),
+  );
+  target.dispatchEvent(new KeyboardEvent("keyup", { key: "Enter", bubbles: true }));
+}
+
+/** Серия «сканов» с паузой между ними. */
+async function pickList(barcodes: string[], delayMs = 1500): Promise<void> {
+  for (const code of barcodes) {
+    pick(code);
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+  console.info(`[PrintNum:scan] отправлено: ${barcodes.length}`);
+}
+
 export default defineUnlistedScript({
   main() {
     const w = window as any;
@@ -170,6 +257,9 @@ export default defineUnlistedScript({
         });
       } as typeof window.fetch;
     }
+
+    // Публичный хелпер: доступен из консоли страницы (MAIN world).
+    w.PrintNumScan = { pick, pickList };
 
     if (import.meta.env.DEV) {
       w.PrintNumHook = {

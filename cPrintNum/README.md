@@ -1068,8 +1068,24 @@ popup-панели (`Help`, `qrCommands`, `autoscript`, `SettingSection`, `hide/
   PrintNumScanner.simulateSequence(["123-47", "500-47"], 1500);
   ```
   Генерирует реальные `keydown` на `window` + Enter; в prod-сборке кода нет.
+- **`PrintNumScan`** (MAIN world, доступен в консоли страницы `top` —
+  `pageHook` инжектится именно туда):
+
+  ```js
+  PrintNumScan.pick("78060603-0180-1");                       // один «скан»
+  PrintNumScan.pickList(["ii20391124108", "57"], 1500);        // серия
+  ```
+
+  Что делает: посимвольно шлёт `keydown`/`keyup` (как HID-сканер), пишет
+  символ в сфокусированный `input`/`textarea` через нативный сеттер + событие
+  `input` (иначе React/Ozon не увидит текст), затем `Enter`. Дальше идёт
+  обычный путь Ozon: его запрос → ответ резолвера → `pageHook` → печать.
+
+  Требование: **сначала кликнуть в поле сканирования** на странице (если
+  активен `body`, Ozon ввод проигнорирует).
+
 - **`window.PrintNumHook`** (dev, MAIN world): `emit`, `parsePlacement`,
-  `isInterestingUrl`.
+  `isInterestingUrl`, `findBarcode`.
 - Логи: `[PrintNum:auto]` (service worker), `[PrintNum:hook]` (страница),
   `[PrintNum:label]`, `[PrintNum:scanner]`.
 - Порт: `extension/.env` → `VITE_PRINTNUM_PORT`, затем **пересборка**.

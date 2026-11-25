@@ -1,0 +1,369 @@
+// POST Запрос выделения товара
+// requestBody:{"barcodes":[String],"sessionId":int} 
+// responseBody:{result: "NotFound", message: "Предмет не обнаружен"}
+https://turbo-pvz.ozon.ru/api2/giveout/Barcode/handle-scan-error
+
+// GET Пример запроса на получение списка товаров к выдаче 
+// Ответ: {
+    "postings": [
+        {
+            "id": 851721778423000,
+            "label": "ii7834375238",
+            "name": "0235863328-0130-1",
+            "pvzState": "ReadyToGiveout",
+            "orderId": 41121117456,
+            "orderNumber": "0235863328-0130",
+            "isOpened": false,
+            "openPackageDisabled": false,
+            "address": "93-1",
+            "price": 110.17,
+            "clientAmount": 110.17,
+            "orderClientAmount": 0,
+            "currencyCode": "BYN",
+            "quantSchema": "Unknown",
+            "cisValidationResult": "GiveoutAllowed",
+            "items": [
+                {
+                    "id": 818847711,
+                    "name": "Берет WILLI береты, шапки, шляпы, Willi, Tonak",
+                    "price": 110.17,
+                    "clientAmount": 110.17,
+                    "currencyCode": "BYN",
+                    "showImage": true,
+                    "imageUrl": "https://ir.ozone.ru/s3/multimedia-1-o/c800/8535749784.jpg",
+                    "imageUrls": [
+                        "https://ir.ozone.ru/s3/multimedia-1-o/c800/8535749784.jpg",
+                        "https://ir.ozone.ru/s3/multimedia-1-3/c800/8422147119.jpg",
+                        "https://ir.ozone.ru/s3/multimedia-2/c800/6785089670.jpg",
+                        "https://ir.ozone.ru/s3/multimedia-i/c800/6785089686.jpg",
+                        "https://ir.ozone.ru/s3/multimedia-y/c800/6785089666.jpg",
+                        "https://ir.ozone.ru/s3/multimedia-c/c800/6603600072.jpg"
+                    ],
+                    "colorNames": "светло-бежевый",
+                    "colorHexes": [
+                        "e2d2c3"
+                    ],
+                    "sizes": "57 RU / 57-58",
+                    "openItemDisabled": false,
+                    "isJewelry": false,
+                    "isIndividual": false,
+                    "exemplars": [
+                        {
+                            "id": 450807171620000,
+                            "barcodes": [],
+                            "uinV2": "",
+                            "cisValidationResult": "ValidationNotRequired",
+                            "price": 110.17,
+                            "clientAmount": 110.17,
+                            "currencyCode": "BYN",
+                            "isUinValidationRequired": false,
+                            "hasDatamatrix": false,
+                            "isSealValidationRequired": false
+                        }
+                    ],
+                    "isUinValidationRequired": false,
+                    "productLink": "https://www.ozon.ru/product/818847711",
+                    "manualAnnulationDisabled": false,
+                    "isCheckPassport": false,
+                    "isDiscount": false,
+                    "isSealValidationRequired": false,
+                    "isEgiftPostcard": false,
+                    "dimensions": "300 × 220 × 15 мм",
+                    "weight": "50 г"
+                }
+            ],
+            "barcodes": [
+                "851721778423000",
+                "%101%52097767456",
+                "ii7834375238",
+                "0235863328-0130-1"
+            ],
+            "isScanIt": true,
+            "isFboPlus": false,
+            "isAtmPayment": false,
+            "hasOzonCard": false,
+            "hasDatamatrix": false,
+            "isC2C": false,
+            "isDamaged": false,
+            "isSuspicious": false,
+            "photos": [],
+            "displayName": "Берет WILLI береты, шапки, шляпы, Willi, Tonak",
+            "displayBarcode1": "ii7834375238",
+            "type": "Regular"
+        },
+        {
+            "id": 751717435885000,
+            "label": "0235863328-0131-1",
+            "name": "0235863328-0131-1",
+            "pvzState": "ReadyToGiveout",
+            "orderId": 41121137456,
+            "orderNumber": "0235863328-0131",
+            "isOpened": false,
+            "openPackageDisabled": false,
+            "address": "93-2",
+            "price": 71.52,
+            "clientAmount": 71.52,
+            "orderClientAmount": 0,
+            "currencyCode": "BYN",
+            "quantSchema": "Unknown",
+            "cisValidationResult": "GiveoutAllowed",
+            "items": [
+                {
+                    "id": 569055570,
+                    "name": "Берет Tonak береты, шапки, шляпы, Willi, Tonak",
+                    "price": 71.52,
+                    "clientAmount": 71.52,
+                    "currencyCode": "BYN",
+                    "showImage": true,
+                    "imageUrl": "https://ir.ozone.ru/s3/multimedia-1-5/c800/8492734337.jpg",
+                    "imageUrls": [
+                        "https://ir.ozone.ru/s3/multimedia-1-5/c800/8492734337.jpg",
+                        "https://ir.ozone.ru/s3/multimedia-g/c800/6647607412.jpg",
+                        "https://ir.ozone.ru/s3/multimedia-w/c800/6647607356.jpg",
+                        "https://ir.ozone.ru/s3/multimedia-g/c800/6603600184.jpg"
+                    ],
+                    "colorNames": "белый",
+                    "colorHexes": [
+                        "ffffff"
+                    ],
+                    "sizes": "56 RU / 56",
+                    "openItemDisabled": false,
+                    "isJewelry": false,
+                    "isIndividual": false,
+                    "exemplars": [
+                        {
+                            "id": 202394035457000,
+                            "barcodes": [],
+                            "uinV2": "",
+                            "cisValidationResult": "GiveoutAllowed",
+                            "price": 71.52,
+                            "clientAmount": 71.52,
+                            "currencyCode": "BYN",
+                            "isUinValidationRequired": false,
+                            "hasDatamatrix": false,
+                            "isSealValidationRequired": false
+                        }
+                    ],
+                    "isUinValidationRequired": false,
+                    "productLink": "https://www.ozon.ru/product/569055570",
+                    "manualAnnulationDisabled": false,
+                    "isCheckPassport": false,
+                    "isDiscount": false,
+                    "isSealValidationRequired": false,
+                    "isEgiftPostcard": false,
+                    "dimensions": "300 × 300 × 50 мм",
+                    "weight": "100 г"
+                }
+            ],
+            "barcodes": [
+                "751717435885000",
+                "%101%52097787456",
+                "0102901140755240215xEI-RV&daBRG\u001D91EE11\u001D92XjPZIyW72ZbWhmG9zoqeOoWFemott9LzhkrajNWvUyY=",
+                "0235863328-0131-1"
+            ],
+            "isScanIt": true,
+            "isFboPlus": false,
+            "isAtmPayment": false,
+            "hasOzonCard": false,
+            "hasDatamatrix": true,
+            "isC2C": false,
+            "isDamaged": false,
+            "isSuspicious": false,
+            "photos": [],
+            "displayName": "Берет Tonak береты, шапки, шляпы, Willi, Tonak",
+            "displayBarcode1": "0235863328-0131-1",
+            "type": "Regular"
+        },
+        {
+            "id": 551722975855000,
+            "label": "0235863328-0132-1",
+            "name": "0235863328-0132-1",
+            "pvzState": "ReadyToGiveout",
+            "orderId": 41121147456,
+            "orderNumber": "0235863328-0132",
+            "isOpened": false,
+            "openPackageDisabled": false,
+            "address": "93-3",
+            "price": 148.77,
+            "clientAmount": 148.77,
+            "orderClientAmount": 0,
+            "currencyCode": "BYN",
+            "quantSchema": "Unknown",
+            "cisValidationResult": "GiveoutAllowed",
+            "items": [
+                {
+                    "id": 525875765,
+                    "name": "Шляпа WILLI шапки, шляпы, Willi, Tonak",
+                    "price": 148.77,
+                    "clientAmount": 148.77,
+                    "currencyCode": "BYN",
+                    "showImage": true,
+                    "imageUrl": "https://ir.ozone.ru/s3/multimedia-0/c800/6274306536.jpg",
+                    "imageUrls": [
+                        "https://ir.ozone.ru/s3/multimedia-0/c800/6274306536.jpg",
+                        "https://ir.ozone.ru/s3/multimedia-l/c800/6735677997.jpg",
+                        "https://ir.ozone.ru/s3/multimedia-h/c800/6735677993.jpg",
+                        "https://ir.ozone.ru/s3/multimedia-c/c800/6603600072.jpg"
+                    ],
+                    "colorNames": "черный",
+                    "colorHexes": [
+                        "000000"
+                    ],
+                    "sizes": "56 RU / 11",
+                    "openItemDisabled": false,
+                    "isJewelry": false,
+                    "isIndividual": false,
+                    "exemplars": [
+                        {
+                            "id": 751674336762000,
+                            "barcodes": [],
+                            "uinV2": "",
+                            "cisValidationResult": "GiveoutAllowed",
+                            "price": 148.77,
+                            "clientAmount": 148.77,
+                            "currencyCode": "BYN",
+                            "isUinValidationRequired": false,
+                            "hasDatamatrix": false,
+                            "isSealValidationRequired": false
+                        }
+                    ],
+                    "isUinValidationRequired": false,
+                    "productLink": "https://www.ozon.ru/product/525875765",
+                    "manualAnnulationDisabled": false,
+                    "isCheckPassport": false,
+                    "isDiscount": false,
+                    "isSealValidationRequired": false,
+                    "isEgiftPostcard": false,
+                    "dimensions": "300 × 200 × 15 мм",
+                    "weight": "50 г"
+                }
+            ],
+            "barcodes": [
+                "551722975855000",
+                "%101%52097797456",
+                "0102901220925921215Dycdqi?Ba8hM\u001D91EE11\u001D92mTBI51nSdKGnK8X3SYjKpWxkvfCE7bhP3d+53H3ggBw=",
+                "0235863328-0132-1"
+            ],
+            "isScanIt": true,
+            "isFboPlus": false,
+            "isAtmPayment": false,
+            "hasOzonCard": false,
+            "hasDatamatrix": true,
+            "isC2C": false,
+            "isDamaged": false,
+            "isSuspicious": false,
+            "photos": [],
+            "displayName": "Шляпа WILLI шапки, шляпы, Willi, Tonak",
+            "displayBarcode1": "0235863328-0132-1",
+            "type": "Regular"
+        },
+        {
+            "id": 502229917997000,
+            "label": "ii50167563139",
+            "name": "0235863328-0129-1",
+            "pvzState": "ReadyToGiveout",
+            "orderId": 41088907456,
+            "orderNumber": "0235863328-0129",
+            "isOpened": true,
+            "openPackageDisabled": false,
+            "address": "93-4",
+            "price": 66.70,
+            "clientAmount": 66.70,
+            "orderClientAmount": 0,
+            "currencyCode": "BYN",
+            "quantSchema": "Unknown",
+            "cisValidationResult": "GiveoutAllowed",
+            "items": [
+                {
+                    "id": 2390143394,
+                    "name": "Берет Di Lana фетр",
+                    "price": 66.70,
+                    "clientAmount": 66.70,
+                    "currencyCode": "BYN",
+                    "showImage": true,
+                    "imageUrl": "https://ir.ozone.ru/s3/multimedia-1-q/c800/7666544690.jpg",
+                    "imageUrls": [
+                        "https://ir.ozone.ru/s3/multimedia-1-q/c800/7666544690.jpg",
+                        "https://ir.ozone.ru/s3/multimedia-1-w/c800/7668555908.jpg",
+                        "https://ir.ozone.ru/s3/multimedia-1-6/c800/7668556026.jpg",
+                        "https://ir.ozone.ru/s3/multimedia-1-2/c800/7668556058.jpg",
+                        "https://ir.ozone.ru/s3/multimedia-1-q/c800/7675727354.jpg",
+                        "https://ir.ozone.ru/s3/multimedia-1-z/c800/10087739027.jpg"
+                    ],
+                    "colorNames": "белый",
+                    "colorHexes": [
+                        "ffffff"
+                    ],
+                    "sizes": "56, 57 RU / 56-58",
+                    "openItemDisabled": false,
+                    "isJewelry": false,
+                    "isIndividual": false,
+                    "exemplars": [
+                        {
+                            "id": 751714280405000,
+                            "barcode": "ii50167563139",
+                            "barcodes": [
+                                "ii50167563139"
+                            ],
+                            "uinV2": "",
+                            "cisValidationResult": "ValidationNotRequired",
+                            "price": 66.70,
+                            "clientAmount": 66.70,
+                            "currencyCode": "BYN",
+                            "isUinValidationRequired": false,
+                            "hasDatamatrix": false,
+                            "isSealValidationRequired": false
+                        }
+                    ],
+                    "isUinValidationRequired": false,
+                    "productLink": "https://www.ozon.ru/product/2390143394",
+                    "manualAnnulationDisabled": false,
+                    "isCheckPassport": false,
+                    "isDiscount": false,
+                    "isSealValidationRequired": false,
+                    "isEgiftPostcard": false,
+                    "dimensions": "290 × 240 × 10 мм",
+                    "weight": "110 г"
+                }
+            ],
+            "barcodes": [
+                "502229917997000",
+                "%101%52048427456",
+                "ii50167563139",
+                "0235863328-0129-1"
+            ],
+            "isScanIt": false,
+            "isFboPlus": false,
+            "isAtmPayment": false,
+            "hasOzonCard": false,
+            "hasDatamatrix": false,
+            "isC2C": false,
+            "isDamaged": false,
+            "isSuspicious": false,
+            "photos": [],
+            "displayName": "Берет Di Lana фетр",
+            "displayBarcode1": "ii50167563139",
+            "type": "Regular"
+        }
+    ],
+    "postingsShelves": [
+        "93"
+    ],
+    "packages": {
+        "available": 0
+    },
+    "client": {
+        "ozonClientId": 235863328,
+        "clientShortName": "Лилия З.",
+        "isUnregistered": false,
+        "tipsIncluded": false
+    },
+    "soundType": "Postpay",
+    "photosConfigDto": {
+        "maxInPackagePhotos": 1,
+        "maxDamagedPhotos": 3
+    },
+    "maxMessengerAgeVerificationEnabled": false,
+    "teensMode": false
+}
+https://turbo-pvz.ozon.ru/api2/giveout/Postings?sessionId=32734717&imageSize=800
