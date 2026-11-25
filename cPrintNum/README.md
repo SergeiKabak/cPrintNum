@@ -1024,7 +1024,14 @@ popup-панели (`Help`, `qrCommands`, `autoscript`, `SettingSection`, `hide/
 
 ### 4.15. Dev-инструменты
 
-- **Эмулятор сканера** (`utils/scannerSimulator.ts`, только `import.meta.env.DEV`):
+- **Эмулятор сканера** (`utils/scannerSimulator.ts`, только `import.meta.env.DEV`).
+  Важно: расширение **не слушает `keydown`** — `PrintNumScanner.simulate()`
+  печатает через свой колбэк `onSimulatedScan`, а обычный `dispatchEvent`
+  в консоли страницы только «печатает» клавиши в сфокусированное поле Ozon.
+  Эмулятор принимает только номера ячеек (`163-1`, `-88`); `ii…` он
+  намеренно пропускает («пропущено (текстовая ячейка)») — товарные ШК
+  печатаются через `/print-barcode` или `/print-number` с полем `qr`.
+
   ```js
   // консоль страницы Ozon, контекст "PrintNum" (иначе is not defined)
   PrintNumScanner.simulate("123-47");
