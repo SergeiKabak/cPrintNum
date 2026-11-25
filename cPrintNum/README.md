@@ -840,9 +840,15 @@ const API_BASE = `http://127.0.0.1:${PORT}`;
 
 ## Откуда берётся QR товара
 
-**Номер** — из ответа Ozon, **ШК** — из тела запроса (и из ответа, если он там
-есть). Это важно: `Movement/put/v2` отвечает коротко (`articlePositions`,
-~105 байт) и штрихкода в ответе **нет**, но он есть в запросе на размещение.
+**Номер** — из ответа Ozon, **ШК** — из ответа, если он там есть, иначе из
+тела запроса. Это важно: `Movement/put/v2` отвечает коротко
+(`articlePositions`, ~105 байт) и штрихкода в ответе **нет**, но он есть
+в запросе на размещение.
+
+Исключение — `Resolver/GetResolveEntity`: в его ответе есть и адрес ячейки
+(`article.address`), и штрихкод (`article.barcode`, запасной — `article.label`).
+Этот эндпоинт срабатывает на каждый скан, поэтому печать по нему можно
+выключить галочкой «По резолверу приёмки (GetResolveEntity)» (`resolve`).
 
 `pageHook` (MAIN) перехватывает и запрос, и ответ:
 
@@ -890,6 +896,7 @@ const API_BASE = `http://127.0.0.1:${PORT}`;
 | `/api2/address-storage/Movement/put/v2` | `articlePositions[0].address` | ячейка `163-1` |
 | `…/MicroFFTransferApi/TransferByBarcodeArticle` | `transferSuccess.cell` | полка `-88` |
 | `…/MicroFFTransferApi/TransferPackingArticle` | `success.cell` | полка `-57` (переупаковка) |
+| `/p-api/inbound/Resolver/GetResolveEntity` | `article.address` | ячейка `1`, а ШК — из `article.barcode` / `article.label` того же ответа |
 
 Дополнительно из **того же** ответа извлекается штрихкод товара
 (`findBarcode`): обход JSON в глубину (≤6, ≤400 узлов) и первое совпадение

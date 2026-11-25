@@ -60,6 +60,7 @@ function isAllowed(placement: Placement, settings: AutoPrintSettings): boolean {
   if (settings.mode === "off") return false;
   if (placement.kind === "shelf" && !settings.shelf) return false;
   if (placement.endpoint === "transferPacking" && !settings.packing) return false;
+  if (placement.endpoint === "resolve" && !settings.resolve) return false;
 
   // В режимах dom/xhr второй источник молчит.
   if (placement.origin === "dom" && settings.mode === "xhr") return false;

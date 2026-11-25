@@ -20,6 +20,8 @@ export const OZON_ENDPOINTS = {
   movement: "/api2/address-storage/Movement/put/v2",
   transferByBarcode: "/MicroFFTransferApi/TransferByBarcodeArticle",
   transferPacking: "/MicroFFTransferApi/TransferPackingArticle",
+  // Резолвер приёмки: отдаёт И адрес ячейки, И штрихкод товара.
+  resolve: "/p-api/inbound/Resolver/GetResolveEntity",
 } as const;
 
 export type PlacementEndpoint = keyof typeof OZON_ENDPOINTS;
@@ -112,7 +114,8 @@ export function isInterestingUrl(url: string): boolean {
   return (
     url.includes(OZON_ENDPOINTS.movement) ||
     url.includes(OZON_ENDPOINTS.transferByBarcode) ||
-    url.includes(OZON_ENDPOINTS.transferPacking)
+    url.includes(OZON_ENDPOINTS.transferPacking) ||
+    url.includes(OZON_ENDPOINTS.resolve)
   );
 }
 
@@ -221,6 +224,31 @@ export function parsePlacement(
       dedupe: "none",
       raw: String(raw ?? ""),
       qr,
+    });
+  }
+
+  if (url.includes(OZON_ENDPOINTS.resolve)) {
+    // {"article":{"address":"1","barcode":"ii…","label":"ii…"}}
+    const article = (data as any)?.article;
+    const raw = article?.address;
+    if (typeof raw !== "string" || !raw.trim()) return null;
+
+    // ШК берём из того же ответа: barcode, иначе label.
+    const code =
+      typeof article?.barcode === "string" && article.barcode
+        ? article.barcode
+        : typeof article?.label === "string"
+          ? article.label
+          : "";
+
+    return normalizePlacement({
+      text: raw.trim(),
+      kind: "cell",
+      endpoint: "resolve",
+      origin,
+      dedupe: "consecutive",
+      raw,
+      qr: code || undefined,
     });
   }
 

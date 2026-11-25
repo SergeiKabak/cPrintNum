@@ -20,6 +20,8 @@ export type AutoPrintSettings = {
   shelf: boolean;
   /** Печатать `TransferPackingArticle` (переупаковка). */
   packing: boolean;
+  /** Печатать по `Resolver/GetResolveEntity` (срабатывает на скан). */
+  resolve: boolean;
   /** Окно подавления повтора для Movement/put/v2, мс. */
   dedupeMs: number;
   /** Защита DOM+XHR от двойной печати в режиме `both`, мс. */
@@ -35,6 +37,7 @@ export const DEFAULT_AUTO_PRINT: AutoPrintSettings = {
   mode: "dom",
   shelf: true,
   packing: true,
+  resolve: true,
   dedupeMs: 5000,
   overlapGuardMs: 1000,
 };
@@ -69,6 +72,7 @@ export function normalizeAutoPrint(value: unknown): AutoPrintSettings {
     mode,
     shelf: typeof v.shelf === "boolean" ? v.shelf : DEFAULT_AUTO_PRINT.shelf,
     packing: typeof v.packing === "boolean" ? v.packing : DEFAULT_AUTO_PRINT.packing,
+    resolve: typeof v.resolve === "boolean" ? v.resolve : DEFAULT_AUTO_PRINT.resolve,
     dedupeMs: clampInt(v.dedupeMs, 0, 60000, DEFAULT_AUTO_PRINT.dedupeMs),
     overlapGuardMs: clampInt(
       v.overlapGuardMs,

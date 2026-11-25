@@ -137,6 +137,11 @@ export default function AutoPrintPanel() {
             checked={settings.packing}
             onChange={(checked) => patch({ packing: checked })}
           />
+          <CheckboxRow
+            label="По резолверу приёмки (GetResolveEntity)"
+            checked={settings.resolve}
+            onChange={(checked) => patch({ resolve: checked })}
+          />
         </div>
 
         {/* Дедупликация */}
