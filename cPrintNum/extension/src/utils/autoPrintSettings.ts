@@ -22,7 +22,7 @@ export type AutoPrintSettings = {
   packing: boolean;
   /** Печатать по `Resolver/GetResolveEntity` (срабатывает на скан). */
   resolve: boolean;
-  /** Окно подавления повтора для Movement/put/v2, мс. */
+  /** Окно подавления повтора для резолвера (та же ячейка подряд), мс. */
   dedupeMs: number;
   /** Защита DOM+XHR от двойной печати в режиме `both`, мс. */
   overlapGuardMs: number;

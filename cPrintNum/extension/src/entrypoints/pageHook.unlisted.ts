@@ -8,11 +8,11 @@
  *
  * # Откуда что берём
  *
- * - **номер ячейки/полки** — из ОТВЕТА (`articlePositions[0].address`,
- *   `transferSuccess.cell`, `success.cell`);
- * - **штрихкод товара** — из ТЕЛА ЗАПРОСА. Ozon не кладёт `ii…` в ответ
- *   `Movement/put/v2` (проверено на живом ответе: 105 байт, только
- *   `articlePositions`), но отправляет его в запросе вместе с размещением.
+ * - **номер ячейки/полки** — из ОТВЕТА (`article.address` в
+ *   `Resolver/GetResolveEntity`, `transferSuccess.cell`, `success.cell`);
+ * - **штрихкод товара** — из того же ответа резолвера (`article.barcode`),
+ *   а если его там нет (полки) — из ТЕЛА ЗАПРОСА (`ii…` уходит в запросе
+ *   вместе с размещением).
  *
  * Найденное размещение отправляется в isolated content script через
  * `window.postMessage`, а тот — в background.

@@ -831,7 +831,7 @@ const API_BASE = `http://127.0.0.1:${PORT}`;
 
 `isDuplicate()`:
 
-- `Movement/put/v2` (ячейка, `dedupe:"consecutive"`): тот же `text`+`kind`
+- ячейка из резолвера (`dedupe:"consecutive"`): тот же `text`+`kind`
   в пределах `dedupeMs` — подавить;
 - режим `both`: тот же `text` в пределах `overlapGuardMs` — подавить
   (DOM и XHR сообщают об одном размещении).
@@ -840,15 +840,19 @@ const API_BASE = `http://127.0.0.1:${PORT}`;
 
 ## Откуда берётся QR товара
 
-**Номер** — из ответа Ozon, **ШК** — из ответа, если он там есть, иначе из
-тела запроса. Это важно: `Movement/put/v2` отвечает коротко
-(`articlePositions`, ~105 байт) и штрихкода в ответе **нет**, но он есть
-в запросе на размещение.
+Основной источник — **`/p-api/inbound/Resolver/GetResolveEntity`**: в его
+ответе есть и адрес ячейки (`article.address`), и штрихкод товара
+(`article.barcode`, запасной — `article.label`).
 
-Исключение — `Resolver/GetResolveEntity`: в его ответе есть и адрес ячейки
-(`article.address`), и штрихкод (`article.barcode`, запасной — `article.label`).
-Этот эндпоинт срабатывает на каждый скан, поэтому печать по нему можно
-выключить галочкой «По резолверу приёмки (GetResolveEntity)» (`resolve`).
+`Movement/put/v2` **не используется**: его ответ короткий (`articlePositions`,
+~105 байт) и штрихкода не содержит.
+
+Резолвер срабатывает на каждый скан, поэтому печать по нему можно выключить
+галочкой «По резолверу приёмки (GetResolveEntity)» (`resolve`).
+
+Для полок (`TransferByBarcodeArticle` / `TransferPackingArticle`) номер берётся
+из ответа (`transferSuccess.cell` / `success.cell`), а ШК — из ответа, если он
+там есть, иначе из тела запроса (`pageHook` запоминает тело).
 
 `pageHook` (MAIN) перехватывает и запрос, и ответ:
 
@@ -861,7 +865,9 @@ const API_BASE = `http://127.0.0.1:${PORT}`;
 массива, ≤80 ключей.
 
 В DOM-режиме ответов нет вообще, поэтому QR не печатается — для этикеток
-«номер + QR» нужен режим автопечати `xhr` или `both`. Кнопка «копировать»
+«номер + QR» нужен режим автопечати `xhr` или `both`. Отладочный чек-лист:
+`Movement/put/v2` больше не обрабатывается, смотри ответы
+`Resolver/GetResolveEntity`. Кнопка «копировать»
 используется только для генератора QR в popup, в автопечать она не попадает.
 Полка перед печатью требует `features` c `shelf-dash`; если сервер старый —
 событие с ошибкой «Обновите PrintNum: поддержка полок (-88) не найдена»,
@@ -893,10 +899,9 @@ const API_BASE = `http://127.0.0.1:${PORT}`;
 
 | Эндпоинт Ozon (подстрока) | Поле | Результат |
 |---|---|---|
-| `/api2/address-storage/Movement/put/v2` | `articlePositions[0].address` | ячейка `163-1` |
 | `…/MicroFFTransferApi/TransferByBarcodeArticle` | `transferSuccess.cell` | полка `-88` |
 | `…/MicroFFTransferApi/TransferPackingArticle` | `success.cell` | полка `-57` (переупаковка) |
-| `/p-api/inbound/Resolver/GetResolveEntity` | `article.address` | ячейка `1`, а ШК — из `article.barcode` / `article.label` того же ответа |
+| `/p-api/inbound/Resolver/GetResolveEntity` | `article.address` | ячейка `1`, а ШК — из `article.barcode` / `article.label` того же ответа (основной источник) |
 
 Дополнительно из **того же** ответа извлекается штрихкод товара
 (`findBarcode`): обход JSON в глубину (≤6, ≤400 узлов) и первое совпадение

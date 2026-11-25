@@ -6,18 +6,22 @@
  *
  * # Форматы
  *
- * - `Movement/put/v2` → `articlePositions[0].address` — обычная ячейка
- *   (`163-1`). Повтор подряд подавляется.
+ * - `Resolver/GetResolveEntity` → `article.address` (ячейка) и
+ *   `article.barcode` (ШК товара) — основной источник для приёмки;
+ *   повтор подряд подавляется.
  * - `TransferByBarcodeArticle` / `TransferPackingArticle` →
  *   `"Ozon Полка-88"` → `-88`. Ведущий дефис маркирует полку и при этом
  *   проходит валидацию `/print-number` (только цифры/дефис/пробел).
+ *
+ * `Movement/put/v2` намеренно НЕ используется: его ответ короткий
+ * (`articlePositions`, ~105 байт) и штрихкода не содержит, а резолвер
+ * отдаёт и адрес, и ШК сразу.
  */
 
 import { CELL_CODE_RE, LABEL_BARCODE_RE } from "@/utils/constants";
 
 /** Подстроки URL, по которым узнаём нужные ответы Ozon. */
 export const OZON_ENDPOINTS = {
-  movement: "/api2/address-storage/Movement/put/v2",
   transferByBarcode: "/MicroFFTransferApi/TransferByBarcodeArticle",
   transferPacking: "/MicroFFTransferApi/TransferPackingArticle",
   // Резолвер приёмки: отдаёт И адрес ячейки, И штрихкод товара.
@@ -112,7 +116,6 @@ export function findBarcode(value: unknown): string | null {
 /** Быстрый префильтр URL до `JSON.parse`. */
 export function isInterestingUrl(url: string): boolean {
   return (
-    url.includes(OZON_ENDPOINTS.movement) ||
     url.includes(OZON_ENDPOINTS.transferByBarcode) ||
     url.includes(OZON_ENDPOINTS.transferPacking) ||
     url.includes(OZON_ENDPOINTS.resolve)
@@ -148,7 +151,7 @@ export function normalizePlacement(value: unknown): Placement | null {
       ? (p.endpoint as PlacementEndpoint)
       : kind === "shelf"
         ? "transferByBarcode"
-        : "movement";
+        : "resolve";
 
   const origin: PlacementOrigin =
     p.origin === "dom" || p.origin === "scanner" ? p.origin : "xhr";
@@ -193,22 +196,6 @@ export function parsePlacement(
   // Сначала дешёвая проверка размещения: findBarcode обходит весь JSON,
   // поэтому запускаем его только для ответов с валидной ячейкой/полкой.
   let qr: string | undefined;
-
-  if (url.includes(OZON_ENDPOINTS.movement)) {
-    const raw = (data as any)?.articlePositions?.[0]?.address;
-    if (typeof raw !== "string") return null;
-    qr = findBarcode(data) ?? undefined;
-
-    return normalizePlacement({
-      text: raw,
-      kind: "cell",
-      endpoint: "movement",
-      origin,
-      dedupe: "consecutive",
-      raw,
-      qr,
-    });
-  }
 
   if (url.includes(OZON_ENDPOINTS.transferByBarcode)) {
     const raw = (data as any)?.transferSuccess?.cell;

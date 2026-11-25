@@ -3,7 +3,7 @@
  *
  * Здесь сосредоточены:
  * - проверка настроек и режима (`dom` / `xhr` / `both`);
- * - дедупликация повторов Movement/put/v2;
+ * - дедупликация повторов резолвера (та же ячейка подряд);
  * - проверка поддержки полок backend'ом (`features:["shelf-dash"]`);
  * - отправка в C-службу через `POST /print-number`.
  *
@@ -82,7 +82,7 @@ async function isDuplicate(
 
   const age = Date.now() - last.at;
 
-  // Movement/put/v2: не печатаем ту же ячейку подряд в пределах окна.
+  // Ячейка из резолвера: не печатаем ту же самую подряд в пределах окна.
   if (placement.dedupe === "consecutive" && age < settings.dedupeMs) {
     return true;
   }
