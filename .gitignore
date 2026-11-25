@@ -46,3 +46,4 @@ src-printnum/PrintNum/
 cPrintNum/*.bmp
 cPrintNum/*.bin
 cPrintNum/preview/
+cPrintNum/photo_*

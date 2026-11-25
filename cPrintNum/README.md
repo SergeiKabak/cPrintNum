@@ -53,7 +53,7 @@ Ozon (turbo-pvz.ozon.ru)
 
 ### 1.1. Пользователь (Windows 7/10/11)
 
-1. Распаковать `dist/PrintNum-win7.zip` в любую папку, например
+1. Распаковать `dist/cPrintNum_vQRGenerator.zip` в любую папку, например
    `C:\PrintNum\`. В корне архива лежат **и расширение** (`manifest.json`,
    `background.js`, `content-scripts/`, `chunks/`, `assets/`, `icon/`),
    **и приложение** (`printnum-win7.exe`, `printnum-diag.exe`, `config.json`).
@@ -109,7 +109,7 @@ cPrintNum/
 ├── build.sh                 # кросс-сборка exe + сборка расширения + единый zip
 ├── wine-ctl.sh              # запуск/остановка/логи/smoke-тест службы под Wine
 ├── config.json              # рабочий конфиг для сборки (копируется в dist/)
-├── dist/                    # 2 exe + config.json + PrintNum-win7.zip
+├── dist/                    # 2 exe + config.json + cPrintNum_vQRGenerator.zip
 │                            # (единый архив: расширение + exe + config)
 ├── printnum-win7.exe        # артефакт сборки: служба (подсистема Windows)
 ├── printnum-diag.exe        # артефакт сборки (-mconsole, для Wine/диагностики)
@@ -215,10 +215,10 @@ x86_64-w64-mingw32-gcc -municode -Os -s -Wall -static \
 ```
 
 `build.sh` после сборки проверяет отсутствие `api-ms-win-crt*` в импортах,
-собирает расширение и пакует **один** архив `dist/PrintNum-win7.zip`:
+собирает расширение и пакует **один** архив `dist/cPrintNum_vQRGenerator.zip`:
 
 ```
-PrintNum-win7.zip
+cPrintNum_vQRGenerator.zip
 ├── manifest.json          ← расширение в корне архива
 ├── background.js
 ├── content-scripts/

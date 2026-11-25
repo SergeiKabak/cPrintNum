@@ -6,7 +6,7 @@
 #      printnum-diag.exe  — та же служба + консоль (диагностика/Wine)
 # 2. Сборка браузерного расширения (WXT): extension/output/chrome-mv3 —
 #    это и есть папка готового расширения (её содержимое идёт в архив).
-# 3. Упаковка: ЕДИНЫЙ архив dist/PrintNum-win7.zip — файлы расширения в корне
+# 3. Упаковка: ЕДИНЫЙ архив dist/cPrintNum_vQRGenerator.zip — файлы расширения в корне
 #    (manifest.json рядом) + printnum-win7.exe, printnum-diag.exe, config.json.
 #    Распаковал в папку — запускаешь exe и эту же папку грузишь как расширение.
 #
