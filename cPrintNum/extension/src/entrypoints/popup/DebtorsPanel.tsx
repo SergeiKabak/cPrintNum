@@ -26,6 +26,9 @@ import {
 
 type Status = { kind: "idle" | "ok" | "err"; msg?: string };
 
+/** Диагностика из content script: сколько пар «клиент ↔ отправление» поймано. */
+type WatchStats = { pairs: number; clients: number; at: number };
+
 export default function DebtorsPanel() {
   const [list, setList] = useState<Debtor[]>([]);
   const [clientId, setClientId] = useState("");
@@ -33,6 +36,7 @@ export default function DebtorsPanel() {
   const [note, setNote] = useState("");
   const [editId, setEditId] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
+  const [watch, setWatch] = useState<WatchStats | null>(null);
 
   const reload = () => {
     readDebtors().then(setList);
@@ -41,8 +45,14 @@ export default function DebtorsPanel() {
   useEffect(() => {
     reload();
 
+    chrome.storage.local.get(["debtorStats"], (stored: any) => {
+      if (stored?.debtorStats) setWatch(stored.debtorStats as WatchStats);
+    });
+
     const onChanged = (changes: any, area: string) => {
-      if (area === "local" && changes?.[DEBTORS_KEY]) reload();
+      if (area !== "local") return;
+      if (changes?.[DEBTORS_KEY]) reload();
+      if (changes?.debtorStats) setWatch(changes.debtorStats.newValue ?? null);
     };
 
     chrome.storage.onChanged.addListener(onChanged);
@@ -188,6 +198,15 @@ export default function DebtorsPanel() {
             </Button>
           )}
         </div>
+
+        {watch && (
+          <span className="text-[10px] text-muted-foreground leading-tight">
+            Из ответов Ozon: отправлений {watch.pairs}, клиентов {watch.clients}
+            {watch.pairs === 0
+              ? " — связка «клиент ↔ отправление» ещё не встречалась, проверка не сработает"
+              : ""}
+          </span>
+        )}
 
         {status.kind !== "idle" && status.msg && (
           <div

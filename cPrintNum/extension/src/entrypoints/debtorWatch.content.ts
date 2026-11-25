@@ -18,6 +18,7 @@ import { codeMatches } from "@/utils/ozonSessions";
 import { showToast } from "@/utils/toast";
 
 const MAX_ENTRIES = 3000;
+const STATS_KEY = "debtorStats";
 const TOAST_MS = 8000;
 
 export default defineContentScript({
@@ -63,9 +64,22 @@ export default defineContentScript({
         if (c.clientName) clientNames.set(c.clientId, c.clientName);
       }
 
-      if (!pairs.length) return;
+      if (pairs.length) sessionOrders = pairs.slice(-MAX_ENTRIES);
 
-      sessionOrders = pairs.slice(-MAX_ENTRIES);
+      // Диагностика для popup: сколько связок «клиент ↔ отправление» поймали.
+      try {
+        chrome.storage.local.set({
+          [STATS_KEY]: {
+            pairs: sessionOrders.length,
+            clients: clientNames.size,
+            at: Date.now(),
+          },
+        });
+      } catch {
+        // storage может быть недоступен при выгрузке расширения
+      }
+
+      if (!pairs.length) return;
 
       const byClient = new Map<string, number>();
       for (const { clientId } of sessionOrders) {
