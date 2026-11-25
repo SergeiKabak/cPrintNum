@@ -29,7 +29,23 @@ export type SessionOrder = {
   clientId: string;
   /** Номер отправления / штрихкод, как он пришёл в ответе. */
   code: string;
+  /** `clientShortName` / `clientName`, если Ozon его отдал рядом. */
+  clientName?: string;
 };
+
+/**
+ * Имя клиента из объекта сессии.
+ *
+ * В `/giveout/Sessions` есть `clientShortName` («Алексей М.»), в других
+ * ответах встречается `clientName`/`fio`. Нужно только для текста плашки.
+ */
+function clientNameOf(obj: Record<string, unknown>): string | undefined {
+  for (const key of ["clientShortName", "clientName", "fio"] as const) {
+    const value = obj[key];
+    if (typeof value === "string" && value.trim()) return value.trim().slice(0, 80);
+  }
+  return undefined;
+}
 
 /** Похоже ли значение на номер отправления или `ii…`-штрихкод. */
 export function isOrderCode(value: string): boolean {
@@ -65,11 +81,11 @@ export function extractSessionOrders(data: unknown): SessionOrder[] {
   const seen = new Set<string>();
   let budget = MAX_NODES;
 
-  const push = (clientId: string, code: string) => {
+  const push = (clientId: string, code: string, clientName?: string) => {
     const key = `${clientId}\u0000${code}`;
     if (seen.has(key)) return;
     seen.add(key);
-    out.push({ clientId, code });
+    out.push({ clientId, code, ...(clientName ? { clientName } : {}) });
   };
 
   const collectCodes = (node: unknown, depth: number): string[] => {
@@ -111,7 +127,10 @@ export function extractSessionOrders(data: unknown): SessionOrder[] {
     const clientId = clientIdOf(obj.clientId);
 
     if (clientId) {
-      for (const code of collectCodes(obj, depth + 1)) push(clientId, code);
+      const clientName = clientNameOf(obj);
+      for (const code of collectCodes(obj, depth + 1)) {
+        push(clientId, code, clientName);
+      }
     }
 
     let seenKeys = 0;
@@ -159,6 +178,9 @@ export function extractSessionOrdersFromText(raw: string): SessionOrder[] {
     const end = next ? next.at : Math.min(raw.length, start + 8000);
     const chunk = raw.slice(start, end);
 
+    const nameMatch = /"client(?:Short)?Name"\s*:\s*"([^"]{1,80})"/.exec(chunk);
+    const clientName = nameMatch?.[1]?.trim() || undefined;
+
     let codes = 0;
     codeRe.lastIndex = 0;
     let c: RegExpExecArray | null;
@@ -169,12 +191,51 @@ export function extractSessionOrdersFromText(raw: string): SessionOrder[] {
       const key = `${current.id}\u0000${code}`;
       if (!seen.has(key)) {
         seen.add(key);
-        out.push({ clientId: current.id, code });
+        out.push({ clientId: current.id, code, ...(clientName ? { clientName } : {}) });
       }
       if (++codes >= MAX_CODES_PER_CLIENT) break;
     }
   }
 
+  return out;
+}
+
+/**
+ * Клиенты из ответа без отправлений (`/giveout/Sessions` отдаёт только
+ * сессии: `clientId` + `clientShortName`). Используется, чтобы показать имя
+ * в предупреждении о долге.
+ */
+export function extractSessionClients(data: unknown): { clientId: string; clientName?: string }[] {
+  const out: { clientId: string; clientName?: string }[] = [];
+  const seen = new Set<string>();
+  let budget = 4000;
+
+  const walk = (node: unknown, depth: number) => {
+    if (depth > 6 || budget-- <= 0 || node == null) return;
+    if (typeof node !== "object") return;
+
+    if (Array.isArray(node)) {
+      for (let i = 0; i < node.length && i < 60; i++) walk(node[i], depth + 1);
+      return;
+    }
+
+    const obj = node as Record<string, unknown>;
+    const clientId = clientIdOf(obj.clientId);
+    if (clientId && !seen.has(clientId)) {
+      seen.add(clientId);
+      const clientName = clientNameOf(obj);
+      out.push({ clientId, ...(clientName ? { clientName } : {}) });
+    }
+
+    let keys = 0;
+    for (const key in obj) {
+      if (keys++ >= 60) break;
+      if (key === "clientId") continue;
+      walk(obj[key], depth + 1);
+    }
+  };
+
+  walk(data, 0);
   return out;
 }
 

@@ -27,8 +27,10 @@ export default defineContentScript({
   runAt: "document_start",
 
   main(ctx) {
-    /** Пары из Sessions: какие отправления относятся к какому клиенту. */
-    let sessionOrders: { clientId: string; code: string }[] = [];
+    /** Пары из ответов Ozon: какие отправления относятся к какому клиенту. */
+    let sessionOrders: { clientId: string; code: string; clientName?: string }[] = [];
+    /** `clientId → clientShortName` из `/giveout/Sessions` (там нет отправлений). */
+    const clientNames = new Map<string, string>();
     let debtors: Debtor[] = [];
 
     const loadDebtors = () => {
@@ -53,7 +55,14 @@ export default defineContentScript({
       }
     });
 
-    const rememberSessions = (pairs: { clientId: string; code: string }[]) => {
+    const rememberSessions = (
+      pairs: { clientId: string; code: string; clientName?: string }[],
+      clients: { clientId: string; clientName?: string }[] = [],
+    ) => {
+      for (const c of clients) {
+        if (c.clientName) clientNames.set(c.clientId, c.clientName);
+      }
+
       if (!pairs.length) return;
 
       sessionOrders = pairs.slice(-MAX_ENTRIES);
@@ -87,7 +96,9 @@ export default defineContentScript({
       const debtor = debtors.find((d) => matchedClients.has(d.clientId));
       if (!debtor) return;
 
-      const who = debtor.name ? `${debtor.name} (${debtor.clientId})` : debtor.clientId;
+      const display =
+        debtor.name || clientNames.get(debtor.clientId) || "";
+      const who = display ? `${display} (${debtor.clientId})` : debtor.clientId;
       showToast(`Не оплачено!\n${who}\nОтправление: ${code}`, "err", TOAST_MS);
       console.warn(`[PrintNum:debt] должник ${who}, отправление ${code}`);
     };
@@ -102,10 +113,15 @@ export default defineContentScript({
 
       if (data.type === "SESSIONS") {
         const pairs = Array.isArray(data.payload?.orders) ? data.payload.orders : [];
+        const clients = Array.isArray(data.payload?.clients) ? data.payload.clients : [];
+
         rememberSessions(
           pairs.filter(
             (p: any) =>
               p && typeof p.clientId === "string" && typeof p.code === "string",
+          ),
+          clients.filter(
+            (c: any) => c && typeof c.clientId === "string",
           ),
         );
         return;

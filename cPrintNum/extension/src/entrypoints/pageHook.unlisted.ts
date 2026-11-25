@@ -26,6 +26,7 @@ import {
 } from "@/utils/ozonPlacements";
 import {
   SESSIONS_ENDPOINT,
+  extractSessionClients,
   extractSessionOrders,
   extractSessionOrdersFromText,
   isOrderCode,
@@ -180,19 +181,28 @@ export default defineUnlistedScript({
       );
     };
 
+    /**
+     * Отправляет в content script пары «clientId ↔ отправление» и список
+     * клиентов (для имени в предупреждении).
+     *
+     * `/giveout/Sessions` отдаёт только сессии (clientId + clientShortName),
+     * без отправлений — поэтому пары ищем в любых ответах giveout/inbound.
+     */
     const postSessions = (data: unknown, rawText?: string) => {
       let orders = extractSessionOrders(data);
+      const clients = extractSessionClients(data);
 
       // `clientId` — длинное число: JSON.parse округляет его (2^53).
       // Если точность потеряна, разбираем сырой текст ответа.
-      if (orders.some((o) => losesPrecision(o.clientId)) && rawText) {
+      if (rawText && orders.some((o) => losesPrecision(o.clientId))) {
         const precise = extractSessionOrdersFromText(rawText);
         if (precise.length) orders = precise;
       }
 
-      if (!orders.length) return;
+      if (!orders.length && !clients.length) return;
+
       window.postMessage(
-        { source: "PrintNum", type: "SESSIONS", payload: { orders } },
+        { source: "PrintNum", type: "SESSIONS", payload: { orders, clients } },
         location.origin,
       );
     };
@@ -210,10 +220,17 @@ export default defineUnlistedScript({
      * Собирает размещение: номер из ответа + ШК из тела запроса.
      * ШК из ответа (если он там вдруг есть) приоритетнее.
      */
+    // Ответы выдачи/резолвера тоже могут содержать clientId рядом с
+    // отправлением — из них и получается связка «кто этот заказ».
+    const isGiveoutUrl = (url: string) =>
+      url.includes("/giveout/") ||
+      url.includes("/inbound/") ||
+      url.includes("/Resolver/");
+
     const handle = (url: string, data: unknown, body?: string, rawText?: string) => {
-      if (url.includes(SESSIONS_ENDPOINT)) {
+      if (url.includes(SESSIONS_ENDPOINT) || isGiveoutUrl(url)) {
         postSessions(data, rawText);
-        return;
+        if (!isInterestingUrl(url)) return;
       }
 
       if (!isInterestingUrl(url)) return;
