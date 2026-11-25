@@ -136,6 +136,7 @@ extension/
 │   │   ├── sendPrintNum.content.ts  # document_start: DOM-наблюдатель + приём postMessage
 │   │   ├── pageHook.unlisted.ts     # MAIN-world: перехват XHR/fetch ответов Ozon
 │   │   ├── labelCopy.content.ts     # «копировать» ШК → chrome.storage
+│   │   ├── hotkeyToggle.content.ts  # Ctrl+O — выкл/вкл печать + тост
 │   │   └── popup/                   # окно расширения
 │   │       ├── index.html           # точка входа popup (link на ~/assets/main.css)
 │   │       ├── main.tsx             # render(<App/>, #root)
@@ -715,6 +716,7 @@ bind/listen/WSAStartup пишутся в лог и завершают проце
 | `background.js` | `entrypoints/background.ts` | `background.service_worker` |
 | `content-scripts/sendPrintNum.js` | `entrypoints/sendPrintNum.content.ts` | `content_scripts`, `document_start` |
 | `content-scripts/labelCopy.js` | `entrypoints/labelCopy.content.ts` | `content_scripts` (idle) |
+| `content-scripts/hotkeyToggle.js` | `entrypoints/hotkeyToggle.content.ts` | `content_scripts`, `document_start` |
 | `pageHook.js` | `entrypoints/pageHook.unlisted.ts` | **не** в manifest; инъекция из background |
 | `popup.html` + `chunks/*` + `assets/*` | `entrypoints/popup/*` | `action.default_popup` |
 | `icon/*.png` | `public/icon/*.png` | `manifest.icons` (автоподхват WXT) |
@@ -1022,6 +1024,28 @@ popup-панели (`Help`, `qrCommands`, `autoscript`, `SettingSection`, `hide/
 - Логи: `[PrintNum:auto]` (service worker), `[PrintNum:hook]` (страница),
   `[PrintNum:label]`, `[PrintNum:scanner]`.
 - Порт: `extension/.env` → `VITE_PRINTNUM_PORT`, затем **пересборка**.
+
+### 4.16. Горячая клавиша Ctrl+O — вкл/выкл печати
+
+`hotkeyToggle.content.ts` (Ozon, `document_start`, capture-фаза):
+
+- `Ctrl+O` (и `Cmd+O` на macOS, `Ctrl+Shift+O` как альтернатива) —
+  `GET /config` → `POST /config {"running": !running}`;
+- в правом верхнем углу появляется плашка на 2.5 с:
+  «Печать включена» (зелёная) / «Печать выключена» (красная);
+  при недоступной службе — «PrintNum не запущен»;
+- `preventDefault()` вызывается, но `Ctrl+O` — браузерный шорткат «открыть
+  файл»: если Chrome всё равно показывает диалог, используйте
+  `Ctrl+Shift+O` (обработчик не требует отсутствия Shift);
+- состояние то же, что у чекбокса в popup (`running`), поэтому это взаимно
+  обратимо; повторные нажатия защищены флагом `busy`, автоповтор клавиши
+  игнорируется (`event.repeat`).
+
+Проверка без Ozon (тот же собранный content script, инъекция в страницу):
+`Ctrl+O` → `defaultPrevented: true`, `GET /config`, `POST {"running":false}`,
+плашка «Печать выключена»; второе нажатие → `{"running":true}`, «Печать
+включена». Подтверждено и на живой службе: `running` в `GET /config`
+переключился.
 
 ---
 

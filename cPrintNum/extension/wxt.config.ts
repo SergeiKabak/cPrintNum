@@ -6,6 +6,7 @@ const INCLUDED_ENTRYPOINTS = [
   "background",
   "popup",
   "sendPrintNum", // печать ячеек (основная функция)
+  "hotkeyToggle", // Ctrl+O — включить/выключить печать
   "labelCopy",    // подхват ШК из кнопок «копировать»
   "pageHook",     // MAIN-world перехват ответов Ozon (инъекция из background)
 ];

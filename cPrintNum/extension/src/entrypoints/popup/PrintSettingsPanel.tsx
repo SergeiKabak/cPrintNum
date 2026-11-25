@@ -128,6 +128,10 @@ export default function PrintSettingsPanel() {
       </div>
 
       <div className="p-3 flex flex-col gap-3">
+        <span className="text-[10px] text-muted-foreground leading-tight">
+          Быстрое переключение на странице Ozon — <b>Ctrl+O</b> (Cmd+O на macOS).
+        </span>
+
         {/* Печать вкл/выкл */}
         <button
           type="button"
