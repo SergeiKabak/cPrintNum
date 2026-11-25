@@ -870,6 +870,7 @@ typedef struct {
     int     w;
     int     h;
     int     stride;
+    int     read_stride;   // stride последнего surf_read (по запрошенной ширине)
     BOOL    bits_ok;
 } LabelSurface;
 
@@ -940,6 +941,7 @@ static BOOL surf_read(int w, int h) {
     bi.bmiHeader.biBitCount = 24;
     bi.bmiHeader.biCompression = BI_RGB;
 
+    g_surf.read_stride = (w * 3 + 3) & ~3;
     return GetDIBits(g_surf.dc, g_surf.bmp, 0, h, g_surf.bits, &bi,
                      DIB_RGB_COLORS) != 0;
 }
@@ -1063,7 +1065,9 @@ static BOOL measure_ink(HFONT font, const wchar_t *text,
     if (!ink_scratch_ensure(w, h)) return FALSE;
 
     HDC dc = g_ink.dc;
-    int stride = g_ink.stride;
+    // GetDIBits пакует строки по запрошенной biWidth, а не по размеру bitmap:
+    // при переиспользовании большего scratch stride был бы другим → мусор.
+    int stride = (w * 3 + 3) & ~3;
 
     HGDIOBJ old_font = SelectObject(dc, font);
     PatBlt(dc, 0, 0, w, h, WHITENESS);
@@ -1351,7 +1355,7 @@ static void apply_checker_with_outline(HDC hdc, const wchar_t *text,
     HDC mem = g_chk.dc;
     BYTE *bits = g_chk.bits;
     BYTE *black = g_chk.black;
-    int stride = g_chk.stride;
+    int stride = (w * 3 + 3) & ~3;   // как пакует GetDIBits для biWidth = w
 
     PatBlt(mem, 0, 0, w, h, WHITENESS);
     HFONT f = make_font(tl->size, tl->weight, FALSE);
@@ -3264,7 +3268,7 @@ static BOOL demo_save_surface(const wchar_t *path, int w, int h) {
     }
 
     const BYTE *bits = g_surf.bits;
-    int stride = g_surf.stride;
+    int stride = g_surf.read_stride;
     for (int y = 0; y < h; y++) {
         const BYTE *row = bits + (size_t)y * stride;
         BYTE *dst = gray + (size_t)y * w;
@@ -3784,7 +3788,7 @@ static BOOL escpos_build(const wchar_t *text, const wchar_t *qr, BOOL qr_label,
         static BYTE row[8192];
         for (int y = 0; y < lh && ok; y++) {
             for (int i = 0; i < bytes_per_row; i++) row[i] = 0;
-            const BYTE *srow = g_surf.bits + (size_t)y * g_surf.stride;
+            const BYTE *srow = g_surf.bits + (size_t)y * g_surf.read_stride;
             for (int x = 0; x < lw; x++) {
                 const BYTE *px = srow + (size_t)x * 3;
                 int g = (30 * px[0] + 59 * px[1] + 11 * px[2]) / 100;
