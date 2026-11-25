@@ -4,6 +4,7 @@ import StatusPrinting from "./statusPrinting";
 import PrintSettingsPanel from "./PrintSettingsPanel";
 import AutoPrintPanel from "./AutoPrintPanel";
 import BarcodeGenerator from "./BarcodeGenerator";
+import DebtorsPanel from "./DebtorsPanel";
 
 function App() {
   useEffect(() => {
@@ -19,6 +20,8 @@ function App() {
       <PrintSettingsPanel />
 
       <AutoPrintPanel />
+
+      <DebtorsPanel />
 
       <BarcodeGenerator />
     </div>

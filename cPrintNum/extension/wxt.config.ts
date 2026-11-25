@@ -7,6 +7,7 @@ const INCLUDED_ENTRYPOINTS = [
   "popup",
   "sendPrintNum", // печать ячеек (основная функция)
   "hotkeyToggle", // Ctrl+O — включить/выключить печать
+  "debtorWatch",  // проверка должников по clientId при выдаче
   "labelCopy",    // подхват ШК из кнопок «копировать»
   "pageHook",     // MAIN-world перехват ответов Ozon (инъекция из background)
 ];

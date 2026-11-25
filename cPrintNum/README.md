@@ -137,6 +137,7 @@ extension/
 │   │   ├── pageHook.unlisted.ts     # MAIN-world: перехват XHR/fetch (номер из ответа, ШК из запроса)
 │   │   ├── labelCopy.content.ts     # «копировать» ШК → chrome.storage
 │   │   ├── hotkeyToggle.content.ts  # Ctrl+O — выкл/вкл печать + тост
+│   │   ├── debtorWatch.content.ts   # сверка clientId с базой должников + тост
 │   │   └── popup/                   # окно расширения
 │   │       ├── index.html           # точка входа popup (link на ~/assets/main.css)
 │   │       ├── main.tsx             # render(<App/>, #root)
@@ -144,12 +145,16 @@ extension/
 │   │       ├── statusPrinting.tsx   # GET / → «Печать активна/не активна»
 │   │       ├── PrintSettingsPanel.tsx # GET/POST /config, /papers, /listPrinters, /service*
 │   │       ├── AutoPrintPanel.tsx   # режим автопечати в chrome.storage (autoPrint)
+│   │       ├── DebtorsPanel.tsx     # база должников: CRUD + импорт/экспорт JSON
 │   │       └── BarcodeGenerator.tsx # превью QR-этикетки + печать (HTTP / browser)
 │   ├── utils/
 │   │   ├── api.ts               # HTTP-клиент сервера + тип PrintSettings
 │   │   ├── autoPrint.ts         # обработка события печати в background
 │   │   ├── autoPrintSettings.ts # ключи storage, дефолты, нормализация, типы
 │   │   ├── ozonPlacements.ts    # парсинг ответов Ozon → Placement (+ findBarcode для QR)
+│   │   ├── ozonSessions.ts      # разбор /giveout/Sessions → пары clientId ↔ отправление
+│   │   ├── debtors.ts           # локальная база должников (chrome.storage)
+│   │   ├── toast.ts             # плашка в правом верхнем углу
 │   │   ├── constants.ts         # SELECTORS (3 шт.), regex ячейки/ШК, путь приёмки
 │   │   ├── qrLabel.ts           # SVG-превью QR-этикетки (геометрия как в C)
 │   │   ├── observer.ts          # подписка на смену URL + observe(document.body)
@@ -180,7 +185,7 @@ extension/
 └── README.md                # после объединения — короткая ссылка на этот файл
 ```
 
-Всего в `src/` — 23 файла; всё, что не достижимо из пяти
+Всего в `src/` — 28 файлов; всё, что не достижимо из пяти
 `INCLUDED_ENTRYPOINTS`, удалено (см. §4.14 и §9).
 
 ### 2.2. Состояние git
@@ -720,6 +725,7 @@ bind/listen/WSAStartup пишутся в лог и завершают проце
 | `content-scripts/sendPrintNum.js` | `entrypoints/sendPrintNum.content.ts` | `content_scripts`, `document_start` |
 | `content-scripts/labelCopy.js` | `entrypoints/labelCopy.content.ts` | `content_scripts` (idle) |
 | `content-scripts/hotkeyToggle.js` | `entrypoints/hotkeyToggle.content.ts` | `content_scripts`, `document_start` |
+| `content-scripts/debtorWatch.js` | `entrypoints/debtorWatch.content.ts` | `content_scripts`, `document_start` |
 | `pageHook.js` | `entrypoints/pageHook.unlisted.ts` | **не** в manifest; инъекция из background |
 | `popup.html` + `chunks/*` + `assets/*` | `entrypoints/popup/*` | `action.default_popup` |
 | `icon/*.png` | `public/icon/*.png` | `manifest.icons` (автоподхват WXT) |
@@ -811,6 +817,7 @@ const API_BASE = `http://127.0.0.1:${PORT}`;
 | `lastAutoPrint` | background | background (дедуп) | `{text, kind, at}` |
 | `lastAutoPrintEvent` | background | AutoPrintPanel | `{text, kind, ok, status, error?, at}` |
 | `lastCopiedLabel` | labelCopy | BarcodeGenerator | `string` (`ii…`) |
+| `debtors` | popup (DebtorsPanel) | debtorWatch | `{id, clientId, name?, note?, at}[]` |
 
 `autoPrint` дефолт (`DEFAULT_AUTO_PRINT`): `mode:"dom"`, `shelf:true`,
 `packing:true`, `dedupeMs:5000`, `overlapGuardMs:1000`.
@@ -1111,6 +1118,44 @@ popup-панели (`Help`, `qrCommands`, `autoscript`, `SettingSection`, `hide/
 плашка «Печать выключена»; второе нажатие → `{"running":true}`, «Печать
 включена». Подтверждено и на живой службе: `running` в `GET /config`
 переключился.
+
+### 4.17. Должники (локальная база + проверка на выдаче)
+
+**Задача:** при выдаче заказа предупредить, что клиент не оплатил.
+
+**Данные.** `pageHook` перехватывает `/api2/giveout/Sessions` и достаёт пары
+«clientId ↔ номер отправления» (`utils/ozonSessions.ts`):
+
+- обход JSON: до 6 уровней, ≤60 элементов массива, ≤60 ключей, ≤4000 узлов;
+- кодом считается строка `NNNNNNNN-NNNN-N` или `ii…`;
+- `clientId` у Ozon — длинное число (18+ цифр), а `JSON.parse` округляет его
+  (2^53). Поэтому при таких значениях пары берутся из **сырого текста ответа**
+  (`extractSessionOrdersFromText`) — без потери разрядов.
+
+**База.** `chrome.storage.local.debtors` — массив
+`{id, clientId, name?, note?, at}`. Редактируется в popup, панель «Должники»:
+добавить / изменить (клик по записи) / удалить, импорт и экспорт JSON
+(`[{clientId, name?, note?}]` или просто `["123","456"]`).
+
+**Проверка.** `debtorWatch.content.ts` держит пары из `Sessions` в памяти
+(≤3000) и слушает сообщение `ORDER` от `pageHook` (код отправления из ответа
+резолвера). Совпадение с отправлением должника → красная плашка на 8 секунд:
+
+```
+Не оплачено!
+Иван (100000000240360429)
+Отправление: 78060603-0180-1
+```
+
+- сравнение терпимое: полный номер, без последнего сегмента
+  (`78060603-0180`), `ii…` (`codeMatches`);
+- база перечитывается по `storage.onChanged` — перезапуск не нужен;
+- проверка работает независимо от режима автопечати (пока расширение активно
+  на странице, `pageHook` внедрён).
+
+**Ограничения.** Разбор `Sessions` эвристический: точные имена полей Ozon не
+гарантированы. Если предупреждения не появляются — смотрите в консоли
+`[PrintNum:debt] в сессиях выдачи должники: …` и структуру ответа.
 
 ---
 

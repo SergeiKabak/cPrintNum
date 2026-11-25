@@ -24,6 +24,13 @@ import {
   parsePlacement,
   type Placement,
 } from "@/utils/ozonPlacements";
+import {
+  SESSIONS_ENDPOINT,
+  extractSessionOrders,
+  extractSessionOrdersFromText,
+  isOrderCode,
+  losesPrecision,
+} from "@/utils/ozonSessions";
 
 /** Guard от повторной инъекции (SPA-переходы, повторный executeScript). */
 const HOOK_KEY = "__printNumHookV1";
@@ -173,11 +180,42 @@ export default defineUnlistedScript({
       );
     };
 
+    const postSessions = (data: unknown, rawText?: string) => {
+      let orders = extractSessionOrders(data);
+
+      // `clientId` — длинное число: JSON.parse округляет его (2^53).
+      // Если точность потеряна, разбираем сырой текст ответа.
+      if (orders.some((o) => losesPrecision(o.clientId)) && rawText) {
+        const precise = extractSessionOrdersFromText(rawText);
+        if (precise.length) orders = precise;
+      }
+
+      if (!orders.length) return;
+      window.postMessage(
+        { source: "PrintNum", type: "SESSIONS", payload: { orders } },
+        location.origin,
+      );
+    };
+
+    /** Скан отправления (для проверки должников) — код из `article.*`. */
+    const postOrder = (code: unknown) => {
+      if (typeof code !== "string" || !isOrderCode(code)) return;
+      window.postMessage(
+        { source: "PrintNum", type: "ORDER", payload: { code: code.trim() } },
+        location.origin,
+      );
+    };
+
     /**
      * Собирает размещение: номер из ответа + ШК из тела запроса.
      * ШК из ответа (если он там вдруг есть) приоритетнее.
      */
-    const handle = (url: string, data: unknown, body?: string) => {
+    const handle = (url: string, data: unknown, body?: string, rawText?: string) => {
+      if (url.includes(SESSIONS_ENDPOINT)) {
+        postSessions(data, rawText);
+        return;
+      }
+
       if (!isInterestingUrl(url)) return;
 
       const placement = parsePlacement(url, data, "xhr");
@@ -189,6 +227,9 @@ export default defineUnlistedScript({
       }
 
       post(placement);
+
+      // Тот же код отправления — для проверки по базе должников.
+      if (placement.endpoint === "resolve") postOrder(placement.qr);
     };
 
     // ---- XHR ----
@@ -229,7 +270,14 @@ export default defineUnlistedScript({
           const url = this.responseURL || xhrUrls.get(this) || "";
           if (!isInterestingUrl(url)) return;
 
-          handle(url, readJson(this), xhrBodies.get(this));
+          const isText =
+            this.responseType === "" || this.responseType === "text";
+          handle(
+            url,
+            readJson(this),
+            xhrBodies.get(this),
+            isText ? this.responseText : undefined,
+          );
         } catch {
           // Ошибка разбора не должна ломать страницу Ozon.
         }

@@ -12,47 +12,7 @@
 declare const chrome: any;
 
 import { getSettings, saveSettings } from "@/utils/api";
-
-const TOAST_ID = "__printnum_toast";
-const TOAST_MS = 2500;
-
-function removeToast(): void {
-  document.getElementById(TOAST_ID)?.remove();
-}
-
-/** Показывает плашку в правом верхнем углу (зелёная — вкл, красная — выкл). */
-function showToast(text: string, ok: boolean): void {
-  removeToast();
-
-  const el = document.createElement("div");
-  el.id = TOAST_ID;
-  el.textContent = text;
-  el.style.cssText = [
-    "position:fixed",
-    "top:16px",
-    "right:16px",
-    "z-index:2147483647",
-    "max-width:340px",
-    "padding:10px 14px",
-    "border-radius:10px",
-    "font:600 13px/1.35 Arial, Helvetica, sans-serif",
-    "color:#fff",
-    "pointer-events:none",
-    "box-shadow:0 6px 24px rgba(0,0,0,.28)",
-    `background:${ok ? "#16a34a" : "#dc2626"}`,
-    "opacity:1",
-    "transition:opacity .25s ease",
-  ].join(";");
-
-  const host = document.body || document.documentElement;
-  if (!host) return;
-  host.appendChild(el);
-
-  window.setTimeout(() => {
-    el.style.opacity = "0";
-    window.setTimeout(removeToast, 300);
-  }, TOAST_MS);
-}
+import { showToast } from "@/utils/toast";
 
 let busy = false;
 
@@ -64,7 +24,7 @@ async function togglePrinting(): Promise<void> {
   try {
     const settings = await getSettings();
     if (!settings) {
-      showToast("PrintNum не запущен", false);
+      showToast("PrintNum не запущен", "err");
       return;
     }
 
@@ -72,13 +32,13 @@ async function togglePrinting(): Promise<void> {
     const result = await saveSettings({ running: next });
 
     if (!result.ok) {
-      showToast(result.error || "Не удалось переключить печать", false);
+      showToast(result.error || "Не удалось переключить печать", "err");
       return;
     }
 
-    showToast(next ? "Печать включена" : "Печать выключена", next);
+    showToast(next ? "Печать включена" : "Печать выключена", next ? "ok" : "err");
   } catch {
-    showToast("PrintNum не запущен", false);
+    showToast("PrintNum не запущен", "err");
   } finally {
     busy = false;
   }
