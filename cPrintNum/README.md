@@ -134,7 +134,7 @@ extension/
 │   ├── entrypoints/         # точки входа WXT (файл = артефакт, см. §4.3)
 │   │   ├── background.ts            # service worker: очередь печати, инъекция pageHook
 │   │   ├── sendPrintNum.content.ts  # document_start: DOM-наблюдатель + приём postMessage
-│   │   ├── pageHook.unlisted.ts     # MAIN-world: перехват XHR/fetch ответов Ozon
+│   │   ├── pageHook.unlisted.ts     # MAIN-world: перехват XHR/fetch (номер из ответа, ШК из запроса)
 │   │   ├── labelCopy.content.ts     # «копировать» ШК → chrome.storage
 │   │   ├── hotkeyToggle.content.ts  # Ctrl+O — выкл/вкл печать + тост
 │   │   └── popup/                   # окно расширения
@@ -840,8 +840,19 @@ const API_BASE = `http://127.0.0.1:${PORT}`;
 
 ## Откуда берётся QR товара
 
-Только **из ответа Ozon**: `findBarcode()` ищет `^ii\d{9,14}$` в JSON ответа
-(обход в глубину до 8 уровней, ≤2000 узлов, ≤50 элементов массива, ≤80 ключей).
+**Номер** — из ответа Ozon, **ШК** — из тела запроса (и из ответа, если он там
+есть). Это важно: `Movement/put/v2` отвечает коротко (`articlePositions`,
+~105 байт) и штрихкода в ответе **нет**, но он есть в запросе на размещение.
+
+`pageHook` (MAIN) перехватывает и запрос, и ответ:
+
+1. на `open`/`send` (и в `fetch`) сохраняет URL и тело запроса;
+2. на `load` парсит ответ → номер ячейки/полки (`parsePlacement`);
+3. если в ответе нет `qr` — берёт `ii\d{9,14}` из тела запроса
+   (`barcodeFromBody`: сначала `JSON.parse`, затем regex для form-urlencoded).
+
+`findBarcode()` обходит объект до 8 уровней, ≤2000 узлов, ≤50 элементов
+массива, ≤80 ключей.
 
 В DOM-режиме ответов нет вообще, поэтому QR не печатается — для этикеток
 «номер + QR» нужен режим автопечати `xhr` или `both`. Кнопка «копировать»
@@ -865,6 +876,8 @@ const API_BASE = `http://127.0.0.1:${PORT}`;
 - Guard от повторной инъекции: `window.__printNumHookV1`.
 - Перехват: `XMLHttpRequest.prototype.open/send` (слушатель `load`,
   только 2xx, `responseURL`), `window.fetch` (клон ответа, `json()`).
+- Вместе с URL запоминается **тело запроса** (`WeakMap`): из него берётся
+  штрихкод товара, если в ответе его нет.
 - Фильтр URL — `isInterestingUrl()` по трём подстрокам; парсинг —
   `parsePlacement()`. Ошибки разбора глушатся, чтобы не ломать страницу.
 - Dev: `window.PrintNumHook = {emit, parsePlacement, isInterestingUrl}`,
