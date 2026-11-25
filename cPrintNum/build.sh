@@ -25,9 +25,7 @@ SRC="printnum-win7.c"
 EXT_DIR="$ROOT_DIR/extension"
 EXT_OUT="$EXT_DIR/output/chrome-mv3"
 DIST="$ROOT_DIR/dist"
-RELEASE_ZIP="PrintNum-win7.zip"
-# Старое имя отдельного архива расширения — удаляем, если осталось в dist/.
-LEGACY_EXT_ZIP="PrintNum-extension-chrome.zip"
+RELEASE_ZIP="cPrintNum_vQRGenerator.zip"
 
 # Общие флаги: без CRT, свой entry point wWinMain, свои strlen/memcpy.
 # -Os: минимальный размер кода. -fdata-sections НЕ используем — множество
@@ -139,7 +137,7 @@ if [ -f config.json ]; then cp config.json "$STAGE"/; fi
 find "$STAGE" -name '.DS_Store' -delete
 find "$STAGE" -name '__MACOSX' -type d -prune -exec rm -rf {} +
 
-rm -f "$DIST/$RELEASE_ZIP" "$DIST/$LEGACY_EXT_ZIP"
+rm -f "$DIST/$RELEASE_ZIP"
 ( cd "$STAGE" && zip -qr "$DIST/$RELEASE_ZIP" . -x '*.DS_Store' -x '__MACOSX/*' )
 
 echo ""
