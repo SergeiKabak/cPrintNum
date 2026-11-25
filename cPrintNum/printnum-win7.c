@@ -1230,7 +1230,8 @@ static int checker_cell_px(const Config *c, int dpi, int digits) {
     else                  mm = 0.05;
 
     int cell = (int)(mm / 25.4 * dpi + 0.5);
-    if (cell < 1) cell = 1;
+    // 1 px на 203 dpi термобумага печатает «серым» — клетку не видно.
+    if (cell < 2) cell = 2;
 
     int cfg = (int)((c->checker_mm_x10 / 10.0) / 25.4 * dpi + 0.5);
     if (cfg >= 1 && cell > cfg) cell = cfg;   // checkerMm — верхняя граница
@@ -1975,6 +1976,10 @@ static void handle_request(SOCKET s, Request *r) {
                 scat(m, 320, qr_text);
                 scat(m, 320, L")");
                 log_line(m);
+            }
+
+            if (g_cfg.qr_with_number && !qr_text[0]) {
+                log_line(L"Печать без QR: в запросе не было ШК товара (qr)");
             }
 
             if (g_cfg.qr_with_number && qr_text[0]) {

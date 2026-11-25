@@ -311,7 +311,7 @@ PrintNum-win7.zip
 | `running` | bool | `true` | глобальный выключатель печати |
 | `papers` | string[] | 8 значений | список размеров для `GET /papers` (до 16, имя ≤31 символа) |
 | `checker` | bool | **`true`** | шахматная заливка цифры (экономия термоголовки) |
-| `checkerMm` | number | `10` | верхняя граница клетки в 0.1 мм; сам размер зависит от числа цифр (см. §3.10) |
+| `checkerMm` | number | `10` | верхняя граница клетки в 0.1 мм; сам размер зависит от числа цифр, минимум 2 px (см. §3.10) |
 | `outline` | bool | `true` | сплошная обводка по контуру глифа (работает вместе с `checker`) |
 | `outlineMm` | number | `5` | толщина обводки в **0.01 мм** (5 = 0.05 мм ≈ 1 px) — одинаковая для любого числа цифр |
 |  |  |  | ⚠️ единица изменилась: раньше было 0.1 мм (5 = 0.5 мм), теперь 0.01 мм; значения 1–12 = 0.01–0.12 мм (при 203 dpi всё ≤0.125 мм рисуется 1 px) |
@@ -491,8 +491,11 @@ expand` → bold + рокировка (число в `main`, префикс в `
   |---|---|---|
   | 1 | 0.5 мм | 4 px |
   | 2 | 0.25 мм | 2 px |
-  | 3 | 0.125 мм | 1 px |
-  | 4+ | 0.05 мм | 1 px (минимум) |
+  | 3 | 0.125 мм | **2 px** (минимум) |
+  | 4+ | 0.05 мм | **2 px** (минимум) |
+
+  Пол 2 px обязателен: 1 px на термобумаге 203 dpi печатается «серым» и
+  шахматка визуально исчезает (проверено на реальной печати).
 
   `checkerMm` работает как **верхняя граница**: если в настройках меньше —
   берётся настройка. Цифры считаются в `main_text` (дефис, точка, пробелы не
@@ -807,7 +810,8 @@ const API_BASE = `http://127.0.0.1:${PORT}`;
 | `autoPrint` | background (`onInstalled`), AutoPrintPanel | sendPrintNum, background | `{mode, shelf, packing, dedupeMs, overlapGuardMs}` |
 | `lastAutoPrint` | background | background (дедуп) | `{text, kind, at}` |
 | `lastAutoPrintEvent` | background | AutoPrintPanel | `{text, kind, ok, status, error?, at}` |
-| `lastCopiedLabel` | labelCopy | BarcodeGenerator | `string` (`ii…`) |
+| `lastCopiedLabel` | labelCopy | BarcodeGenerator, autoPrint | `string` (`ii…`) |
+| `lastCopiedLabelAt` | labelCopy | autoPrint (свежесть QR) | `number` (ms) |
 
 `autoPrint` дефолт (`DEFAULT_AUTO_PRINT`): `mode:"dom"`, `shelf:true`,
 `packing:true`, `dedupeMs:5000`, `overlapGuardMs:1000`.
@@ -834,6 +838,19 @@ const API_BASE = `http://127.0.0.1:${PORT}`;
   (DOM и XHR сообщают об одном размещении).
 
 Печать **не ретраится** (повтор может напечатать лишнюю этикетку).
+
+## Откуда берётся QR товара
+
+1. **Ответ Ozon** — `findBarcode()` ищет `^ii\d{9,14}$` в JSON ответа
+   (обход в глубину до 8 уровней, ≤2000 узлов, ≤50 элементов массива).
+2. **Кнопка «копировать»** — если в ответе ШК не нашёлся, а в
+   `chrome.storage.local` есть `lastCopiedLabel` не старше 5 минут
+   (`lastCopiedLabelAt`), он уходит как `qr`. Отключается галочкой
+   «QR из кнопки «копировать»…» в панели автопечати (`qrFromCopied`,
+   по умолчанию `true`).
+
+В DOM-режиме ответов нет вообще — QR появится только если сработал
+fallback с «копировать». Поэтому для QR-этикеток нужен режим `xhr`/`both`.
 Полка перед печатью требует `features` c `shelf-dash`; если сервер старый —
 событие с ошибкой «Обновите PrintNum: поддержка полок (-88) не найдена»,
 ячейки продолжают печататься.
@@ -1128,7 +1145,7 @@ popup-панели (`Help`, `qrCommands`, `autoscript`, `SettingSection`, `hide/
 | полки не печатают, подсказка «Обновите PrintNum» | нет `features:["shelf-dash"]` | `GET /config` | обновить exe |
 | автопечать молчит | `autoPrint.mode = off`, не та страница, выключены `shelf`/`packing`, дедуп | `chrome.storage.local.autoPrint`, `lastAutoPrintEvent` | выбрать режим `xhr`, открыть нужный раздел |
 | после обновления расширения ничего не ловится | старые content scripts/pageHook в открытой вкладке | консоль: `Extension context invalidated` | перезагрузить вкладку Ozon (F5) |
-| нет QR на этикетке | `qrWithNumber` выключен, расширение не перезагружено или в ответе Ozon не было ШК | лог: `QR не напечатан: qrWithNumber выключен` / `Печать с QR выполнена` | включить чекбокс в popup, перезагрузить расширение и вкладку; в логе проверить строку печати |
+| нет QR на этикетке | 1) режим автопечати `dom` (ответов нет) 2) `qrWithNumber` выключен 3) ШК нет в ответе и «копировать» не нажимали / копия старше 5 мин | лог: `Печать без QR: в запросе не было ШК товара (qr)`; popup: «— QR нет: ШК не найден» | переключить режим на `xhr`, включить `qrWithNumber`, скопировать ШК кнопкой на Ozon перед размещением; проверить `GET /config` |
 | raw-печать: `500 print failed` | спулер не открыл принтер (`OpenPrinter`) или не соединился TCP | лог: `RAW ESC/POS: N байт — ошибка отправки` | проверить имя принтера в Windows (spooler) или `rawHost`/`rawPort` (tcp) |
 | raw-печать: этикетка съезжает | неверный зазор или сдвиг | `labelGapMm`, `rawXOffsetMm` | подстроить в popup; при накоплении сдвига откалибровать принтер |
 | нет шахматной заливки | `checker:false` в конфиге | `GET /config` → `checker` | включить «Шахматка» в popup (раньше этого не было в UI) |

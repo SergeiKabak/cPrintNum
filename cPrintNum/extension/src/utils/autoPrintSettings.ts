@@ -6,6 +6,8 @@
 
 export const AUTO_PRINT_KEY = "autoPrint";
 export const LAST_AUTO_PRINT_KEY = "lastAutoPrint";
+export const LAST_COPIED_LABEL_KEY = "lastCopiedLabel";
+export const LAST_COPIED_LABEL_AT_KEY = "lastCopiedLabelAt";
 export const LAST_AUTO_PRINT_EVENT_KEY = "lastAutoPrintEvent";
 
 /** Возможность backend'а, которую проверяем перед печатью полок. */
@@ -20,6 +22,8 @@ export type AutoPrintSettings = {
   shelf: boolean;
   /** Печатать `TransferPackingArticle` (переупаковка). */
   packing: boolean;
+  /** Брать QR из кнопки «копировать», если в ответе Ozon ШК не нашёлся. */
+  qrFromCopied: boolean;
   /** Окно подавления повтора для Movement/put/v2, мс. */
   dedupeMs: number;
   /** Защита DOM+XHR от двойной печати в режиме `both`, мс. */
@@ -35,6 +39,7 @@ export const DEFAULT_AUTO_PRINT: AutoPrintSettings = {
   mode: "dom",
   shelf: true,
   packing: true,
+  qrFromCopied: true,
   dedupeMs: 5000,
   overlapGuardMs: 1000,
 };
@@ -45,6 +50,10 @@ export type AutoPrintEvent = {
   ok: boolean;
   status: number | null;
   error?: string;
+  /** ШК, который ушёл в QR (если был). */
+  qr?: string;
+  /** Откуда взялся ШК: ответ Ozon или кнопка «копировать». */
+  qrSource?: "ozon" | "copied";
   at: number;
 };
 
@@ -67,6 +76,10 @@ export function normalizeAutoPrint(value: unknown): AutoPrintSettings {
     mode,
     shelf: typeof v.shelf === "boolean" ? v.shelf : DEFAULT_AUTO_PRINT.shelf,
     packing: typeof v.packing === "boolean" ? v.packing : DEFAULT_AUTO_PRINT.packing,
+    qrFromCopied:
+      typeof v.qrFromCopied === "boolean"
+        ? v.qrFromCopied
+        : DEFAULT_AUTO_PRINT.qrFromCopied,
     dedupeMs: clampInt(v.dedupeMs, 0, 60000, DEFAULT_AUTO_PRINT.dedupeMs),
     overlapGuardMs: clampInt(
       v.overlapGuardMs,

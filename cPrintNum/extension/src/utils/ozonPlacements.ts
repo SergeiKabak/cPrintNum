@@ -71,10 +71,11 @@ export function shelfToCode(raw: unknown): string | null {
  */
 export function findBarcode(value: unknown): string | null {
   // Счётчик узлов вместо замыкания-объекта: без аллокации на каждый вызов.
-  let budget = 400;
+  // Бюджет увеличен: ответы Ozon с перечнями товаров бывают крупными.
+  let budget = 2000;
 
   const walk = (node: unknown, depth: number): string | null => {
-    if (budget-- <= 0 || depth > 6 || node == null) return null;
+    if (budget-- <= 0 || depth > 8 || node == null) return null;
 
     if (typeof node === "string") {
       const trimmed = node.trim();
@@ -86,7 +87,7 @@ export function findBarcode(value: unknown): string | null {
     // Обходим без Object.values()/slice(): на больших ответах Ozon они
     // создавали временные массивы на каждом уровне вложенности.
     if (Array.isArray(node)) {
-      const n = node.length < 20 ? node.length : 20;
+      const n = node.length < 50 ? node.length : 50;
       for (let i = 0; i < n; i++) {
         const found = walk(node[i], depth + 1);
         if (found) return found;
@@ -96,7 +97,7 @@ export function findBarcode(value: unknown): string | null {
 
     let seen = 0;
     for (const key in node as Record<string, unknown>) {
-      if (seen++ >= 40) break;
+      if (seen++ >= 80) break;
       const found = walk((node as Record<string, unknown>)[key], depth + 1);
       if (found) return found;
     }

@@ -49,6 +49,7 @@
 declare const chrome: any;
 
 import { LABEL_BARCODE_RE, SELECTORS } from "@/utils/constants";
+import { LAST_COPIED_LABEL_AT_KEY } from "@/utils/autoPrintSettings";
 
 /** Тот же формат, но без якорей — для поиска внутри текста блока. */
 const LABEL_BARCODE_IN_TEXT_RE = /ii\d{9,14}/;
@@ -131,7 +132,10 @@ export default defineContentScript({
           // молча выходим, пока пользователь не обновит вкладку.
           if (!chrome?.runtime?.id) return;
 
-          chrome.storage.local.set({ [LAST_LABEL_KEY]: value });
+          chrome.storage.local.set({
+            [LAST_LABEL_KEY]: value,
+            [LAST_COPIED_LABEL_AT_KEY]: Date.now(),
+          });
           console.info(`[PrintNum:label] подхвачен штрихкод: ${value}`);
         } catch (error) {
           console.debug("[PrintNum:label] storage недоступен:", error);
