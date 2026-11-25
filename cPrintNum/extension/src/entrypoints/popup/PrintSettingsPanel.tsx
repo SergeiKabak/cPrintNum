@@ -271,6 +271,27 @@ export default function PrintSettingsPanel() {
               </span>
             </label>
 
+            <label className="flex flex-col gap-1">
+              <span className="text-[11px] font-medium text-muted-foreground">
+                Папка превью (вместо печати)
+              </span>
+              <input
+                type="text"
+                defaultValue={settings.previewDir || ""}
+                placeholder="C:\\PrintNum\\preview"
+                onBlur={(e) =>
+                  patch({
+                    previewDir: (e.target as HTMLInputElement).value.trim(),
+                  })
+                }
+                className="h-8 w-full rounded-md border border-border bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-ring"
+              />
+              <span className="text-[10px] text-muted-foreground leading-tight">
+                Если задано — принтер не используется, каждая печать сохраняется
+                в BMP: удобно проверять всю цепочку без бумаги.
+              </span>
+            </label>
+
             {settings.printerMode === "escpos" && (
               <>
                 <MmInput

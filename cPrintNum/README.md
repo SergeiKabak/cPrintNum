@@ -322,6 +322,7 @@ PrintNum-win7.zip
 | `rawHost` | string | `""` | IP принтера для `rawTransport:"tcp"` |
 | `rawPort` | number | `9100` | TCP-порт raw-печати |
 | `rawInitHex` | string | `""` | hex-байты после `ESC @` (сервисные команды модели, напр. калибровка) |
+| `previewDir` | string | `""` | папка превью: вместо печати сохранять `label_<текст>_<тики>.bmp` (принтер не нужен) |
 
 Дефолтный список `papers`: `43*25, 30*20, 40*30, 50*70, 58*40, 60*40, 75*120, 100*150`.
 
@@ -386,6 +387,11 @@ Access-Control-Allow-Headers: Content-Type
 | POST | `/service/uninstall` | `{}` | `200` `{"ok": true}` | `500` `{"error":"ошибка удаления"}` |
 | OPTIONS | любой | — | `204`, пустое тело | — |
 | * | неизвестный путь | — | — | `404` `{"error": "not found"}` |
+
+Если задан `previewDir`, `/print-number` и `/print-barcode` **не печатают**:
+этикетка рендерится тем же кодом в BMP в этой папке, ответ — `200 OK`.
+Принтер при этом не нужен и не проверяется — удобно тестировать всю цепочку
+«Ozon → расширение → HTTP → файл».
 
 Особенности реализации, о которых нужно знать:
 
@@ -1201,6 +1207,7 @@ python3 -c "import json;m=json.load(open('output/chrome-mv3/manifest.json'));pri
 | Демо QR-этикетки | `wine printnum-diag.exe --demo-qr "ii19382868529" label.bmp` |
 | Демо «номер + QR товара» | `wine printnum-diag.exe --demo-cell-qr "163-1" "ii19382868529" label.bmp` → `zbarimg` декодирует ШК |
 | Разбор ответов Ozon + `findBarcode` | esbuild-бандл теста в node: 13 проверок (ячейка, полка, без ШК, глубокий ШК, мусор, бюджет обхода) |
+| E2E через расширение без бумаги | `POST /config {"previewDir":"C:\\PrintNum\\preview"}` → печать из Ozon → в папке `label_<текст>_<тики>.bmp` |
 | RAW-поток ESC/POS | `--raw-dump "163-1" "ii…" label.bin` → разобрать байты: `ESC @`, `GS v 0` (344×200), `ESC J` (3 мм); растр декодируется `zbarimg` |
 | Предупреждения C (`-Wextra`) | `x86_64-w64-mingw32-gcc … -Wall -Wextra …` → **0 предупреждений** |
 | Корректность QR-энкодера | `sips -s format png label.bmp --out q.png && zbarimg -q --raw q.png` → `ii19382868529` |

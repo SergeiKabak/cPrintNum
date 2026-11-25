@@ -63,6 +63,8 @@ export type PrintSettings = {
   rawHost: string;
   /** TCP-порт raw-печати (обычно 9100). */
   rawPort: number;
+  /** Папка превью: вместо печати сохранять этикетки в BMP (пусто — выкл). */
+  previewDir: string;
   papers: string[];
   /**
    * Возможности backend'а. Например, `shelf-dash` — поддержка полок `-88`.

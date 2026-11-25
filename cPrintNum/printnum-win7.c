@@ -157,6 +157,7 @@ typedef struct {
     wchar_t raw_host[64];       // IP принтера для tcp
     long    raw_port;           // порт (9100)
     wchar_t raw_init_hex[256];  // необязательные байты после ESC @ (калибровка)
+    wchar_t preview_dir[MAX_PATH]; // вместо печати — сохранять этикетки в BMP
     wchar_t papers[MAX_PAPERS][32];
     int     papers_count;
 } Config;
@@ -183,6 +184,7 @@ static void cfg_defaults(Config *c) {
     c->raw_host[0] = 0;
     c->raw_port = 9100;
     c->raw_init_hex[0] = 0;
+    c->preview_dir[0] = 0;
     static const wchar_t *def[] = {
         L"43*25", L"30*20", L"40*30", L"50*70",
         L"58*40", L"60*40", L"75*120", L"100*150",
@@ -376,11 +378,12 @@ static void cfg_load(void) {
     json_bool(json, L"running", &g_cfg.running);
     json_bool(json, L"qrWithNumber", &g_cfg.qr_with_number);
     {
-        wchar_t t[64];
+        wchar_t t[MAX_PATH];
         if (json_str(json, L"printerMode", t, 16)) scpy(g_cfg.printer_mode, 16, t);
         if (json_str(json, L"rawTransport", t, 16)) scpy(g_cfg.raw_transport, 16, t);
         if (json_str(json, L"rawHost", t, 64)) scpy(g_cfg.raw_host, 64, t);
         if (json_str(json, L"rawInitHex", t, 64)) scpy(g_cfg.raw_init_hex, 64, t);
+        if (json_str(json, L"previewDir", t, MAX_PATH)) scpy(g_cfg.preview_dir, MAX_PATH, t);
     }
     {
         long v = g_cfg.label_gap_mm_x10;
@@ -444,6 +447,8 @@ static void cfg_to_json(Config *c, wchar_t *out, int cap) {
     jesc(c->raw_host, esc, 512); scat(out, cap, esc);
     scat(out, cap, L"\",\"rawInitHex\":\"");
     jesc(c->raw_init_hex, esc, 512); scat(out, cap, esc);
+    scat(out, cap, L"\",\"previewDir\":\"");
+    jesc(c->preview_dir, esc, 512); scat(out, cap, esc);
     scat(out, cap, L"\",\"labelGapMm\":");
     itos(c->label_gap_mm_x10, num, 32); scat(out, cap, num);
     scat(out, cap, L",\"rawXOffsetMm\":");
@@ -495,11 +500,12 @@ static void cfg_apply_json(const wchar_t *body) {
     json_bool(body, L"running", &g_cfg.running);
     json_bool(body, L"qrWithNumber", &g_cfg.qr_with_number);
     {
-        wchar_t t[64];
+        wchar_t t[MAX_PATH];
         if (json_str(body, L"printerMode", t, 16)) scpy(g_cfg.printer_mode, 16, t);
         if (json_str(body, L"rawTransport", t, 16)) scpy(g_cfg.raw_transport, 16, t);
         if (json_str(body, L"rawHost", t, 64)) scpy(g_cfg.raw_host, 64, t);
         if (json_str(body, L"rawInitHex", t, 64)) scpy(g_cfg.raw_init_hex, 64, t);
+        if (json_str(body, L"previewDir", t, MAX_PATH)) scpy(g_cfg.preview_dir, MAX_PATH, t);
     }
     {
         long v = g_cfg.label_gap_mm_x10;
@@ -1453,6 +1459,81 @@ static void render_text_label(HDC hdc, int w, int h, const wchar_t *text,
     }
 }
 
+// Прототипы для превью-режима (определения ниже по файлу).
+static void draw_qr_label_core(HDC hdc, const wchar_t *text, int w, int h,
+                               int module_px, int margin_x, int gap_between,
+                               int prefix_size, int suffix_size);
+static void draw_number_qr_core(HDC hdc, const wchar_t *text,
+                                const wchar_t *qr_text, const Config *c,
+                                int w, int h, int dpi);
+static BOOL demo_save_surface(const wchar_t *path, int w, int h);
+
+// ============================================================
+// Превью вместо печати (config.previewDir)
+//
+// Если папка задана, этикетка не уходит на принтер, а рендерится тем же
+// кодом в BMP: label_<текст>_<тики>.bmp. Удобно тестировать всю цепочку
+// «Ozon → расширение → HTTP → файл» без бумаги.
+// ============================================================
+static BOOL preview_label(const Config *c, const wchar_t *text,
+                          const wchar_t *qr, BOOL qr_label) {
+    if (!c->preview_dir[0]) return FALSE;
+
+    const int dpi = 203;
+    Sizes s;
+    if (!calc_sizes_dpi(dpi, dpi, c->paper, &s)) {
+        log_line(L"ОШИБКА превью: неверный размер бумаги");
+        return TRUE;
+    }
+
+    HDC mem = surf_begin(s.width_px, s.height_px);
+    if (!mem) {
+        log_line(L"ОШИБКА превью: нет поверхности рендера");
+        return TRUE;
+    }
+
+    if (qr_label) {
+        draw_qr_label_core(mem, text, s.width_px, s.height_px,
+                           0 /* авто */, 4, 1, 32, 48);
+    } else if (c->qr_with_number && qr && qr[0]) {
+        draw_number_qr_core(mem, text, qr, c, s.width_px, s.height_px, dpi);
+    } else {
+        render_text_label(mem, s.width_px, s.height_px, text, c, dpi);
+    }
+
+    // Имя файла: папка + label_<[0-9a-zA-Z-]>_<тики>.bmp
+    wchar_t path[MAX_PATH];
+    scpy(path, MAX_PATH, c->preview_dir);
+    int n = slen(path);
+    if (n > 0 && path[n - 1] != L'\\' && path[n - 1] != L'/')
+        scat(path, MAX_PATH, L"\\");
+    scat(path, MAX_PATH, L"label_");
+
+    int k = slen(path);
+    for (int i = 0; text[i] && k < MAX_PATH - 24; i++) {
+        wchar_t ch = text[i];
+        if ((ch >= L'0' && ch <= L'9') || (ch >= L'a' && ch <= L'z') ||
+            (ch >= L'A' && ch <= L'Z') || ch == L'-')
+            path[k++] = ch;
+    }
+    path[k] = 0;
+
+    wchar_t num[32];
+    itos((long long)GetTickCount(), num, 32);
+    scat(path, MAX_PATH, L"_");
+    scat(path, MAX_PATH, num);
+    scat(path, MAX_PATH, L".bmp");
+
+    CreateDirectoryW(c->preview_dir, NULL);
+    BOOL ok = demo_save_surface(path, s.width_px, s.height_px);
+
+    wchar_t m[MAX_PATH + 96];
+    scpy(m, MAX_PATH + 96, ok ? L"ПРЕВЬЮ сохранено: " : L"ОШИБКА превью: ");
+    scat(m, MAX_PATH + 96, path);
+    log_line(m);
+    return TRUE;   // запрос обработан, реальной печати не было
+}
+
 // Печать текстовой этикетки.
 static BOOL print_text(const wchar_t *text, const Config *c) {
     if (!c->printer[0]) {
@@ -1543,6 +1624,9 @@ static BOOL print_text_with_qr(const wchar_t *text, const wchar_t *qr_text,
 static void draw_number_qr_core(HDC hdc, const wchar_t *text,
                                 const wchar_t *qr_text, const Config *c,
                                 int w, int h, int dpi);
+
+// Сохранение поверхности рендера в BMP (определено в демо-секции).
+static BOOL demo_save_surface(const wchar_t *path, int w, int h);
 
 // RAW-печать ESC/POS (printerMode = "escpos"): без драйвера печати.
 static BOOL raw_ready(const Config *c);
@@ -1862,6 +1946,12 @@ static void handle_request(SOCKET s, Request *r) {
 
             if (!g_cfg.running) { send_text(s, 503, "stopped"); return; }
 
+            // Превью-режим: рендер в BMP вместо печати (принтер не нужен).
+            if (preview_label(&g_cfg, clean, qr_text, FALSE)) {
+                send_text(s, 200, "OK");
+                return;
+            }
+
             // RAW (ESC/POS): размер бумаги и статус спулера не нужны.
             if (seq(g_cfg.printer_mode, L"escpos")) {
                 if (!raw_ready(&g_cfg)) { send_text(s, 503, "no printer"); return; }
@@ -1904,6 +1994,11 @@ static void handle_request(SOCKET s, Request *r) {
             if (!ascii_ok) { send_text(s, 400, "non-ascii"); return; }
 
             if (!g_cfg.running) { send_text(s, 503, "stopped"); return; }
+
+            if (preview_label(&g_cfg, text, NULL, TRUE)) {
+                send_text(s, 200, "OK");
+                return;
+            }
 
             if (seq(g_cfg.printer_mode, L"escpos")) {
                 if (!raw_ready(&g_cfg)) { send_text(s, 503, "no printer"); return; }
