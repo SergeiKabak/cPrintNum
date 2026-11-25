@@ -45,3 +45,4 @@ src-printnum/PrintNum/
 # Демо-артефакты PrintNum (--demo-*, --raw-dump)
 cPrintNum/*.bmp
 cPrintNum/*.bin
+cPrintNum/preview/

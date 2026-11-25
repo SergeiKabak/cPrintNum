@@ -842,8 +842,10 @@ static BOOL calc_sizes_dpi(int dx, int dy, const wchar_t *paper, Sizes *s) {
     int w_mm, h_mm;
     if (!parse_paper(paper, &w_mm, &h_mm)) return FALSE;
     if (dx < 1 || dy < 1) return FALSE;
-    s->width_px  = (int)((w_mm / 25.4) * dx);
-    s->height_px = (int)((h_mm / 25.4) * dy);
+    // Округление, а не усечение: 43 мм при 203 dpi — это 343.6, и усечение
+    // давало 343×199 вместо 344×200 (превью не совпадало с печатью).
+    s->width_px  = (int)((w_mm / 25.4) * dx + 0.5);
+    s->height_px = (int)((h_mm / 25.4) * dy + 0.5);
     s->margin_x  = (int)(s->width_px * 0.05);
     s->margin_y  = (int)(s->height_px * 0.05);
     s->max_allowed_w = s->width_px - s->margin_x * 2;
