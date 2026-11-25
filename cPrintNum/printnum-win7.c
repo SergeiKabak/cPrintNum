@@ -1499,6 +1499,10 @@ static BOOL preview_label(const Config *c, const wchar_t *text,
         return TRUE;
     }
 
+    if (!qr_label && c->qr_with_number && (!qr || !qr[0])) {
+        log_line(L"ПРЕВЬЮ без QR: в запросе не было ШК товара (qr)");
+    }
+
     if (qr_label) {
         draw_qr_label_core(mem, text, s.width_px, s.height_px,
                            0 /* авто */, 4, 1, 32, 48);

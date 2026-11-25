@@ -1147,7 +1147,7 @@ popup-панели (`Help`, `qrCommands`, `autoscript`, `SettingSection`, `hide/
 | полки не печатают, подсказка «Обновите PrintNum» | нет `features:["shelf-dash"]` | `GET /config` | обновить exe |
 | автопечать молчит | `autoPrint.mode = off`, не та страница, выключены `shelf`/`packing`, дедуп | `chrome.storage.local.autoPrint`, `lastAutoPrintEvent` | выбрать режим `xhr`, открыть нужный раздел |
 | после обновления расширения ничего не ловится | старые content scripts/pageHook в открытой вкладке | консоль: `Extension context invalidated` | перезагрузить вкладку Ozon (F5) |
-| нет QR на этикетке | 1) режим автопечати `dom` (ответов нет) 2) `qrWithNumber` выключен 3) в ответе Ozon нет ШК (`ii…`) | лог: `Печать без QR: в запросе не было ШК товара (qr)`; popup: «— QR нет: ШК не найден» | переключить режим на `xhr`/`both`, включить `qrWithNumber`; проверить `GET /config` |
+| нет QR на этикетке (в превью тоже) | 1) режим автопечати `dom` (ответов нет) 2) `qrWithNumber` выключен 3) в ответе Ozon нет ШК (`ii…`) | лог: `Печать без QR: …` или `ПРЕВЬЮ без QR: …`; popup: «— QR нет: ШК не найден» | переключить режим на `xhr`/`both`, включить `qrWithNumber`; проверить `GET /config` |
 | raw-печать: `500 print failed` | спулер не открыл принтер (`OpenPrinter`) или не соединился TCP | лог: `RAW ESC/POS: N байт — ошибка отправки` | проверить имя принтера в Windows (spooler) или `rawHost`/`rawPort` (tcp) |
 | raw-печать: этикетка съезжает | неверный зазор или сдвиг | `labelGapMm`, `rawXOffsetMm` | подстроить в popup; при накоплении сдвига откалибровать принтер |
 | нет шахматной заливки | `checker:false` в конфиге | `GET /config` → `checker` | включить «Шахматка» в popup (раньше этого не было в UI) |
