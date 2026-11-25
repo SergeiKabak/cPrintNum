@@ -810,8 +810,7 @@ const API_BASE = `http://127.0.0.1:${PORT}`;
 | `autoPrint` | background (`onInstalled`), AutoPrintPanel | sendPrintNum, background | `{mode, shelf, packing, dedupeMs, overlapGuardMs}` |
 | `lastAutoPrint` | background | background (дедуп) | `{text, kind, at}` |
 | `lastAutoPrintEvent` | background | AutoPrintPanel | `{text, kind, ok, status, error?, at}` |
-| `lastCopiedLabel` | labelCopy | BarcodeGenerator, autoPrint | `string` (`ii…`) |
-| `lastCopiedLabelAt` | labelCopy | autoPrint (свежесть QR) | `number` (ms) |
+| `lastCopiedLabel` | labelCopy | BarcodeGenerator | `string` (`ii…`) |
 
 `autoPrint` дефолт (`DEFAULT_AUTO_PRINT`): `mode:"dom"`, `shelf:true`,
 `packing:true`, `dedupeMs:5000`, `overlapGuardMs:1000`.
@@ -841,16 +840,12 @@ const API_BASE = `http://127.0.0.1:${PORT}`;
 
 ## Откуда берётся QR товара
 
-1. **Ответ Ozon** — `findBarcode()` ищет `^ii\d{9,14}$` в JSON ответа
-   (обход в глубину до 8 уровней, ≤2000 узлов, ≤50 элементов массива).
-2. **Кнопка «копировать»** — если в ответе ШК не нашёлся, а в
-   `chrome.storage.local` есть `lastCopiedLabel` не старше 5 минут
-   (`lastCopiedLabelAt`), он уходит как `qr`. Отключается галочкой
-   «QR из кнопки «копировать»…» в панели автопечати (`qrFromCopied`,
-   по умолчанию `true`).
+Только **из ответа Ozon**: `findBarcode()` ищет `^ii\d{9,14}$` в JSON ответа
+(обход в глубину до 8 уровней, ≤2000 узлов, ≤50 элементов массива, ≤80 ключей).
 
-В DOM-режиме ответов нет вообще — QR появится только если сработал
-fallback с «копировать». Поэтому для QR-этикеток нужен режим `xhr`/`both`.
+В DOM-режиме ответов нет вообще, поэтому QR не печатается — для этикеток
+«номер + QR» нужен режим автопечати `xhr` или `both`. Кнопка «копировать»
+используется только для генератора QR в popup, в автопечать она не попадает.
 Полка перед печатью требует `features` c `shelf-dash`; если сервер старый —
 событие с ошибкой «Обновите PrintNum: поддержка полок (-88) не найдена»,
 ячейки продолжают печататься.
@@ -1145,7 +1140,7 @@ popup-панели (`Help`, `qrCommands`, `autoscript`, `SettingSection`, `hide/
 | полки не печатают, подсказка «Обновите PrintNum» | нет `features:["shelf-dash"]` | `GET /config` | обновить exe |
 | автопечать молчит | `autoPrint.mode = off`, не та страница, выключены `shelf`/`packing`, дедуп | `chrome.storage.local.autoPrint`, `lastAutoPrintEvent` | выбрать режим `xhr`, открыть нужный раздел |
 | после обновления расширения ничего не ловится | старые content scripts/pageHook в открытой вкладке | консоль: `Extension context invalidated` | перезагрузить вкладку Ozon (F5) |
-| нет QR на этикетке | 1) режим автопечати `dom` (ответов нет) 2) `qrWithNumber` выключен 3) ШК нет в ответе и «копировать» не нажимали / копия старше 5 мин | лог: `Печать без QR: в запросе не было ШК товара (qr)`; popup: «— QR нет: ШК не найден» | переключить режим на `xhr`, включить `qrWithNumber`, скопировать ШК кнопкой на Ozon перед размещением; проверить `GET /config` |
+| нет QR на этикетке | 1) режим автопечати `dom` (ответов нет) 2) `qrWithNumber` выключен 3) в ответе Ozon нет ШК (`ii…`) | лог: `Печать без QR: в запросе не было ШК товара (qr)`; popup: «— QR нет: ШК не найден» | переключить режим на `xhr`/`both`, включить `qrWithNumber`; проверить `GET /config` |
 | raw-печать: `500 print failed` | спулер не открыл принтер (`OpenPrinter`) или не соединился TCP | лог: `RAW ESC/POS: N байт — ошибка отправки` | проверить имя принтера в Windows (spooler) или `rawHost`/`rawPort` (tcp) |
 | raw-печать: этикетка съезжает | неверный зазор или сдвиг | `labelGapMm`, `rawXOffsetMm` | подстроить в popup; при накоплении сдвига откалибровать принтер |
 | нет шахматной заливки | `checker:false` в конфиге | `GET /config` → `checker` | включить «Шахматка» в popup (раньше этого не было в UI) |

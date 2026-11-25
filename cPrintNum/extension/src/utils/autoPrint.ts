@@ -17,14 +17,11 @@ import {
   AUTO_PRINT_KEY,
   LAST_AUTO_PRINT_EVENT_KEY,
   LAST_AUTO_PRINT_KEY,
-  LAST_COPIED_LABEL_AT_KEY,
-  LAST_COPIED_LABEL_KEY,
   SHELF_FEATURE,
   normalizeAutoPrint,
   type AutoPrintEvent,
   type AutoPrintSettings,
 } from "@/utils/autoPrintSettings";
-import { LABEL_BARCODE_RE } from "@/utils/constants";
 import {
   normalizePlacement,
   type Placement,
@@ -101,49 +98,12 @@ async function writeEvent(event: AutoPrintEvent): Promise<void> {
   await chrome.storage.local.set({ [LAST_AUTO_PRINT_EVENT_KEY]: event });
 }
 
-/** Кнопка «копировать» на Ozon: свежий ШК как источник QR. */
-const COPIED_TTL_MS = 5 * 60_000;
-
-/**
- * Добирает QR из последнего скопированного ШК, если в ответе Ozon его не было.
- *
- * Ozon не во всех ответах отдаёт штрихкод товара (а в DOM-режиме его нет
- * вообще), поэтому QR брался «из воздуха» и не печатался. Кнопка
- * «копировать» рядом со ШК — надёжный источник: пользователь копирует
- * штрихкод того товара, который размещает.
- */
-async function resolveQr(
-  placement: Placement,
-  settings: AutoPrintSettings,
-): Promise<{ qr?: string; source?: "ozon" | "copied" }> {
-  if (placement.qr) return { qr: placement.qr, source: "ozon" };
-  if (!settings.qrFromCopied) return {};
-
-  try {
-    const stored = await chrome.storage.local.get([
-      LAST_COPIED_LABEL_KEY,
-      LAST_COPIED_LABEL_AT_KEY,
-    ]);
-    const value = stored?.[LAST_COPIED_LABEL_KEY];
-    const at = stored?.[LAST_COPIED_LABEL_AT_KEY];
-
-    if (typeof value !== "string" || !LABEL_BARCODE_RE.test(value)) return {};
-    if (typeof at === "number" && Date.now() - at > COPIED_TTL_MS) return {};
-
-    console.info(`[PrintNum:auto] QR из кнопки «копировать»: ${value}`);
-    return { qr: value, source: "copied" };
-  } catch {
-    return {};
-  }
-}
-
 function makeEvent(
   placement: Placement,
   ok: boolean,
   status: number | null,
   error?: string,
   qr?: string,
-  qrSource?: "ozon" | "copied",
 ): AutoPrintEvent {
   return {
     text: placement.text,
@@ -151,7 +111,7 @@ function makeEvent(
     ok,
     status,
     ...(error ? { error } : {}),
-    ...(qr ? { qr, qrSource } : {}),
+    ...(qr ? { qr } : {}),
     at: Date.now(),
   };
 }
@@ -191,21 +151,18 @@ export async function handleAutoPrint(value: unknown): Promise<AutoPrintEvent | 
   }
 
   try {
-    // QR — штрихкод товара: сервер напечатает его рядом с номером, если
-    // включён `qrWithNumber`. Источники: ответ Ozon, затем «копировать».
-    const { qr, source } = await resolveQr(placement, settings);
-
+    // QR — штрихкод товара из ответа Ozon: сервер напечатает его рядом
+    // с номером, если включён `qrWithNumber` (см. §print-number).
     const res = await sendServer.post("print-number", {
       text: placement.text,
-      ...(qr ? { qr } : {}),
+      ...(placement.qr ? { qr: placement.qr } : {}),
     });
     const event = makeEvent(
       placement,
       res.ok,
       res.status,
       res.ok ? undefined : `PrintNum вернул ${res.status}`,
-      qr,
-      source,
+      placement.qr,
     );
 
     if (res.ok) {
@@ -221,7 +178,7 @@ export async function handleAutoPrint(value: unknown): Promise<AutoPrintEvent | 
       });
       console.info(
         `[PrintNum:auto] напечатано: ${placement.text}` +
-          (qr ? ` + QR ${qr}` : " (без QR: ШК не найден)"),
+          (placement.qr ? ` + QR ${placement.qr}` : " (без QR: ШК не найден)"),
       );
     } else {
       await writeEvent(event);

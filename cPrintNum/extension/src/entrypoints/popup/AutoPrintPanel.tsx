@@ -137,11 +137,6 @@ export default function AutoPrintPanel() {
             checked={settings.packing}
             onChange={(checked) => patch({ packing: checked })}
           />
-          <CheckboxRow
-            label="QR из кнопки «копировать», если в ответе нет ШК"
-            checked={settings.qrFromCopied}
-            onChange={(checked) => patch({ qrFromCopied: checked })}
-          />
         </div>
 
         {/* Дедупликация */}
@@ -192,9 +187,7 @@ export default function AutoPrintPanel() {
               {lastEvent.ok
                 ? `Напечатано: ${lastEvent.text}` +
                   (lastEvent.qr
-                    ? ` + QR ${lastEvent.qr}${
-                        lastEvent.qrSource === "copied" ? " (копия)" : ""
-                      }`
+                    ? ` + QR ${lastEvent.qr}`
                     : " — QR нет: ШК не найден")
                 : `Ошибка (${lastEvent.text}): ${lastEvent.error ?? lastEvent.status ?? "—"}`}
               <span className="text-muted-foreground">
