@@ -1386,7 +1386,7 @@ python3 -c "import json;m=json.load(open('output/chrome-mv3/manifest.json'));pri
 
 | Workflow | Когда | Что делает |
 |---|---|---|
-| `.github/workflows/ci.yml` | push в `main`, PR, вручную | 3 параллельных job'а (см. ниже) |
+| `.github/workflows/ci.yml` | push в любую ветку, PR, вручную | 2 параллельных job'а (см. ниже) |
 | `.github/workflows/release.yml` | тег `v*` | сборка релиза + публикация GitHub Release |
 | `.github/workflows/pages.yml` | push в `main` с изменениями в `docs/` | деплой страниц на GitHub Pages |
 
@@ -1401,10 +1401,10 @@ Job'ы `ci.yml`:
   манифеста (MV3, semver, описание ≤132, иконка 128, только `storage`/
   `scripting`, никаких `localhost`/`<all_urls>` в `host_permissions`) →
   `npm run pack:store` (архив с `manifest.json` в корне); артефакт;
-- **smoke** (после server) — ставит `wine` + `xvfb`, скачивает собранные exe
-  и прогоняет `./wine-ctl.sh start && ./wine-ctl.sh test` — те же **27
-  проверок HTTP API**, что локально; при падении печатает лог Wine и лог
-  службы.
+Smoke-тестов API в CI нет: `wine` с i386-архитектурой на раннере ставится
+минутами и подвисает на `apt`, а окружение ПВЗ (принтер + драйвер Windows)
+не воспроизвести. Эти 27 проверок — локальные: `./wine-ctl.sh start &&
+./wine-ctl.sh test`.
 
 Тег для релиза: `git tag v2.1.0 && git push origin v2.1.0`.
 

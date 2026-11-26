@@ -83,12 +83,17 @@ git tag v2.1.0 && git push origin v2.1.0   # CI соберёт и опублик
 
 | Workflow | Триггер | Что делает |
 |---|---|---|
-| [`ci.yml`](./.github/workflows/ci.yml) | push в `main`, PR | exe (MinGW) без CRT и без предупреждений `-Wall -Wextra`; `tsc` + сборка расширения + валидация манифеста; **27 smoke-проверок HTTP API под Wine** |
+| [`ci.yml`](./.github/workflows/ci.yml) | push в любую ветку, PR | exe (MinGW) без CRT и без предупреждений `-Wall -Wextra`; `tsc` + сборка расширения + валидация манифеста |
 | [`release.yml`](./.github/workflows/release.yml) | тег `v*` | сборка + GitHub Release с архивами, exe, `install.ps1`, `SHA256SUMS.txt` |
 | [`pages.yml`](./.github/workflows/pages.yml) | изменения в `docs/` | деплой `docs/` на GitHub Pages (`install.html`, `privacy.html`) |
 
-Проверки в CI не «на глаз»: падение любого из 27 запросов к службе валит job
-`smoke`, а предупреждение компилятора валит `server`.
+Проверки в CI не «на глаз»: предупреждение компилятора валит job `server`,
+сломанный манифест или типы — job `extension`.
+
+Smoke-тесты API (`./wine-ctl.sh test`, 27 проверок) в CI **не запускаются**:
+wine ставится на раннер минутами и часто висит на `apt`, а окружение ПВЗ
+(принтер этикеток, драйвер Windows) всё равно не воспроизвести. Их место —
+локальная машина разработчика.
 
 ## Связь компонентов
 

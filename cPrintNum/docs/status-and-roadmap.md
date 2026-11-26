@@ -55,7 +55,8 @@
 | Готово | Детали |
 |---|---|
 | ✅ Единая база знаний | `cPrintNum/README.md` — карта файлов, контракт API, инварианты, рецепты |
-| ✅ CI (`.github/workflows/ci.yml`) | push в любую ветку и PR: exe без CRT и без предупреждений `-Wall -Wextra`, `tsc`, сборка WXT, валидация манифеста, **27 smoke-проверок API под Wine** |
+| ✅ CI (`.github/workflows/ci.yml`) | push в любую ветку и PR: exe без CRT и без предупреждений `-Wall -Wextra`, `tsc`, сборка WXT, валидация манифеста |
+| ⚠️ Smoke-тесты API — только локально | 27 проверок через `./wine-ctl.sh test`; в CI отключены: wine+i386 на раннере ставится минутами, окружение ПВЗ не воспроизвести |
 | ✅ Release (`.github/workflows/release.yml`) | тег `v*` → сборка + GitHub Release (архивы, exe, `install.ps1`, `SHA256SUMS.txt`) |
 | ✅ Pages (`.github/workflows/pages.yml`) | изменения в `docs/` → `index.html`, `install.html`, `privacy.html` |
 | ✅ Self-hosted распространение | `scripts/release.sh`, `install.ps1` (скачивает последний релиз в `%LOCALAPPDATA%\PrintNum`, запускает службу, открывает `chrome://extensions`) |
@@ -128,7 +129,7 @@ capture-фазе, держит баннер, перепроверяет DOM на
 | Задача | Зачем | Оценка |
 |---|---|---|
 | Снизить `build.target` до `es2020` | на Win7 последний Chrome — 109; проверить, что popup не падает на старых сборках | 30 мин |
-| Обновить actions в workflow | предупреждения «Node.js 20 deprecated» у `checkout@v4`/`upload-artifact@v4` | 20 мин |
+| Вернуть smoke-тесты в CI по желанию | код джобы — в истории (`git show 912c2e1:.github/workflows/ci.yml`), но wine на раннере медленный и нестабильный | — |
 | Тест на разбор ответов Ozon в CI | сейчас `extractSessions`/`extractOrderCodes` проверяются только вручную | 1 ч |
 | `install.ps1`: проверка хэшей | сейчас скачивает и запускает без сверки `SHA256SUMS.txt` | 40 мин |
 | Ротация и ретраи `postSessions` | при потере пары после F5 проверка должника молчит до новой выдачи | 1 ч |
