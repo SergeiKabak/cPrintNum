@@ -50,7 +50,14 @@ mkdir -p "$OUT"
 # ---------- 1. только расширение ----------
 # manifest.json обязан быть в корне архива — иначе «Загрузить распакованное»
 # и магазины не поймут пакет.
-if command -v zip >/dev/null 2>&1; then
+# Windows-хост: Compress-Archive, а не MSYS2 zip (тот пишет "dir\\file" — explorer
+# распаковывает такой архив плоским файлом).
+case "$(uname -s 2>/dev/null)" in
+  MINGW*|MSYS*|CYGWIN*) PREFER_PS=1 ;;
+  *) PREFER_PS=0 ;;
+esac
+
+if [ "$PREFER_PS" = "0" ] && command -v zip >/dev/null 2>&1; then
     ( cd "$EXT_OUT" && zip -X -r -9 "$OUT/printnum-extension-$VER.zip" . -x '*.map' '.DS_Store' >/dev/null )
 else
     # Windows-хост без zip: PowerShell сжимает содержимое папки.

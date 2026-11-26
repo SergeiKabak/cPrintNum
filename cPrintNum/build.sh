@@ -69,10 +69,27 @@ if [ -z "$SHA256" ] && command -v shasum >/dev/null 2>&1; then
     SHA256="shasum -a 256"
 fi
 
-# Кладёт папку в архив: zip, если есть; иначе PowerShell Compress-Archive.
+# Кладёт папку в архив.
+#
+# На Windows-хосте PowerShell предпочтительнее MSYS2-шного zip: zip 3.0 (win32)
+# пишет разделители как "PrintNum\extension\manifest.json", и Windows Explorer
+# распаковывает такой архив плоским файлом. Compress-Archive всегда пишет "/".
 make_zip() {
     local out="$1" dir="$2" folder="$3"
     rm -f "$out"
+    case "$HOST_NAME" in
+        Windows*)
+            if command -v powershell.exe >/dev/null 2>&1; then
+                local win_out win_dir
+                win_out="$(cygpath -w "$out" 2>/dev/null || echo "$out")"
+                win_dir="$(cygpath -w "$dir" 2>/dev/null || echo "$dir")"
+                powershell.exe -NoProfile -Command \
+                    "Compress-Archive -Path '$win_dir\\$folder' -DestinationPath '$win_out' -Force" >/dev/null
+                return
+            fi
+            ;;
+    esac
+
     if [ -n "$ZIP" ]; then
         ( cd "$dir" && "$ZIP" -qr "$out" "$folder" -x '*.DS_Store' -x '__MACOSX/*' )
         return
