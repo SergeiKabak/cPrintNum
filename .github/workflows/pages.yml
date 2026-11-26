@@ -17,6 +17,9 @@ on:
 
 permissions:
   contents: read
+  # deploy-pages читает метаданные артефакта через Actions API — без этого
+  # падает с «No artifacts named "github-pages" were found».
+  actions: read
   pages: write
   id-token: write
 
