@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PrintNum — печать этикеток для ПВЗ</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:40px 20px; font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+         background:#f6f7f9; color:#16181d; }
+  main { max-width:860px; margin:0 auto; background:#fff; border-radius:14px; padding:36px 38px;
+         box-shadow:0 12px 40px rgba(16,24,40,.08); }
+  h1 { font-size:28px; margin:0 0 4px; letter-spacing:-.02em; }
+  h2 { font-size:19px; margin:30px 0 10px; }
+  .lead { color:#5b6472; margin:0 0 24px; }
+  p, li { margin:8px 0; }
+  code, kbd { background:#f2f4f8; padding:2px 6px; border-radius:5px; font-size:14px; }
+  kbd { border:1px solid #d7dce5; box-shadow:0 1px 0 #d7dce5; }
+  a { color:#0b63d6; }
+  ol.steps { counter-reset:s; list-style:none; padding:0; margin:0; }
+  ol.steps > li { counter-increment:s; position:relative; padding:14px 16px 14px 56px;
+                  background:#fafbfd; border:1px solid #e8ebf1; border-radius:12px; margin:12px 0; }
+  ol.steps > li::before { content:counter(s); position:absolute; left:16px; top:14px; width:26px; height:26px;
+                          display:grid; place-items:center; border-radius:50%; background:#0b63d6; color:#fff;
+                          font-size:14px; font-weight:700; }
+  .note { border-left:3px solid #0b63d6; background:#f2f7ff; padding:12px 14px; border-radius:0 10px 10px 0; margin:16px 0; }
+  .warn { border-left:3px solid #c81e1e; background:#fff5f5; padding:12px 14px; border-radius:0 10px 10px 0; margin:16px 0; }
+  table { border-collapse:collapse; width:100%; margin:12px 0; font-size:15px; }
+  th, td { border:1px solid #e3e6ec; padding:9px 11px; text-align:left; vertical-align:top; }
+  th { background:#f2f4f8; }
+  .btn { display:inline-block; background:#0b63d6; color:#fff; text-decoration:none; padding:11px 20px;
+         border-radius:10px; font-weight:600; }
+  .muted { color:#5b6472; font-size:14px; }
+  @media (prefers-color-scheme: dark) {
+    body { background:#0f1115; color:#e7eaf0; }
+    main { background:#171a21; box-shadow:none; }
+    th, td { border-color:#2a2f3a; }
+    th { background:#1e232c; }
+    code, kbd { background:#1e232c; border-color:#3a4150; }
+    ol.steps > li { background:#1b1f27; border-color:#2a2f3a; }
+    .note { background:#16202e; } .warn { background:#2a1618; }
+    .muted { color:#98a2b3; }
+    a { color:#79aaff; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>PrintNum</h1>
+  <p class="lead">Печать номеров ячеек и QR-этикеток для ПВЗ Ozon. Работает с любым принтером этикеток через драйвер Windows.</p>
+
+  <p><a class="btn" href="install.html">Как установить</a>
+     <span class="muted">&nbsp; <a href="https://github.com/kirill18734/PrintNum/releases/latest">скачать релиз</a></span></p>
+
+  <h2>Что умеет</h2>
+  <ul>
+    <li><b>Печать ячейки</b> — <code>163-1</code>, <code>12</code>, <code>5-3</code>: номер крупно, контрольная клетка, QR рядом.</li>
+    <li><b>Автопечать</b> — сканируешь отправление на выдаче, этикетка печатается сама.</li>
+    <li><b>QR из ответа Ozon</b> — код всегда от того отправления, которое открыто, без «угадывания».</li>
+    <li><b>Должники</b> — предупреждение с именем клиента, если заказ не оплачен.</li>
+    <li><b>Предпросмотр</b> — сохранять этикетки в BMP вместо печати.</li>
+    <li><b>Ctrl+O</b> — включить/выключить автопечать.</li>
+  </ul>
+
+  <h2>Как устроено</h2>
+  <p>Расширение не печатает само: оно передаёт данные маленькой службе <code>printnum-win7.exe</code>
+     на этом же компьютере (<code>127.0.0.1:5000</code>), а та печатает через драйвер Windows.
+     Наружу ничего не уходит — см. <a href="privacy.html">политику конфиденциальности</a>.</p>
+
+  <h2>Ссылки</h2>
+  <ul>
+    <li><a href="install.html">Установка по шагам</a></li>
+    <li><a href="https://github.com/kirill18734/PrintNum/releases/latest">Последний релиз</a></li>
+    <li><a href="https://github.com/kirill18734/PrintNum">Исходный код и документация</a></li>
+    <li><a href="privacy.html">Политика конфиденциальности</a></li>
+  </ul>
+</main>
+</body>
+</html>

@@ -1175,6 +1175,41 @@ popup-панели (`Help`, `qrCommands`, `autoscript`, `SettingSection`, `hide/
 
 ---
 
+### 4.18. Распространение: GitHub Releases (self-hosted)
+
+Магазины расширений (Edge/Chrome) требуют объяснять проверяющему, что без
+локальной службы расширение не работает, поэтому основной канал — свои релизы.
+
+**Сборка файлов.** `./scripts/release.sh` (или `SKIP_BUILD=1`) кладёт в
+`dist/release/`:
+
+| Файл | Содержимое |
+|---|---|
+| `PrintNum-<ver>-windows.zip` | папка `PrintNum/`: `extension/`, `printnum-win7.exe`, `printnum-diag.exe`, `config.json`, `install.ps1`, `README.txt` |
+| `printnum-extension-<ver>.zip` | только `output/chrome-mv3`, `manifest.json` в корне архива |
+| `printnum-win7.exe`, `printnum-diag.exe`, `config.json` | служба отдельно |
+| `install.ps1` | установщик для оператора (Windows PowerShell) |
+| `SHA256SUMS.txt` | `shasum -a 256` по архивам/exe/ps1 |
+
+**Установка.** `install.ps1` берёт последний релиз через GitHub API, качает
+`*-windows.zip`, распаковывает в `%LOCALAPPDATA%\PrintNum` (конфиг старой
+установки сохраняется), запускает `printnum-win7.exe`, проверяет
+`127.0.0.1:5000`, кладёт путь к папке расширения в буфер и открывает
+`chrome://extensions`. Прав администратора не требует, реестр не трогает.
+
+**Автоматизация.** `.github/workflows/release.yml` на тег `v*`: mingw-w64 + zip,
+`npm ci`, `tsc --noEmit`, `release.sh`, проверка «`manifest.json` в корне
+архива» и «нет `api-ms-win-crt` в exe», затем `softprops/action-gh-release`
+с файлами и текстом установки.
+
+**Обновление у пользователя.** Распаковать новый архив поверх папки
+(сохранив `config.json`) → в `chrome://extensions` нажать «Обновить» →
+**перезагрузить вкладку Ozon** (иначе работает старый `pageHook`).
+
+**Страницы.** `docs/` (GitHub Pages, Source: `main` / `docs`) — `index.html`,
+`install.html`, `privacy.html`; политика конфиденциальности для магазинов:
+`https://kirill18734.github.io/PrintNum/privacy.html`.
+
 ## 5. Связь сервер ↔ клиент
 
 Это самый важный раздел: «полноценная связь» = совпадают адрес, порт, контракт

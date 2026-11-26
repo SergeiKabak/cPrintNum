@@ -41,6 +41,37 @@ npm run dev                # → output/chrome-mv3
 `printnum-win7.exe`, установить расширение, выбрать принтер и размер этикетки
 в popup. Служба слушает `http://127.0.0.1:5000`.
 
+## Установка (для оператора ПВЗ)
+
+Готовые сборки — в [Releases](https://github.com/kirill18734/PrintNum/releases/latest):
+
+| Файл | Что это |
+|---|---|
+| `install.ps1` | установка одной командой: скачивает, распаковывает в `%LOCALAPPDATA%\PrintNum`, запускает службу, открывает `chrome://extensions` |
+| `PrintNum-<ver>-windows.zip` | всё в одной папке: `extension/` + exe + `config.json` + `README.txt` |
+| `printnum-extension-<ver>.zip` | только расширение, `manifest.json` в корне (Chrome / Edge / Opera) |
+| `printnum-win7.exe`, `config.json` | только служба печати |
+| `SHA256SUMS.txt` | контрольные суммы |
+
+Пошаговая инструкция с картинками:
+**<https://kirill18734.github.io/PrintNum/install.html>** ·
+[политика конфиденциальности](https://kirill18734.github.io/PrintNum/privacy.html)
+
+Windows 7 SP1 x64 и новее, Chrome/Edge 109+, принтер этикеток в системе.
+Права администратора не нужны, установка службы Windows не выполняется.
+
+### Как выпустить релиз
+
+```bash
+cd cPrintNum
+./scripts/release.sh          # → dist/release/ (архивы + SHA256SUMS)
+git tag v2.1.0 && git push origin v2.1.0   # CI соберёт и опубликует сам
+```
+
+`.github/workflows/release.yml` на тег `v*` собирает exe (MinGW), расширение
+(WXT), прогоняет `tsc`, проверяет архивы (manifest в корне, нет CRT-зависимостей)
+и публикует GitHub Release с файлами и текстом установки.
+
 ## Связь компонентов
 
 ```

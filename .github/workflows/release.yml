@@ -1,0 +1,85 @@
+name: Release
+
+# Собираем всё на тег vX.Y.Z и сразу публикуем GitHub Release с файлами:
+#   PrintNum-<ver>-windows.zip, printnum-extension-<ver>.zip, exe, config, install.ps1, SHA256SUMS.txt
+#
+#   git tag v2.2.0 && git push origin v2.2.0
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Зависимости (mingw, zip)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq mingw-w64 zip >/dev/null
+
+      - name: Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: cPrintNum/extension/package-lock.json
+
+      - name: Зависимости расширения
+        working-directory: cPrintNum/extension
+        run: npm ci
+
+      - name: Типы (tsc)
+        working-directory: cPrintNum/extension
+        run: npm run compile
+
+      - name: Сборка exe + расширения + релизных архивов
+        working-directory: cPrintNum
+        run: |
+          chmod +x build.sh scripts/release.sh
+          ./scripts/release.sh
+
+      - name: Проверка архивов
+        working-directory: cPrintNum/dist/release
+        run: |
+          set -e
+          ls -lh
+          # manifest.json обязан быть в корне архива расширения
+          unzip -l printnum-extension-*.zip | grep -qE '^ *[0-9]+ .* manifest\.json$'
+          # exe без CRT-зависимостей
+          ! x86_64-w64-mingw32-objdump -p printnum-win7.exe | grep -q api-ms-win-crt
+          echo "архивы ок"
+
+      - name: Публикация релиза
+        uses: softprops/action-gh-release@v2
+        with:
+          name: PrintNum ${{ github.ref_name }}
+          generate_release_notes: true
+          body: |
+            ## Установка (Windows)
+
+            **Автоматически** — правый клик по `install.ps1` → «Выполнить с PowerShell»
+            (скачает, распакует в `%LOCALAPPDATA%\PrintNum`, запустит службу, откроет `chrome://extensions`).
+
+            **Вручную**
+            1. Скачать `PrintNum-${{ github.ref_name }}-windows.zip`, распаковать.
+            2. Запустить `printnum-win7.exe` — это служба печати (окна нет). Проверка:
+               <http://127.0.0.1:5000/>
+            3. `chrome://extensions` → «Режим разработчика» → «Загрузить распакованное» → папка `extension`.
+            4. Открыть `https://turbo-pvz.ozon.ru` и обновить вкладку (F5).
+
+            Нужна только служба без расширения? Берите `printnum-win7.exe` + `config.json`.
+            Расширение отдельно: `printnum-extension-${{ github.ref_name }}.zip`
+            (`manifest.json` в корне — подходит для Chrome, Edge, Opera).
+          files: |
+            cPrintNum/dist/release/*.zip
+            cPrintNum/dist/release/*.exe
+            cPrintNum/dist/release/config.json
+            cPrintNum/dist/release/install.ps1
+            cPrintNum/dist/release/SHA256SUMS.txt

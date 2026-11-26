@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PrintNum — установка</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:40px 20px; font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+         background:#f6f7f9; color:#16181d; }
+  main { max-width:860px; margin:0 auto; background:#fff; border-radius:14px; padding:36px 38px;
+         box-shadow:0 12px 40px rgba(16,24,40,.08); }
+  h1 { font-size:28px; margin:0 0 4px; letter-spacing:-.02em; }
+  h2 { font-size:19px; margin:30px 0 10px; }
+  .lead { color:#5b6472; margin:0 0 24px; }
+  p, li { margin:8px 0; }
+  code, kbd { background:#f2f4f8; padding:2px 6px; border-radius:5px; font-size:14px; }
+  kbd { border:1px solid #d7dce5; box-shadow:0 1px 0 #d7dce5; }
+  a { color:#0b63d6; }
+  ol.steps { counter-reset:s; list-style:none; padding:0; margin:0; }
+  ol.steps > li { counter-increment:s; position:relative; padding:14px 16px 14px 56px;
+                  background:#fafbfd; border:1px solid #e8ebf1; border-radius:12px; margin:12px 0; }
+  ol.steps > li::before { content:counter(s); position:absolute; left:16px; top:14px; width:26px; height:26px;
+                          display:grid; place-items:center; border-radius:50%; background:#0b63d6; color:#fff;
+                          font-size:14px; font-weight:700; }
+  .note { border-left:3px solid #0b63d6; background:#f2f7ff; padding:12px 14px; border-radius:0 10px 10px 0; margin:16px 0; }
+  .warn { border-left:3px solid #c81e1e; background:#fff5f5; padding:12px 14px; border-radius:0 10px 10px 0; margin:16px 0; }
+  table { border-collapse:collapse; width:100%; margin:12px 0; font-size:15px; }
+  th, td { border:1px solid #e3e6ec; padding:9px 11px; text-align:left; vertical-align:top; }
+  th { background:#f2f4f8; }
+  .btn { display:inline-block; background:#0b63d6; color:#fff; text-decoration:none; padding:11px 20px;
+         border-radius:10px; font-weight:600; }
+  .muted { color:#5b6472; font-size:14px; }
+  @media (prefers-color-scheme: dark) {
+    body { background:#0f1115; color:#e7eaf0; }
+    main { background:#171a21; box-shadow:none; }
+    th, td { border-color:#2a2f3a; }
+    th { background:#1e232c; }
+    code, kbd { background:#1e232c; border-color:#3a4150; }
+    ol.steps > li { background:#1b1f27; border-color:#2a2f3a; }
+    .note { background:#16202e; } .warn { background:#2a1618; }
+    .muted { color:#98a2b3; }
+    a { color:#79aaff; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Установка PrintNum</h1>
+  <p class="lead">Печать этикеток ячеек и QR для ПВЗ Ozon. Windows 7 SP1 и новее, Chrome/Edge/Opera.</p>
+
+  <p>
+    <a class="btn" href="https://github.com/kirill18734/PrintNum/releases/latest">Скачать последний релиз</a>
+    <span class="muted">&nbsp; install.ps1 — установка одной командой</span>
+  </p>
+
+  <h2>Что нужно</h2>
+  <table>
+    <tr><th>Что</th><th>Зачем</th></tr>
+    <tr><td>Windows 7 SP1 x64 и новее</td><td>служба печати — обычный exe, без установки</td></tr>
+    <tr><td>Принтер этикеток в системе</td><td>печать через драйвер Windows (203 dpi, 43×25 мм)</td></tr>
+    <tr><td>Chrome 109+ / Edge 109+ / Opera</td><td>расширение (Manifest V3)</td></tr>
+    <tr><td>Доступ к turbo-pvz.ozon.ru</td><td>рабочая вкладка ПВЗ</td></tr>
+  </table>
+
+  <h2>Автоматическая установка</h2>
+  <ol class="steps">
+    <li>Скачайте <code>install.ps1</code> из последнего релиза.</li>
+    <li>Правая кнопка → <b>Выполнить с PowerShell</b>.</li>
+    <li>Скрипт скачает архив, распакует в <code>%LOCALAPPDATA%\PrintNum</code>, запустит службу, откроет <code>chrome://extensions</code> и скопирует путь к папке расширения в буфер.</li>
+    <li>В открывшемся окне: «Режим разработчика» → «Загрузить распакованное» → вставить путь из буфера.</li>
+  </ol>
+  <div class="warn">Права администратора не нужны. Скрипт скачивает только с GitHub, ничего не пишет в реестр и не ставит службу Windows.</div>
+
+  <h2>Вручную</h2>
+  <ol class="steps">
+    <li>Скачайте <code>PrintNum-&lt;версия&gt;-windows.zip</code> и распакуйте в любую папку (например, <code>C:\PrintNum</code>).</li>
+    <li>Запустите <code>printnum-win7.exe</code> — это служба печати, окна нет. Брандмауэр: разрешить для частных сетей.<br>
+        Проверка: откройте <a href="http://127.0.0.1:5000/">http://127.0.0.1:5000/</a> — должен быть ответ службы.</li>
+    <li>Откройте <code>chrome://extensions</code> (или <code>edge://extensions</code>, <code>opera://extensions</code>).</li>
+    <li>Включите «Режим разработчика» и нажмите «Загрузить распакованное», выберите папку <code>extension</code> рядом с exe.</li>
+    <li>Откройте <code>https://turbo-pvz.ozon.ru</code> и обновите вкладку (<kbd>F5</kbd>).</li>
+  </ol>
+
+  <h2>Проверка печати</h2>
+  <ol class="steps">
+    <li>Иконка PrintNum на панели браузера → вкладка «Печать».</li>
+    <li>Проверьте принтер (кнопка «Обновить»), бумагу <code>43*25</code>, затем напечатайте тестовую ячейку, например <code>163-1</code>.</li>
+    <li>Нет принтера под рукой — включите «Предпросмотр» и укажите папку: этикетки сохранятся в BMP вместо печати.</li>
+  </ol>
+
+  <h2>Обновление</h2>
+  <p>Скачайте новый архив, распакуйте поверх папки установки (конфиг <code>config.json</code> можно сохранить),
+     затем в <code>chrome://extensions</code> нажмите «Обновить» у PrintNum и обязательно перезагрузите вкладку Ozon.</p>
+
+  <h2>Если не работает</h2>
+  <table>
+    <tr><th>Симптом</th><th>Что проверить</th></tr>
+    <tr><td>Popup пишет «служба недоступна»</td><td>запущен ли <code>printnum-win7.exe</code>; открывается ли <a href="http://127.0.0.1:5000/">127.0.0.1:5000</a>; не блокирует ли антивирус</td></tr>
+    <tr><td>Служба работает, принтера нет</td><td><code>http://127.0.0.1:5000/status-printer</code>; имя принтера в popup; драйвер в Windows</td></tr>
+    <tr><td>Этикетка серая / бледная</td><td>203 dpi и минимальный размер контрольной клетки 2 px — не уменьшайте плотность</td></tr>
+    <tr><td>Ничего не происходит на скане</td><td>перезагрузить вкладку Ozon после установки/обновления расширения</td></tr>
+    <tr><td>Нужны логи</td><td>закрыть службу и запустить <code>printnum-diag.exe</code> — консоль с диагностикой</td></tr>
+  </table>
+
+  <p class="muted">Политика конфиденциальности: <a href="privacy.html">privacy.html</a> · Исходный код: <a href="https://github.com/kirill18734/PrintNum">github.com/kirill18734/PrintNum</a></p>
+</main>
+</body>
+</html>
