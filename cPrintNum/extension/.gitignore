@@ -1,34 +1,20 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
+# Зависимости и сборка (WXT: output/, кэш .wxt/)
 node_modules
-.output
 output
-chrome-mv3
-stats.html
-stats-*.json
 .wxt
-web-ext.config.ts
-.plasmo
+*.log
 
-# Editor directories and files
+# Локальный .env (порт службы при сборке), шаблон — .env.example
+.env
+.env.local
+
+# Сохранённые страницы Ozon для изучения разметки: дампы 600+ КБ с сотнями
+# ассетов, в git не нужны.
+example.html
+example_files/
+
+# Редакторы
 .vscode/*
 !.vscode/extensions.json
 .idea
 .DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
-
-# Сохранённые страницы Ozon (для изучения разметки) — не коммитим:
-# это дампы в 600+ КБ с сотнями файлов ассетов.
-example.html
-example_files/

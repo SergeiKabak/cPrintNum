@@ -44,9 +44,12 @@ npm install
 npm run dev                # → output/chrome-mv3
 ```
 
-На Windows: распаковать `cPrintNum/dist/PrintNum-win7.zip`, запустить
-`printnum-win7.exe`, установить расширение, выбрать принтер и размер этикетки
-в popup. Служба слушает `http://127.0.0.1:5000`.
+На Windows: взять готовый архив из
+[Releases](https://github.com/SergeiKabak/cPrintNum/releases/latest)
+(`PrintNum-<версия>-windows.zip`) или собрать `./build.sh` — он кладёт
+`cPrintNum/dist/cPrintNum_vQRGenerator.zip` (расширение + exe + `config.json`).
+Запустить `printnum-win7.exe`, загрузить расширение, выбрать принтер и размер
+этикетки в popup. Служба слушает `http://127.0.0.1:5000`.
 
 ## Установка (для оператора ПВЗ)
 

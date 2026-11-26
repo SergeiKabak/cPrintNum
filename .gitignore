@@ -1,37 +1,31 @@
-# Logs
+# Логи
 logs
 *.log
 
-# Environment
+# Окружение
 .env
 .env.local
 !*.env.example
 
-# Rust
-/target
-src-printnum/target
-**/*.rs.bk
-
-# Node / extension
+# Node / расширение
 node_modules
 dist
 dist-ssr
 *.local
 
-# Installer / build artifacts
-src-printnum/installer-output
+# Артефакты сборки C-службы
 *.exe
 *.msi
 *.pdb
+cPrintNum/*.bmp
+cPrintNum/*.bin
+cPrintNum/preview/
+cPrintNum/photo_*
 
-# Шаблон/результат релизного архива
-PrintNum-win7-x64-*.zip
-PrintNum-SOURCE-*.zip
+# Сгенерированное: БД компиляции для clangd (внутри абсолютные пути)
+compile_commands.json
 
-# Локальный config.json (при запуске вне Windows)
-src-printnum/PrintNum/
-
-# Editor directories and files
+# Редакторы
 .vscode/*
 !.vscode/extensions.json
 .idea
@@ -41,12 +35,3 @@ src-printnum/PrintNum/
 *.njsproj
 *.sln
 *.sw?
-
-# Демо-артефакты PrintNum (--demo-*, --raw-dump)
-cPrintNum/*.bmp
-cPrintNum/*.bin
-cPrintNum/preview/
-cPrintNum/photo_*
-
-# Сгенерированное: БД компиляции для clangd (внутри абсолютные пути)
-compile_commands.json
