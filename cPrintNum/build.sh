@@ -3,12 +3,11 @@
 #
 # 1. Кросс-компиляция C-службы (MinGW-w64):
 #      printnum-win7.exe  — служба без окна и консоли (подсистема Windows)
-#      printnum-diag.exe  — та же служба + консоль (диагностика/Wine)
 # 2. Сборка браузерного расширения (WXT): extension/output/chrome-mv3 —
 #    это и есть папка готового расширения (её содержимое идёт в архив).
 # 3. Упаковка: ЕДИНЫЙ архив dist/PrintNum-<версия>-windows.zip — папка PrintNum/
-#    с extension/ (manifest.json внутри), printnum-win7.exe, printnum-diag.exe,
-#    config.json, install.ps1 и README.txt. Тот же архив публикуется в GitHub
+#    с extension/ (manifest.json внутри), printnum-win7.exe, config.json,
+#    install.ps1 и README.txt. Тот же архив публикуется в GitHub
 #    Releases (scripts/release.sh ничего не переупаковывает).
 #
 # Целевая платформа — только Windows 7 x64. Собирать можно на macOS или Linux:
@@ -78,9 +77,6 @@ build_one() {
 
 # 1. Основной exe — служба (--service по умолчанию, окна нет)
 build_one "${SRC}" "printnum-win7.exe" "-mwindows"
-
-# 2. Консольный диагностический вариант
-build_one "${SRC}" "printnum-diag.exe" "-mconsole"
 
 # ============================================================
 # 3. Расширение
@@ -166,7 +162,6 @@ PrintNum — печать этикеток ячеек и QR для ПВЗ Ozon
 
 В папке:
   printnum-win7.exe   служба печати (запустить один раз, окна нет)
-  printnum-diag.exe   то же + консоль (диагностика)
   config.json         настройки службы (принтер, режим GDI/ESC-POS)
   extension\          расширение для браузера
   install.ps1         автоустановка (правый клик -> Выполнить с PowerShell)

@@ -59,7 +59,7 @@ Ozon (turbo-pvz.ozon.ru)
 1. Распаковать `dist/PrintNum-<версия>-windows.zip` в любую папку, например
    `C:\PrintNum\`. Внутри папка `PrintNum/`: **расширение** в `extension/`
    (`manifest.json`, `background.js`, `content-scripts/`, `chunks/`, `assets/`,
-   `icon/`), **приложение** рядом (`printnum-win7.exe`, `printnum-diag.exe`,
+   `icon/`), **приложение** рядом (`printnum-win7.exe`,
    `config.json`, `install.ps1`, `README.txt`).
 2. Запустить `printnum-win7.exe` — сразу служба (режим по умолчанию, флаг
    `--service` не обязателен): HTTP-сервер `127.0.0.1:5000`, без окон и
@@ -117,7 +117,6 @@ cPrintNum/
 │                            # (единый архив: PrintNum/extension + exe + config + install.ps1)
 │                            # release/ — тот же архив + extension-only zip + SHA256SUMS
 ├── printnum-win7.exe        # артефакт сборки: служба (подсистема Windows)
-├── printnum-diag.exe        # артефакт сборки (-mconsole, для Wine/диагностики)
 ├── (демо-BMP не хранятся в репозитории: генерируются через --demo-*)
 ├── (compile_commands.json в .gitignore — при необходимости генерируется
 │    локально через `compiledb make`; в репозитории его нет)
@@ -214,7 +213,6 @@ extension/
 | Артефакт | Флаги | Назначение |
 |---|---|---|
 | `printnum-win7.exe` | `-mwindows` | подсистема Windows: ни окна, ни консоли; служба (GUI нет) |
-| `printnum-diag.exe` | `-mconsole` | то же + консоль (удобно под Wine/для диагностики) |
 
 Общие флаги:
 
@@ -238,7 +236,7 @@ PrintNum-<версия>-windows.zip
     │   ├── background.js
     │   └── content-scripts/  chunks/  assets/  icon/
     ├── printnum-win7.exe  ← служба
-    ├── printnum-diag.exe
+    ├── printnum-win7.exe
     ├── config.json
     ├── install.ps1        ← автоустановка
     └── README.txt
@@ -617,8 +615,8 @@ expand` → bold + рокировка (число в `main`, префикс в `
 - Проверить без принтера:
 
 ```bash
-wine printnum-diag.exe --demo-cell-qr "163-1" "ii19382868529" label.bmp
-wine printnum-diag.exe --demo-cell-qr "-88"   "ii8923223139"  shelf.bmp
+wine printnum-win7.exe --demo-cell-qr "163-1" "ii19382868529" label.bmp
+wine printnum-win7.exe --demo-cell-qr "-88"   "ii8923223139"  shelf.bmp
 sips -s format png label.bmp --out label.png && zbarimg -q --raw label.png
 ```
 
@@ -665,12 +663,12 @@ ESC J n (×N)                протяжка на зазор (labelGapMm)
 | `printnum-win7.exe --service` | то же явно (флаг для автозагрузки/`CreateProcess`); в лог пишется `Режим: служба (--service)` |
 | `printnum-win7.exe --print "163-1"` | разовая печать; та же валидация; код выхода 0/1 |
 | `set PRINTNUM_DRY_RUN=1` + `--print` | ничего не печатает, сразу `return 0` |
-| `printnum-diag.exe --demo-file "45" label.bmp` | рендер обычной этикетки в BMP (344×200, 43×25 мм @203 dpi), без принтера |
-| `printnum-diag.exe --demo-file "-88" shelf.bmp` | то же для полки |
-| `printnum-diag.exe --demo-qr "ii19382868529" label.bmp` | рендер QR-этикетки в BMP |
-| `printnum-diag.exe --demo-cell-qr "163-1" "ii19382868529" out.bmp` | рендер этикетки «номер + QR товара» в BMP |
-| `printnum-diag.exe --raw-dump "163-1" "ii19382868529" label.bin` | готовый ESC/POS-поток в файл (`-` вместо ШК = без QR) |
-| `printnum-diag.exe --raw-dump-barcode "ii19382868529" bc.bin` | ESC/POS-поток комбинированной QR-этикетки |
+| `printnum-win7.exe --demo-file "45" label.bmp` | рендер обычной этикетки в BMP (344×200, 43×25 мм @203 dpi), без принтера |
+| `printnum-win7.exe --demo-file "-88" shelf.bmp` | то же для полки |
+| `printnum-win7.exe --demo-qr "ii19382868529" label.bmp` | рендер QR-этикетки в BMP |
+| `printnum-win7.exe --demo-cell-qr "163-1" "ii19382868529" out.bmp` | рендер этикетки «номер + QR товара» в BMP |
+| `printnum-win7.exe --raw-dump "163-1" "ii19382868529" label.bin` | готовый ESC/POS-поток в файл (`-` вместо ШК = без QR) |
+| `printnum-win7.exe --raw-dump-barcode "ii19382868529" bc.bin` | ESC/POS-поток комбинированной QR-этикетки |
 
 Демо использует **те же** GDI-функции, что и печать (`prepare_label_data`,
 `draw_label`, `draw_qr_label_core`), поэтому это честный предпросмотр.
@@ -1200,9 +1198,9 @@ popup-панели (`Help`, `qrCommands`, `autoscript`, `SettingSection`, `hide/
 
 | Файл | Содержимое |
 |---|---|
-| `PrintNum-<ver>-windows.zip` | папка `PrintNum/`: `extension/`, `printnum-win7.exe`, `printnum-diag.exe`, `config.json`, `install.ps1`, `README.txt` |
+| `PrintNum-<ver>-windows.zip` | папка `PrintNum/`: `extension/`, `printnum-win7.exe`, `config.json`, `install.ps1`, `README.txt` |
 | `printnum-extension-<ver>.zip` | только `output/chrome-mv3`, `manifest.json` в корне архива |
-| `printnum-win7.exe`, `printnum-diag.exe`, `config.json` | служба отдельно |
+| `printnum-win7.exe`, `config.json` | служба отдельно |
 | `install.ps1` | установщик для оператора (Windows PowerShell) |
 | `SHA256SUMS.txt` | `shasum -a 256` по архивам/exe/ps1 |
 
@@ -1406,7 +1404,7 @@ Job'ы `ci.yml`:
 
 - **server** — `SKIP_EXTENSION=1 ./build.sh` (MinGW), затем проверки:
   нет `api-ms-win-crt` в импортах (иначе Win7 не запустит), subsystem
-  `Windows GUI` у `printnum-win7.exe` и `Windows CUI` у `printnum-diag.exe`,
+  `Windows GUI` у `printnum-win7.exe`,
   компиляция с `-Wall -Wextra` без единого предупреждения; exe уходят
   артефактом;
 - **extension** — `npm ci` → `npm run compile` → `npm run build` → проверка
@@ -1434,9 +1432,9 @@ Smoke-тестов API в CI нет: `wine` с i386-архитектурой н�
 | Отступы/переносы во всех редакторах | `.editorconfig` в корне (C — 4 пробела, TS/JSON/YAML — 2) |
 | Типы расширения | `cd extension && npm run compile` (сейчас 0 ошибок) |
 | Сборка расширения | `npm run build` → `output/chrome-mv3` |
-| Демо-этикетка без принтера | `wine printnum-diag.exe --demo-file "45" label.bmp` |
-| Демо QR-этикетки | `wine printnum-diag.exe --demo-qr "ii19382868529" label.bmp` |
-| Демо «номер + QR товара» | `wine printnum-diag.exe --demo-cell-qr "163-1" "ii19382868529" label.bmp` → `zbarimg` декодирует ШК |
+| Демо-этикетка без принтера | `wine printnum-win7.exe --demo-file "45" label.bmp` (служба собрана как GUI-подсистема: сообщения идут в лог, результат — файл) |
+| Демо QR-этикетки | `wine printnum-win7.exe --demo-qr "ii19382868529" label.bmp` |
+| Демо «номер + QR товара» | `wine printnum-win7.exe --demo-cell-qr "163-1" "ii19382868529" label.bmp` → `zbarimg` декодирует ШК |
 | Разбор ответов Ozon + `findBarcode` | esbuild-бандл теста в node: 13 проверок (ячейка, полка, без ШК, глубокий ШК, мусор, бюджет обхода) |
 | E2E через расширение без бумаги | `POST /config {"previewDir":"C:\\PrintNum\\preview"}` → печать из Ozon → в папке `label_<текст>_<тики>.bmp` |
 | RAW-поток ESC/POS | `--raw-dump "163-1" "ii…" label.bin` → разобрать байты: `ESC @`, `GS v 0` (344×200), `ESC J` (3 мм); растр декодируется `zbarimg` |
@@ -1502,7 +1500,7 @@ QR-этикетка декодируется `zbarimg` в исходное зн�
   больше не поддерживается: приложение — только служба, окно не создаётся. Этот README описывает **только**
   C-службу и расширение. Упоминания `printnum.exe` относятся к прежнему
   Rust-бинарнику — сейчас артефакты называются `printnum-win7.exe` /
-  `printnum-diag.exe`.
+  `printnum-win7.exe`.
 - **`PRINTNUM_PORT`, `.env`, `--dry-run`, `--tui`, `--service-status`,
   `--install-autostart`** — возможности Rust-версии. В C-сборке их **нет**:
   порт фиксирован, dry-run только через `PRINTNUM_DRY_RUN` для CLI,
@@ -1534,6 +1532,10 @@ QR-этикетка декодируется `zbarimg` в исходное зн�
 - **`example.html` / `example_files/`** — дамп реальной страницы Ozon
   (600+ КБ, 120+ CSS), нужен только для изучения разметки; в `.gitignore`.
   Оставлен намеренно (не восстанавливается из git).
+- **`printnum-diag.exe`** — вторая, консольная сборка (`-mconsole`), удалена:
+  тот же код, а консоль нужна была только для отладки. Диагностика теперь:
+  `%APPDATA%\PrintNum\log.txt`, режимы `--demo-*`/`--raw-dump` (результат —
+  файл) и `./wine-ctl.sh test`.
 - **`compile_commands.json`** — в `.gitignore` (внутри абсолютные пути и
   sysroot MinGW). Для clangd генерируется локально: `compiledb make -n` или
   `bear`; поддерживать свой генератор флагов не стали — он копировал

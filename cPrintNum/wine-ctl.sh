@@ -30,7 +30,6 @@ PORT=5000
 # Адрес службы для проверок. `test` работает с любой машиной, не только с Wine.
 BASE_URL="${PRINTNUM_URL:-http://127.0.0.1:$PORT}"
 EXE_GUI="printnum-win7.exe"
-EXE_DIAG="printnum-diag.exe"
 
 # --- helpers ---------------------------------------------------------------
 
@@ -57,7 +56,7 @@ port_owner() {
 }
 
 ensure_built() {
-    [ -f "$EXE_DIAG" ] && [ -f "$EXE_GUI" ] && return 0
+    [ -f "$EXE_GUI" ] && return 0
     echo "exe не найдены — собираю..."
     ./build.sh || die "сборка не удалась"
 }
@@ -94,8 +93,8 @@ cmd_start() {
         wine wineboot --init >/dev/null 2>&1
     fi
 
-    echo "Запуск $EXE_DIAG через Wine (префикс: $WINEPREFIX)..."
-    nohup wine "$EXE_DIAG" > /tmp/printnum-wine.log 2>&1 &
+    echo "Запуск $EXE_GUI через Wine (префикс: $WINEPREFIX)..."
+    nohup wine "$EXE_GUI" > /tmp/printnum-wine.log 2>&1 &
     disown
 
     if wait_up; then

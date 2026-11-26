@@ -90,7 +90,7 @@ if (Test-Path $exe) {
         Write-Host "  http://127.0.0.1:5000 отвечает: ок"
     } catch {
         Write-Host "  Служба не отвечает на 127.0.0.1:5000." -ForegroundColor Yellow
-        Write-Host "  Проверьте, не блокирует ли брандмауэр, и запустите printnum-diag.exe для логов."
+        Write-Host "  Проверьте брандмауэр; лог службы: %APPDATA%\PrintNum\log.txt"
     }
 }
 

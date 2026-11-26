@@ -10,7 +10,7 @@
 # Результат в dist/release/:
 #   PrintNum-<ver>-windows.zip          extension/ + exe + config + install.ps1 + README.txt
 #   printnum-extension-<ver>.zip        только расширение (manifest.json в корне) — Chrome/Edge/Opera
-#   printnum-win7.exe / printnum-diag.exe   служба печати (Windows 7 x64)
+#   printnum-win7.exe                   служба печати (Windows 7 x64)
 #   config.json                         конфиг службы по умолчанию
 #   install.ps1                         установка одной командой (Windows)
 #   SHA256SUMS.txt                      контрольные суммы
@@ -54,7 +54,7 @@ mkdir -p "$OUT"
 echo "✅ printnum-extension-$VER.zip"
 
 # ---------- 2. exe + конфиг ----------
-cp -f printnum-win7.exe printnum-diag.exe "$OUT"/
+cp -f printnum-win7.exe "$OUT"/
 if [ -f config.json ]; then cp -f config.json "$OUT"/; fi
 echo "✅ exe + config.json"
 

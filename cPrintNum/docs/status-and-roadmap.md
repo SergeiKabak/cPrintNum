@@ -24,7 +24,7 @@
 | ✅ «Номер + QR товара» | режим `qrWithNumber`, QR справа от номера |
 | ✅ Предпросмотр вместо печати | `previewDir` → BMP-файлы, принтер не нужен |
 | ✅ Производительность | общие scratch-буферы, bbox, единый `LabelSurface`, печать одним `BitBlt`, LRU-кэш QR (8 слотов), таймаут `recv` 5 с |
-| ✅ Диагностика | `printnum-diag.exe` (консоль), `--demo-cell-qr`, `--raw-dump`, лог службы |
+| ✅ Диагностика | `--demo-cell-qr`, `--raw-dump`, лог службы `%APPDATA%\PrintNum\log.txt` |
 
 ### 1.2. Расширение (WXT + Preact + TS)
 

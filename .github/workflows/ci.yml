@@ -45,7 +45,7 @@ jobs:
       - name: Никаких CRT-зависимостей (иначе не заведётся на Win7)
         working-directory: cPrintNum
         run: |
-          for exe in printnum-win7.exe printnum-diag.exe; do
+          for exe in printnum-win7.exe; do
             if ${TARGET}-objdump -p "$exe" | grep -q "api-ms-win-crt"; then
               echo "❌ $exe тянет CRT — на чистой Windows 7 не запустится"
               ${TARGET}-objdump -p "$exe" | grep "DLL Name"
@@ -54,12 +54,11 @@ jobs:
             echo "✅ $exe: $(stat -c%s "$exe") байт"
           done
 
-      - name: Подсистемы Windows (служба — без окна, diag — консоль)
+      - name: Подсистема Windows (служба без окна)
         working-directory: cPrintNum
         run: |
           ${TARGET}-objdump -p printnum-win7.exe | grep -q "Subsystem.*Windows GUI"
-          ${TARGET}-objdump -p printnum-diag.exe | grep -q "Subsystem.*Windows CUI"
-          echo "✅ subsystem: GUI / CUI"
+          echo "✅ subsystem: Windows GUI"
 
       - name: "-Wall -Wextra без предупреждений"
         working-directory: cPrintNum
@@ -80,7 +79,6 @@ jobs:
           name: server-exe
           path: |
             cPrintNum/printnum-win7.exe
-            cPrintNum/printnum-diag.exe
             cPrintNum/config.json
           retention-days: 7
 
