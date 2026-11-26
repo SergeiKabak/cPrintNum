@@ -117,8 +117,8 @@ cPrintNum/
 ├── printnum-win7.exe        # артефакт сборки: служба (подсистема Windows)
 ├── printnum-diag.exe        # артефакт сборки (-mconsole, для Wine/диагностики)
 ├── (демо-BMP не хранятся в репозитории: генерируются через --demo-*)
-├── generate_compile_commands.py  # генерирует compile_commands.json для clangd
-│                            # (сам .json в .gitignore: внутри абсолютные пути)
+├── (compile_commands.json в .gitignore — при необходимости генерируется
+│    локально через `compiledb make`; в репозитории его нет)
 ├── docs/                    # статус/роадмап, политика, тексты для магазинов,
 │                            # заметки по API Ozon (ozon-api-notes.txt)
 ├── .cache/clangd/index/     # локальный кэш clangd — не трогать, не коммитить
@@ -1523,9 +1523,10 @@ QR-этикетка декодируется `zbarimg` в исходное зн�
 - **`example.html` / `example_files/`** — дамп реальной страницы Ozon
   (600+ КБ, 120+ CSS), нужен только для изучения разметки; в `.gitignore`.
   Оставлен намеренно (не восстанавливается из git).
-- **`compile_commands.json` / `generate_compile_commands.py`** — для clangd;
-  сам JSON в `.gitignore` (абсолютные пути + sysroot MinGW), генератор
-  повторяет флаги `build.sh`. Запуск: `python3 generate_compile_commands.py`.
+- **`compile_commands.json`** — в `.gitignore` (внутри абсолютные пути и
+  sysroot MinGW). Для clangd генерируется локально: `compiledb make -n` или
+  `bear`; поддерживать свой генератор флагов не стали — он копировал
+  `build.sh` и уже разошёлся с ним один раз.
 - **Один лок-файл** (`package-lock.json`, npm); `pnpm-lock.yaml` удалён.
   `esbuild` остаётся в devDependencies: без него `tsc --noEmit` падает на
   типах `vite.esbuild` в `wxt.config.ts` (проверено).
