@@ -1,0 +1,55 @@
+name: Pages
+
+# Публикует содержимое docs/ на GitHub Pages:
+#   https://kirill18734.github.io/PrintNum/            — лендинг
+#   https://kirill18734.github.io/PrintNum/install.html — установка
+#   https://kirill18734.github.io/PrintNum/privacy.html — политика (для магазинов)
+#
+# Один раз включить: Settings → Pages → Source: "GitHub Actions".
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Деплой docs/
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Проверка страниц (нет битых ссылок между файлами)
+        run: |
+          set -e
+          for f in docs/index.html docs/install.html docs/privacy.html; do
+            [ -f "$f" ] || { echo "❌ нет $f"; exit 1; }
+          done
+          # ссылки на локальные html должны существовать
+          for href in $(grep -ohE 'href="[a-z0-9._-]+\.html"' docs/*.html | sed 's/href="//;s/"//' | sort -u); do
+            [ -f "docs/$href" ] || { echo "❌ битая ссылка: $href"; exit 1; }
+          done
+          echo "✅ страницы на месте"
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

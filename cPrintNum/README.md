@@ -1379,6 +1379,34 @@ python3 -c "import json;m=json.load(open('output/chrome-mv3/manifest.json'));pri
 
 ## 8. Проверка и тесты
 
+### CI/CD (GitHub Actions)
+
+| Workflow | Когда | Что делает |
+|---|---|---|
+| `.github/workflows/ci.yml` | push в `main`, PR, вручную | 3 параллельных job'а (см. ниже) |
+| `.github/workflows/release.yml` | тег `v*` | сборка релиза + публикация GitHub Release |
+| `.github/workflows/pages.yml` | push в `main` с изменениями в `docs/` | деплой страниц на GitHub Pages |
+
+Job'ы `ci.yml`:
+
+- **server** — `SKIP_EXTENSION=1 ./build.sh` (MinGW), затем проверки:
+  нет `api-ms-win-crt` в импортах (иначе Win7 не запустит), subsystem
+  `Windows GUI` у `printnum-win7.exe` и `Windows CUI` у `printnum-diag.exe`,
+  компиляция с `-Wall -Wextra` без единого предупреждения; exe уходят
+  артефактом;
+- **extension** — `npm ci` → `npm run compile` → `npm run build` → проверка
+  манифеста (MV3, semver, описание ≤132, иконка 128, только `storage`/
+  `scripting`, никаких `localhost`/`<all_urls>` в `host_permissions`) →
+  `npm run pack:store` (архив с `manifest.json` в корне); артефакт;
+- **smoke** (после server) — ставит `wine` + `xvfb`, скачивает собранные exe
+  и прогоняет `./wine-ctl.sh start && ./wine-ctl.sh test` — те же **27
+  проверок HTTP API**, что локально; при падении печатает лог Wine и лог
+  службы.
+
+Тег для релиза: `git tag v2.1.0 && git push origin v2.1.0`.
+
+### Локальный минимум
+
 Автотестов в проекте нет. Практический минимум:
 
 | Что | Команда |

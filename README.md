@@ -1,5 +1,9 @@
 # PrintNum
 
+[![CI](https://github.com/kirill18734/PrintNum/actions/workflows/ci.yml/badge.svg)](https://github.com/kirill18734/PrintNum/actions/workflows/ci.yml)
+[![Release](https://github.com/kirill18734/PrintNum/actions/workflows/release.yml/badge.svg)](https://github.com/kirill18734/PrintNum/releases/latest)
+[![Pages](https://github.com/kirill18734/PrintNum/actions/workflows/pages.yml/badge.svg)](https://kirill18734.github.io/PrintNum/)
+
 Печать номеров ячеек и складских этикеток Ozon: desktop-служба для Windows +
 браузерное расширение для `turbo-pvz.ozon.ru`.
 
@@ -71,6 +75,17 @@ git tag v2.1.0 && git push origin v2.1.0   # CI соберёт и опублик
 `.github/workflows/release.yml` на тег `v*` собирает exe (MinGW), расширение
 (WXT), прогоняет `tsc`, проверяет архивы (manifest в корне, нет CRT-зависимостей)
 и публикует GitHub Release с файлами и текстом установки.
+
+## CI/CD
+
+| Workflow | Триггер | Что делает |
+|---|---|---|
+| [`ci.yml`](./.github/workflows/ci.yml) | push в `main`, PR | exe (MinGW) без CRT и без предупреждений `-Wall -Wextra`; `tsc` + сборка расширения + валидация манифеста; **27 smoke-проверок HTTP API под Wine** |
+| [`release.yml`](./.github/workflows/release.yml) | тег `v*` | сборка + GitHub Release с архивами, exe, `install.ps1`, `SHA256SUMS.txt` |
+| [`pages.yml`](./.github/workflows/pages.yml) | изменения в `docs/` | деплой `docs/` на GitHub Pages (`install.html`, `privacy.html`) |
+
+Проверки в CI не «на глаз»: падение любого из 27 запросов к службе валит job
+`smoke`, а предупреждение компилятора валит `server`.
 
 ## Связь компонентов
 
