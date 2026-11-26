@@ -11,8 +11,13 @@
 #    config.json, install.ps1 и README.txt. Тот же архив публикуется в GitHub
 #    Releases (scripts/release.sh ничего не переупаковывает).
 #
+# Собирается на macOS, Linux и Windows (Git Bash / MSYS2): нужен только
+# кросс-компилятор MinGW-w64 и, для расширения, Node.js + zip.
+# Целевая платформа одна — Windows 7 x64 (там работает служба печати).
+#
 # Переменные окружения:
 #   SKIP_EXTENSION=1  — собрать только exe (без Node.js/расширения)
+#   CC=...            — переопределить компилятор MinGW
 
 set -e
 
@@ -20,8 +25,88 @@ ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT_DIR"
 
 TARGET="x86_64-w64-mingw32"
-CC="${TARGET}-gcc"
 SRC="printnum-win7.c"
+
+# --- хост и тулчейн -------------------------------------------------------
+HOST_OS="$(uname -s 2>/dev/null || echo unknown)"
+case "$HOST_OS" in
+    Darwin)              HOST_NAME="macOS" ;;
+    Linux)               HOST_NAME="Linux" ;;
+    MINGW*|MSYS*|CYGWIN*) HOST_NAME="Windows (Git Bash/MSYS2)" ;;
+    *)                   HOST_NAME="$HOST_OS" ;;
+esac
+
+find_tool() {
+    # Ищем <target>-tool, затем просто tool (MSYS2/MinGW-сборки без префикса).
+    local want="$1" plain="$2"
+    command -v "$want" 2>/dev/null && return 0
+    command -v "$plain" 2>/dev/null && return 0
+    return 1
+}
+
+if [ -z "${CC:-}" ]; then
+    CC="$(find_tool "${TARGET}-gcc" "gcc")" || true
+fi
+if [ -z "${CC:-}" ] || ! command -v "$CC" >/dev/null 2>&1; then
+    echo "❌ Не найден кросс-компилятор MinGW-w64 (${TARGET}-gcc)."
+    case "$HOST_NAME" in
+        macOS)   echo "   brew install mingw-w64" ;;
+        Linux)   echo "   sudo apt install mingw-w64      # Debian/Ubuntu"
+                 echo "   sudo dnf install mingw64-gcc    # Fedora" ;;
+        Windows*) echo "   MSYS2: pacman -S mingw-w64-x86_64-gcc zip"
+                 echo "   или сборка из VS Code/CI через msys2/setup-msys2" ;;
+        *)       echo "   установите пакет mingw-w64 для своей системы" ;;
+    esac
+    exit 1
+fi
+
+OBJDUMP="$(find_tool "${TARGET}-objdump" "objdump")" || OBJDUMP=""
+ZIP="$(find_tool zip "")" || ZIP=""
+UNZIP="$(find_tool unzip "")" || UNZIP=""
+SHA256="$(find_tool sha256sum "")" || SHA256=""
+
+if [ -z "$SHA256" ] && command -v shasum >/dev/null 2>&1; then
+    SHA256="shasum -a 256"
+fi
+
+# Кладёт папку в архив: zip, если есть; иначе PowerShell Compress-Archive.
+make_zip() {
+    local out="$1" dir="$2" folder="$3"
+    rm -f "$out"
+    if [ -n "$ZIP" ]; then
+        ( cd "$dir" && "$ZIP" -qr "$out" "$folder" -x '*.DS_Store' -x '__MACOSX/*' )
+        return
+    fi
+    local win_out win_dir
+    win_out="$(cygpath -w "$out" 2>/dev/null || echo "$out")"
+    win_dir="$(cygpath -w "$dir" 2>/dev/null || echo "$dir")"
+    powershell.exe -NoProfile -Command \
+        "Compress-Archive -Path '$win_dir\\$folder' -DestinationPath '$win_out' -Force" >/dev/null
+}
+
+# Список файлов архива (проверка, что manifest.json внутри) — без unzip тоже.
+inspect_zip() {
+    if [ -n "$UNZIP" ]; then
+        "$UNZIP" -l "$1"
+    elif command -v powershell.exe >/dev/null 2>&1; then
+        powershell.exe -NoProfile -Command \
+            "Add-Type -A System.IO.Compression.FileSystem; [IO.Compression.ZipFile]::OpenRead('$(cygpath -w "$1")').Entries | ForEach-Object { \$_.FullName }"
+    else
+        echo "  (нет unzip — список файлов пропущен)"
+    fi
+}
+
+echo "=== Хост: $HOST_NAME ==="
+echo "=== Компилятор: $CC ==="
+if [ -z "$ZIP" ]; then
+    echo "⚠️  zip не найден — архив собирать не смогу."
+    case "$HOST_NAME" in
+        Windows*) echo "   MSYS2: pacman -S zip" ;;
+        macOS)    echo "   brew install zip" ;;
+        *)        echo "   sudo apt install zip" ;;
+    esac
+fi
+echo ""
 
 EXT_DIR="$ROOT_DIR/extension"
 EXT_OUT="$EXT_DIR/output/chrome-mv3"
@@ -37,11 +122,6 @@ echo "=== Сборка PrintNum (single-file, Win7) + расширение ==="
 echo "Target: ${TARGET}"
 echo ""
 
-if ! command -v ${CC} &> /dev/null; then
-    echo "Ошибка: ${CC} не найден. Установите: brew install mingw-w64"
-    exit 1
-fi
-
 build_one() {
     local src=$1
     local out=$2
@@ -53,9 +133,9 @@ build_one() {
         echo "✅ Сборка успешна: ${out}"
         echo "Размер: $(ls -lh ${out} | awk '{print $5}')"
         echo "Зависимости (DLL):"
-        ${TARGET}-objdump -p ${out} | grep "DLL Name" | sed 's/^/  /'
+        "$OBJDUMP" -p ${out} | grep "DLL Name" | sed 's/^/  /'
 
-        if ${TARGET}-objdump -p ${out} | grep -q "api-ms-win-crt"; then
+        if "$OBJDUMP" -p ${out} | grep -q "api-ms-win-crt"; then
             echo "⚠️  Найдены CRT зависимости — НЕ работает на чистой Windows 7"
             exit 1
         fi
@@ -197,7 +277,7 @@ find "$STAGE" -name '.DS_Store' -delete
 find "$STAGE" -name '__MACOSX' -type d -prune -exec rm -rf {} +
 
 rm -f "$DIST/$WINDOWS_ZIP"
-( cd "$STAGE" && zip -qr "$DIST/$WINDOWS_ZIP" "PrintNum" -x '*.DS_Store' -x '__MACOSX/*' )
+make_zip "$DIST/$WINDOWS_ZIP" "$STAGE" "PrintNum"
 
 echo ""
 echo "=== Готово ==="
@@ -210,4 +290,4 @@ echo "  3) chrome://extensions → «Режим разработчика» → �
 echo "     → выбрать папку PrintNum\\extension"
 echo ""
 echo "Содержимое $WINDOWS_ZIP:"
-unzip -l "$DIST/$WINDOWS_ZIP"
+inspect_zip "$DIST/$WINDOWS_ZIP"

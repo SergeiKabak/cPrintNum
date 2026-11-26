@@ -50,7 +50,14 @@ mkdir -p "$OUT"
 # ---------- 1. только расширение ----------
 # manifest.json обязан быть в корне архива — иначе «Загрузить распакованное»
 # и магазины не поймут пакет.
-( cd "$EXT_OUT" && zip -X -r -9 "$OUT/printnum-extension-$VER.zip" . -x '*.map' '.DS_Store' >/dev/null )
+if command -v zip >/dev/null 2>&1; then
+    ( cd "$EXT_OUT" && zip -X -r -9 "$OUT/printnum-extension-$VER.zip" . -x '*.map' '.DS_Store' >/dev/null )
+else
+    # Windows-хост без zip: PowerShell сжимает содержимое папки.
+    rm -f "$OUT/printnum-extension-$VER.zip"
+    powershell.exe -NoProfile -Command \
+        "Compress-Archive -Path '$(cygpath -w "$EXT_OUT")\*' -DestinationPath '$(cygpath -w "$OUT/printnum-extension-$VER.zip")' -Force" >/dev/null
+fi
 echo "✅ printnum-extension-$VER.zip"
 
 # ---------- 2. exe + конфиг ----------
@@ -72,7 +79,21 @@ cp -f scripts/install.ps1 "$OUT"/
 echo "✅ install.ps1"
 
 # ---------- 5. контрольные суммы ----------
-( cd "$OUT" && shasum -a 256 *.zip *.exe *.ps1 2>/dev/null | sed 's/  /  /' > SHA256SUMS.txt )
+# macOS/shasum, Linux/sha256sum, Windows/MSYS2 — что найдётся.
+if command -v sha256sum >/dev/null 2>&1; then
+    SHA="sha256sum"
+elif command -v shasum >/dev/null 2>&1; then
+    SHA="shasum -a 256"
+else
+    SHA=""
+fi
+
+if [ -n "$SHA" ]; then
+    ( cd "$OUT" && $SHA *.zip *.exe *.ps1 2>/dev/null > SHA256SUMS.txt )
+else
+    echo "⚠️  sha256sum/shasum не найдены — SHA256SUMS.txt не создан"
+    : > "$OUT/SHA256SUMS.txt"
+fi
 echo "✅ SHA256SUMS.txt"
 
 echo ""

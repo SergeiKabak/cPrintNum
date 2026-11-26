@@ -1,0 +1,106 @@
+name: Build hosts
+
+# Один и тот же проект собирается на macOS, Linux и Windows (Git Bash/MSYS2).
+# Цель сборки одна — Windows 7 x64 (там работает служба печати), но
+# разработчик/CI не привязан к конкретной ОС.
+#
+# Проверяем: кросс-компиляция exe, отсутствие CRT-зависимостей, сборка
+# расширения, единый архив PrintNum-<ver>-windows.zip с manifest.json внутри.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: hosts-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: Linux
+            setup: |
+              sudo apt-get update -qq
+              sudo apt-get install -y -qq mingw-w64 zip unzip >/dev/null
+          - os: macos-latest
+            name: macOS
+            setup: |
+              brew install mingw-w64 >/dev/null 2>&1 || brew upgrade mingw-w64 >/dev/null 2>&1 || true
+          - os: windows-latest
+            name: Windows (MSYS2)
+            msys2: true
+            setup: ""
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # Windows: MinGW + zip из MSYS2 (bash тоже оттуда).
+      - name: MSYS2 (Windows)
+        if: matrix.msys2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            mingw-w64-x86_64-gcc
+            zip
+            unzip
+
+      - name: Тулчейн (Linux/macOS)
+        if: ${{ !matrix.msys2 }}
+        run: ${{ matrix.setup }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: cPrintNum/extension/package-lock.json
+
+      - name: Зависимости расширения
+        shell: bash
+        working-directory: cPrintNum/extension
+        run: npm ci
+
+      - name: Сборка (build.sh)
+        shell: bash
+        working-directory: cPrintNum
+        run: |
+          chmod +x build.sh
+          ./build.sh
+
+      - name: Проверки архива и exe
+        shell: bash
+        working-directory: cPrintNum
+        run: |
+          set -e
+          ZIP=$(ls dist/PrintNum-*-windows.zip)
+          echo "архив: $ZIP"
+          OBJDUMP=$(command -v x86_64-w64-mingw32-objdump || command -v objdump)
+          for exe in printnum-win7.exe printnum-diag.exe; do
+            if "$OBJDUMP" -p "$exe" | grep -q api-ms-win-crt; then
+              echo "❌ $exe тянет CRT"; exit 1
+            fi
+            echo "✅ $exe без CRT ($(stat -c%s "$exe" 2>/dev/null || stat -f%z "$exe") байт)"
+          done
+          if command -v unzip >/dev/null 2>&1; then
+            unzip -l "$ZIP" | grep -q 'PrintNum/extension/manifest.json'
+            unzip -l "$ZIP" | grep -q 'PrintNum/printnum-win7.exe'
+            echo "✅ в архиве extension/manifest.json и exe"
+          fi
+
+      - name: Артефакт
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-build-${{ matrix.name }}
+          path: |
+            cPrintNum/dist/PrintNum-*-windows.zip
+            cPrintNum/extension/output/chrome-mv3
+          retention-days: 5
