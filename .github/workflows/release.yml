@@ -8,7 +8,13 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  # Ручной прогон: собрать и проверить архив, но не публиковать релиз.
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Собрать, но не публиковать релиз"
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -17,7 +23,7 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Зависимости (mingw, zip)
         run: |
@@ -25,7 +31,7 @@ jobs:
           sudo apt-get install -y -qq mingw-w64 zip >/dev/null
 
       - name: Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "20"
           cache: npm
@@ -57,7 +63,9 @@ jobs:
           echo "архивы ок"
 
       - name: Публикация релиза
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
+        # dry_run (ручной прогон) только собирает файлы и печатает их список.
+        if: ${{ github.event_name == 'push' || inputs.dry_run != true }}
         with:
           name: PrintNum ${{ github.ref_name }}
           generate_release_notes: true
