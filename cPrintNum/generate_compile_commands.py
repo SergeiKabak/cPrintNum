@@ -1,44 +1,80 @@
+#!/usr/bin/env python3
+"""Генерирует compile_commands.json для clangd (extension/ не нужен).
+
+Файл машино-зависимый: внутри абсолютные пути и sysroot MinGW, поэтому он
+в .gitignore. Флаги намеренно повторяют build.sh — иначе clangd ругается на
+код, который на самом деле собирается нормально.
+
+    python3 generate_compile_commands.py
+"""
+
 import json
-import subprocess
 import os
+import subprocess
+import sys
 
-# Находим путь к MinGW sysroot
-try:
-    result = subprocess.run(["x86_64-w64-mingw32-gcc", "-print-sysroot"], capture_output=True, text=True, check=True)
-    sysroot = result.stdout.strip()
-except:
-    sysroot = "/opt/homebrew/Cellar/mingw-w64/14.0.0_3/toolchain-x86_64/x86_64-w64-mingw32"
+CC = "x86_64-w64-mingw32-gcc"
+SRC = "printnum-win7.c"
 
-cwd = os.getcwd()
-args = [
-    "x86_64-w64-mingw32-gcc",
-    "-municode", "-O2", "-Wall", "-static",
-    "-nostdlib", "-e", "wWinMain",
-    "-ffreestanding", "-fno-builtin",
-    "-I.",  # локальные заголовки
-    f"-isystem{sysroot}/include",  # MinGW system headers
-    f"-isystem{sysroot}/include/crt",  # CRT headers (если есть)
+# Как в build.sh (COMMON_FLAGS), но без -s и линковки: clangd нужен разбор кода.
+FLAGS = [
+    "-municode",
+    "-Os",
+    "-Wall",
+    "-Wextra",
+    "-static",
+    "-nostdlib",
+    "-e",
+    "wWinMain",
+    "-ffreestanding",
+    "-fno-builtin",
 ]
 
-# Определяем целевые файлы
-targets = ["printnum-win7.c", "test-min.c"]
 
-commands = []
-for src in ["printnum-win7.c", "test-min.c"]:
-    commands.append({
-        "directory": cwd,
-        "command": " ".join(["x86_64-w64-mingw32-gcc"] + [
-            "-municode", "-O2", "-Wall", "-static",
-            "-nostdlib", "-e", "wWinMain",
-            "-ffreestanding", "-fno-builtin",
-            f"-isystem{sysroot}/include",
-            src, "-o", src.replace(".c", ".exe"),
-            "-lgcc", "-lkernel32", "-luser32", "-lgdi32", "-lwinspool", "-lws2_32", "-lshell32"
-        ]),
-        "file": os.path.join(cwd, src)
-    })
+def run(args):
+    try:
+        out = subprocess.run(args, capture_output=True, text=True, check=True)
+        return out.stdout.strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return ""
 
-with open(os.path.join(cwd, "compile_commands.json"), "w") as f:
-    json.dump(commands, f, indent=2)
 
-print("compile_commands.json создан")
+def main() -> int:
+    cwd = os.getcwd()
+    if not os.path.exists(os.path.join(cwd, SRC)):
+        print(f"Запустите из каталога cPrintNum/ (нет {SRC})")
+        return 1
+
+    if not run([CC, "--version"]):
+        print(f"Не найден {CC}. Установите: brew install mingw-w64")
+        return 1
+
+    # Sysroot нужен clangd, чтобы видеть заголовки MinGW (в т.ч. crt/*.h).
+    sysroot = run([CC, "-print-sysroot"])
+    includes = []
+    if sysroot:
+        includes = [f"-isystem{sysroot}/include"]
+        crt = os.path.join(sysroot, "include", "crt")
+        if os.path.isdir(crt):
+            includes.append(f"-isystem{crt}")
+
+    command = " ".join([CC, *FLAGS, *includes, "-c", SRC, "-o", "/dev/null"])
+
+    data = [
+        {
+            "directory": cwd,
+            "file": os.path.join(cwd, SRC),
+            "command": command,
+        }
+    ]
+
+    with open(os.path.join(cwd, "compile_commands.json"), "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+
+    print(f"compile_commands.json создан: {SRC} ({len(FLAGS) + len(includes)} флагов)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

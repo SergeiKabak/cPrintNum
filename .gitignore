@@ -47,3 +47,8 @@ cPrintNum/*.bmp
 cPrintNum/*.bin
 cPrintNum/preview/
 cPrintNum/photo_*
+
+# Сгенерированное: clangd-БД (абсолютные пути) и кэш Python
+compile_commands.json
+__pycache__/
+*.pyc
