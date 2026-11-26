@@ -1,8 +1,8 @@
 # PrintNum
 
-[![CI](https://github.com/kirill18734/PrintNum/actions/workflows/ci.yml/badge.svg)](https://github.com/kirill18734/PrintNum/actions/workflows/ci.yml)
-[![Release](https://github.com/kirill18734/PrintNum/actions/workflows/release.yml/badge.svg)](https://github.com/kirill18734/PrintNum/releases/latest)
-[![Pages](https://github.com/kirill18734/PrintNum/actions/workflows/pages.yml/badge.svg)](https://kirill18734.github.io/PrintNum/)
+[![CI](https://github.com/SergeiKabak/PrintNum/actions/workflows/ci.yml/badge.svg)](https://github.com/SergeiKabak/PrintNum/actions/workflows/ci.yml)
+[![Release](https://github.com/SergeiKabak/PrintNum/actions/workflows/release.yml/badge.svg)](https://github.com/SergeiKabak/PrintNum/releases/latest)
+[![Pages](https://github.com/SergeiKabak/PrintNum/actions/workflows/pages.yml/badge.svg)](https://sergeikabak.github.io/PrintNum/)
 
 Печать номеров ячеек и складских этикеток Ozon: desktop-служба для Windows +
 браузерное расширение для `turbo-pvz.ozon.ru`.
@@ -47,7 +47,7 @@ npm run dev                # → output/chrome-mv3
 
 ## Установка (для оператора ПВЗ)
 
-Готовые сборки — в [Releases](https://github.com/kirill18734/PrintNum/releases/latest):
+Готовые сборки — в [Releases](https://github.com/SergeiKabak/PrintNum/releases/latest):
 
 | Файл | Что это |
 |---|---|
@@ -58,8 +58,8 @@ npm run dev                # → output/chrome-mv3
 | `SHA256SUMS.txt` | контрольные суммы |
 
 Пошаговая инструкция с картинками:
-**<https://kirill18734.github.io/PrintNum/install.html>** ·
-[политика конфиденциальности](https://kirill18734.github.io/PrintNum/privacy.html)
+**<https://sergeikabak.github.io/PrintNum/install.html>** ·
+[политика конфиденциальности](https://sergeikabak.github.io/PrintNum/privacy.html)
 
 Windows 7 SP1 x64 и новее, Chrome/Edge 109+, принтер этикеток в системе.
 Права администратора не нужны, установка службы Windows не выполняется.

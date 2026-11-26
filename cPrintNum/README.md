@@ -1208,7 +1208,7 @@ popup-панели (`Help`, `qrCommands`, `autoscript`, `SettingSection`, `hide/
 
 **Страницы.** `docs/` (GitHub Pages, Source: `main` / `docs`) — `index.html`,
 `install.html`, `privacy.html`; политика конфиденциальности для магазинов:
-`https://kirill18734.github.io/PrintNum/privacy.html`.
+`https://sergeikabak.github.io/PrintNum/privacy.html`.
 
 ## 5. Связь сервер ↔ клиент
 

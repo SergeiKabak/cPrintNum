@@ -105,7 +105,7 @@ PrintNum — печать этикеток ячеек и QR для ПВЗ Ozon
 • http://127.0.0.1:5000/status-printer — видит ли служба принтер;
 • принтер должен быть установлен в Windows (драйвер), имя — в config.json
   или в popup расширения;
-• подробности: https://github.com/kirill18734/PrintNum
+• подробности: https://github.com/SergeiKabak/PrintNum
 TXT
 
 ( cd "$STAGE" && zip -X -r -9 "$OUT/PrintNum-$VER-windows.zip" "PrintNum" >/dev/null )
