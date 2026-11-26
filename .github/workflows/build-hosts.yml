@@ -80,20 +80,35 @@ jobs:
         shell: bash
         working-directory: cPrintNum
         run: |
-          set -e
-          ZIP=$(ls dist/PrintNum-*-windows.zip)
+          set -euo pipefail
+          ZIP=$(ls dist/PrintNum-*-windows.zip | head -1)
           echo "архив: $ZIP"
+
           OBJDUMP=$(command -v x86_64-w64-mingw32-objdump || command -v objdump)
           for exe in printnum-win7.exe printnum-diag.exe; do
-            if "$OBJDUMP" -p "$exe" | grep -q api-ms-win-crt; then
-              echo "❌ $exe тянет CRT"; exit 1
+            # пишем в файл: `objdump | grep -q` под pipefail даёт SIGPIPE (141)
+            "$OBJDUMP" -p "$exe" > "objdump-$exe.txt"
+            if grep -q api-ms-win-crt "objdump-$exe.txt"; then
+              echo "❌ $exe тянет CRT — на чистой Windows 7 не запустится"
+              exit 1
             fi
-            echo "✅ $exe без CRT ($(stat -c%s "$exe" 2>/dev/null || stat -f%z "$exe") байт)"
+            size=$(stat -c%s "$exe" 2>/dev/null || stat -f%z "$exe")
+            echo "✅ $exe без CRT ($size байт)"
           done
+
           if command -v unzip >/dev/null 2>&1; then
-            unzip -l "$ZIP" | grep -q 'PrintNum/extension/manifest.json'
-            unzip -l "$ZIP" | grep -q 'PrintNum/printnum-win7.exe'
+            unzip -l "$ZIP" > zip-list.txt 2>&1 || true
+            head -6 zip-list.txt
+            if ! grep -q 'PrintNum/extension/manifest.json' zip-list.txt; then
+              echo "❌ в архиве нет PrintNum/extension/manifest.json"
+              tail -25 zip-list.txt
+              exit 1
+            fi
+            grep -q 'PrintNum/printnum-win7.exe' zip-list.txt || {
+              echo "❌ в архиве нет printnum-win7.exe"; exit 1; }
             echo "✅ в архиве extension/manifest.json и exe"
+          else
+            echo "⚠️ unzip не найден — проверка содержимого пропущена"
           fi
 
       - name: Артефакт
