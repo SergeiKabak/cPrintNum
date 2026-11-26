@@ -90,8 +90,13 @@ make_zip() {
         local win_out win_dir
         win_out="$(cygpath -w "$out" 2>/dev/null || echo "$out")"
         win_dir="$(cygpath -w "$dir" 2>/dev/null || echo "$dir")"
+        # Compress-Archive в Windows PowerShell 5.1 пишет разделители как
+        # "PrintNum\extension\file" — Windows Explorer такой архив распаковывает
+        # неправильно. ZipFile.CreateFromDirectory всегда даёт "/".
         "$PWSH" -NoProfile -Command \
-            "Compress-Archive -Path '$win_dir\\$folder' -DestinationPath '$win_out' -Force" >/dev/null
+            "Add-Type -AssemblyName System.IO.Compression.FileSystem; \
+             if (Test-Path '$win_out') { Remove-Item '$win_out' -Force }; \
+             [IO.Compression.ZipFile]::CreateFromDirectory('$win_dir\\$folder', '$win_out', [IO.Compression.CompressionLevel]::Optimal, \$true)" >/dev/null
         return
     fi
 
@@ -122,8 +127,8 @@ echo "=== Хост: $HOST_NAME ==="
 [ -n "$PWSH" ] && echo "=== Архиватор: PowerShell (Compress-Archive, прямые слэши) ===" \
               || echo "=== Архиватор: zip ==="
 echo "=== Компилятор: $CC ==="
-if [ -z "$ZIP" ]; then
-    echo "⚠️  zip не найден — архив собирать не смогу."
+if [ -z "$ZIP" ] && [ -z "$PWSH" ]; then
+    echo "⚠️  ни zip, ни PowerShell не найдены — архив не собрать."
     case "$HOST_NAME" in
         Windows*) echo "   MSYS2: pacman -S zip" ;;
         macOS)    echo "   brew install zip" ;;
