@@ -16,20 +16,14 @@ function rem2px(input, fontSize = 16) {
         return ret;
       }
     case "string":
-      return input.replace(
-        /(\d*\.?\d+)rem$/,
-        (_, val) => parseFloat(val) * fontSize + "px",
-      );
+      return input.replace(/(\d*\.?\d+)rem$/, (_, val) => parseFloat(val) * fontSize + "px");
     default:
       return input;
   }
 }
 module.exports = {
   darkMode: ["class"],
-  content: [
-    "./src/entrypoints/**/*.{html,ts,tsx}",
-    "./src/components/**/*.{html,ts,tsx}",
-  ],
+  content: ["./src/entrypoints/**/*.{html,ts,tsx}", "./src/components/**/*.{html,ts,tsx}"],
   prefix: "",
   theme: {
     container: {

@@ -23,9 +23,7 @@ export default function StatusPrinting() {
   return (
     <div
       className={`flex items-center p-3 gap-3 border rounded-xl w-full ${
-        isActive
-          ? "bg-emerald-500/10 border-emerald-500/20"
-          : "bg-red-500/10 border-red-500/20"
+        isActive ? "bg-emerald-500/10 border-emerald-500/20" : "bg-red-500/10 border-red-500/20"
       }`}
     >
       {/* Индикатор */}
@@ -44,9 +42,7 @@ export default function StatusPrinting() {
       <div className="flex flex-col">
         <span
           className={`font-bold text-sm tracking-wide ${
-            isActive
-              ? "text-emerald-600 dark:text-emerald-400"
-              : "text-red-600 dark:text-red-400"
+            isActive ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"
           }`}
         >
           {isActive ? "Печать активна" : "Печать не активна"}
@@ -59,9 +55,7 @@ export default function StatusPrinting() {
               : "text-red-600/80 dark:text-red-400/80"
           }`}
         >
-          {isActive
-            ? "Сервис печати работает"
-            : "Проверьте, что приложение PrintNum запущено"}
+          {isActive ? "Сервис печати работает" : "Проверьте, что приложение PrintNum запущено"}
         </span>
       </div>
     </div>

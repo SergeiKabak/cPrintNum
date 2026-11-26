@@ -101,6 +101,10 @@ jobs:
         working-directory: cPrintNum/extension
         run: npm ci
 
+      - name: Форматирование (prettier --check)
+        working-directory: cPrintNum/extension
+        run: npm run format:check
+
       - name: Типы (tsc --noEmit)
         working-directory: cPrintNum/extension
         run: npm run compile

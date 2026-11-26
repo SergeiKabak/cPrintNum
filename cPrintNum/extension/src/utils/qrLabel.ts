@@ -13,11 +13,7 @@
 
 import qrcode from "qrcode-generator";
 
-export type TextMeasurer = (
-  text: string,
-  fontSizePx: number,
-  bold: boolean,
-) => number;
+export type TextMeasurer = (text: string, fontSizePx: number, bold: boolean) => number;
 
 export type QrLabelOptions = {
   /** Ширина этикетки в мм (из `paper`, по умолчанию 43). */
@@ -80,19 +76,14 @@ export function createCanvasTextMeasurer(): TextMeasurer | undefined {
  * Бросает ошибку, если значение пустое или содержит не-ASCII символы:
  * C-служба (`draw_qr_label_core`) тоже принимает только ASCII 32..127.
  */
-export function buildQrLabelSvg(
-  input: string,
-  options: QrLabelOptions = {},
-): QrLabel {
+export function buildQrLabelSvg(input: string, options: QrLabelOptions = {}): QrLabel {
   const text = input.trim();
   if (!text) throw new Error("Пустая строка: нечего кодировать");
 
   for (const ch of text) {
     const code = ch.charCodeAt(0);
     if (code < 32 || code > 127) {
-      throw new Error(
-        `Недопустимый символ '${ch}': QR-этикетка поддерживает только ASCII 32..127`,
-      );
+      throw new Error(`Недопустимый символ '${ch}': QR-этикетка поддерживает только ASCII 32..127`);
     }
   }
 
@@ -167,9 +158,7 @@ export function buildQrLabelSvg(
 
   // Два одинаковых QR: слева и справа.
   for (const qrX of [leftX, rightX]) {
-    parts.push(
-      `<rect x="${qrX}" y="${qrY}" width="${qrSide}" height="${qrSide}" fill="#ffffff"/>`,
-    );
+    parts.push(`<rect x="${qrX}" y="${qrY}" width="${qrSide}" height="${qrSide}" fill="#ffffff"/>`);
 
     const rects: string[] = [];
     for (let row = 0; row < count; row++) {

@@ -83,7 +83,7 @@ git tag v2.1.0 && git push origin v2.1.0   # CI соберёт и опублик
 
 | Workflow | Триггер | Что делает |
 |---|---|---|
-| [`ci.yml`](./.github/workflows/ci.yml) | push в любую ветку, PR | exe (MinGW) без CRT и без предупреждений `-Wall -Wextra`; `tsc` + сборка расширения + валидация манифеста |
+| [`ci.yml`](./.github/workflows/ci.yml) | push в любую ветку, PR | exe (MinGW) без CRT и без предупреждений `-Wall -Wextra`; prettier-проверка, `tsc` + сборка расширения + валидация манифеста |
 | [`release.yml`](./.github/workflows/release.yml) | тег `v*` | сборка + GitHub Release с архивами, exe, `install.ps1`, `SHA256SUMS.txt` |
 | [`pages.yml`](./.github/workflows/pages.yml) | изменения в `docs/` | деплой `docs/` на GitHub Pages (`install.html`, `privacy.html`) |
 

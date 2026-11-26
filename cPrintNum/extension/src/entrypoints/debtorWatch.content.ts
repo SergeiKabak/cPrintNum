@@ -89,9 +89,7 @@ export default defineContentScript({
       const hits = debtors.filter((d) => byClient.has(d.clientId));
       if (hits.length) {
         console.info(
-          `[PrintNum:debt] в сессиях выдачи должники: ${hits
-            .map((d) => d.clientId)
-            .join(", ")}`,
+          `[PrintNum:debt] в сессиях выдачи должники: ${hits.map((d) => d.clientId).join(", ")}`,
         );
       }
     };
@@ -110,8 +108,7 @@ export default defineContentScript({
       const debtor = debtors.find((d) => matchedClients.has(d.clientId));
       if (!debtor) return;
 
-      const display =
-        debtor.name || clientNames.get(debtor.clientId) || "";
+      const display = debtor.name || clientNames.get(debtor.clientId) || "";
       const who = display ? `${display} (${debtor.clientId})` : debtor.clientId;
       showToast(`Не оплачено!\n${who}\nОтправление: ${code}`, "err", TOAST_MS);
       console.warn(`[PrintNum:debt] должник ${who}, отправление ${code}`);
@@ -131,12 +128,9 @@ export default defineContentScript({
 
         rememberSessions(
           pairs.filter(
-            (p: any) =>
-              p && typeof p.clientId === "string" && typeof p.code === "string",
+            (p: any) => p && typeof p.clientId === "string" && typeof p.code === "string",
           ),
-          clients.filter(
-            (c: any) => c && typeof c.clientId === "string",
-          ),
+          clients.filter((c: any) => c && typeof c.clientId === "string"),
         );
         return;
       }

@@ -100,13 +100,9 @@ export default function PrintSettingsPanel() {
     return (
       <div className="w-full rounded-xl border bg-card text-card-foreground shadow-sm p-3">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-bold tracking-tight">
-            Настройки печати
-          </span>
+          <span className="text-sm font-bold tracking-tight">Настройки печати</span>
         </div>
-        <p className="mt-1 text-xs text-muted-foreground">
-          {error || "Загрузка настроек..."}
-        </p>
+        <p className="mt-1 text-xs text-muted-foreground">{error || "Загрузка настроек..."}</p>
       </div>
     );
   }
@@ -121,9 +117,7 @@ export default function PrintSettingsPanel() {
         {saving ? (
           <span className="text-[10px] text-muted-foreground">сохранение…</span>
         ) : savedAt ? (
-          <span className="text-[10px] text-emerald-600 dark:text-emerald-400">
-            сохранено
-          </span>
+          <span className="text-[10px] text-emerald-600 dark:text-emerald-400">сохранено</span>
         ) : null}
       </div>
 
@@ -158,18 +152,16 @@ export default function PrintSettingsPanel() {
 
         {/* Принтер */}
         <label className="flex flex-col gap-1">
-          <span className="text-[11px] font-medium text-muted-foreground">
-            Принтер
-          </span>
+          <span className="text-[11px] font-medium text-muted-foreground">Принтер</span>
           <select
             value={settings.printer}
             onChange={(e) => patch({ printer: (e.target as HTMLSelectElement).value })}
             className="h-8 w-full rounded-md border border-border bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-ring appearance-none"
             style={{
               backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`,
-              backgroundPosition: 'right 8px center',
-              backgroundRepeat: 'no-repeat',
-              backgroundSize: '16px 16px',
+              backgroundPosition: "right 8px center",
+              backgroundRepeat: "no-repeat",
+              backgroundSize: "16px 16px",
             }}
           >
             <option value="">— не выбран —</option>
@@ -179,9 +171,7 @@ export default function PrintSettingsPanel() {
                 показываем имя принтера как есть. */}
             {settings.printer && !printers.includes(settings.printer) && (
               <option value={settings.printer}>
-                {printers.length
-                  ? `${settings.printer} (не найден)`
-                  : settings.printer}
+                {printers.length ? `${settings.printer} (не найден)` : settings.printer}
               </option>
             )}
             {printers.map((p) => (
@@ -194,18 +184,16 @@ export default function PrintSettingsPanel() {
 
         {/* Размер этикетки */}
         <label className="flex flex-col gap-1">
-          <span className="text-[11px] font-medium text-muted-foreground">
-            Этикетка (мм)
-          </span>
+          <span className="text-[11px] font-medium text-muted-foreground">Этикетка (мм)</span>
           <select
             value={settings.paper}
             onChange={(e) => patch({ paper: (e.target as HTMLSelectElement).value })}
             className="h-8 w-full rounded-md border border-border bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-ring appearance-none"
             style={{
               backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`,
-              backgroundPosition: 'right 8px center',
-              backgroundRepeat: 'no-repeat',
-              backgroundSize: '16px 16px',
+              backgroundPosition: "right 8px center",
+              backgroundRepeat: "no-repeat",
+              backgroundSize: "16px 16px",
             }}
           >
             {/* Размер, сохранённый в конфиге, но отсутствующий в списке
@@ -248,30 +236,26 @@ export default function PrintSettingsPanel() {
           />
           {settings.qrWithNumber && (
             <span className="text-[10px] text-muted-foreground leading-tight pl-6">
-              Номер печатается без точки, QR — справа. Нужен штрихкод в ответе
-              Ozon (режим автопечати «Перехват ответов Ozon»).
+              Номер печатается без точки, QR — справа. Нужен штрихкод в ответе Ozon (режим
+              автопечати «Перехват ответов Ozon»).
             </span>
           )}
 
           {/* Режим печати: драйвер Windows или raw ESC/POS (без настроек). */}
           <div className="flex flex-col gap-2 pt-2 mt-1 border-t border-border/50">
             <label className="flex flex-col gap-1">
-              <span className="text-[11px] font-medium text-muted-foreground">
-                Режим печати
-              </span>
+              <span className="text-[11px] font-medium text-muted-foreground">Режим печати</span>
               <select
                 value={settings.printerMode || "gdi"}
-                onChange={(e) =>
-                  patch({ printerMode: (e.target as HTMLSelectElement).value })
-                }
+                onChange={(e) => patch({ printerMode: (e.target as HTMLSelectElement).value })}
                 className="h-8 w-full rounded-md border border-border bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-ring"
               >
                 <option value="gdi">Через драйвер Windows (GDI)</option>
                 <option value="escpos">ESC/POS (raw, без настроек драйвера)</option>
               </select>
               <span className="text-[10px] text-muted-foreground leading-tight">
-                ESC/POS печатает картинку напрямую: размер этикетки, зазор и
-                сдвиг задаются здесь, а не в свойствах принтера.
+                ESC/POS печатает картинку напрямую: размер этикетки, зазор и сдвиг задаются здесь, а
+                не в свойствах принтера.
               </span>
             </label>
 
@@ -291,8 +275,8 @@ export default function PrintSettingsPanel() {
                 className="h-8 w-full rounded-md border border-border bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-ring"
               />
               <span className="text-[10px] text-muted-foreground leading-tight">
-                Если задано — принтер не используется, каждая печать сохраняется
-                в BMP: удобно проверять всю цепочку без бумаги.
+                Если задано — принтер не используется, каждая печать сохраняется в BMP: удобно
+                проверять всю цепочку без бумаги.
               </span>
             </label>
 
@@ -312,14 +296,10 @@ export default function PrintSettingsPanel() {
                   onChange={(v) => patch({ rawXOffsetMm: v })}
                 />
                 <label className="flex flex-col gap-1">
-                  <span className="text-[11px] font-medium text-muted-foreground">
-                    Транспорт
-                  </span>
+                  <span className="text-[11px] font-medium text-muted-foreground">Транспорт</span>
                   <select
                     value={settings.rawTransport || "spooler"}
-                    onChange={(e) =>
-                      patch({ rawTransport: (e.target as HTMLSelectElement).value })
-                    }
+                    onChange={(e) => patch({ rawTransport: (e.target as HTMLSelectElement).value })}
                     className="h-8 w-full rounded-md border border-border bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-ring"
                   >
                     <option value="spooler">Спулер (USB/LAN/BT)</option>
@@ -377,18 +357,15 @@ export default function PrintSettingsPanel() {
               />
             )}
             <span className="text-[10px] text-muted-foreground leading-tight">
-              Работает и вместе с QR. Клетка зависит от числа цифр: 1 → 0.5 мм,
-              2 → 0.25 мм, 3 → 0.125 мм, 4+ → 0.05 мм; значение выше — только
-              верхняя граница.
+              Работает и вместе с QR. Клетка зависит от числа цифр: 1 → 0.5 мм, 2 → 0.25 мм, 3 →
+              0.125 мм, 4+ → 0.05 мм; значение выше — только верхняя граница.
             </span>
           </div>
 
           {/* Порог показываем только когда он влияет на печать. */}
           {settings.hybrid && (
             <label className="flex items-center gap-2 pl-6">
-              <span className="text-[11px] text-muted-foreground">
-                Начиная с номера
-              </span>
+              <span className="text-[11px] text-muted-foreground">Начиная с номера</span>
               <input
                 type="number"
                 min={1}
@@ -403,18 +380,9 @@ export default function PrintSettingsPanel() {
           )}
         </div>
 
-        {error && (
-          <div className="text-[11px] text-red-600 dark:text-red-400">
-            {error}
-          </div>
-        )}
+        {error && <div className="text-[11px] text-red-600 dark:text-red-400">{error}</div>}
 
-        <Button
-          variant="outline"
-          size="sm"
-          className="w-full"
-          onClick={() => load()}
-        >
+        <Button variant="outline" size="sm" className="w-full" onClick={() => load()}>
           Обновить
         </Button>
 
@@ -441,9 +409,7 @@ export default function PrintSettingsPanel() {
             disabled={serviceBusy}
             onClick={async () => {
               setServiceBusy(true);
-              const result = serviceInstalled
-                ? await uninstallService()
-                : await installService();
+              const result = serviceInstalled ? await uninstallService() : await installService();
               setServiceBusy(false);
 
               if (result.ok) {
@@ -461,7 +427,8 @@ export default function PrintSettingsPanel() {
                 : "Установить в автозагрузку"}
           </Button>
           <p className="text-[10px] text-muted-foreground mt-1 leading-tight">
-            При автозагрузке служба запускается автоматически при входе в систему. Печать работает без открытого окна приложения.
+            При автозагрузке служба запускается автоматически при входе в систему. Печать работает
+            без открытого окна приложения.
           </p>
         </div>
       </div>

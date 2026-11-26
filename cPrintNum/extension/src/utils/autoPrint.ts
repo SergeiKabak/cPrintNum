@@ -22,10 +22,7 @@ import {
   type AutoPrintEvent,
   type AutoPrintSettings,
 } from "@/utils/autoPrintSettings";
-import {
-  normalizePlacement,
-  type Placement,
-} from "@/utils/ozonPlacements";
+import { normalizePlacement, type Placement } from "@/utils/ozonPlacements";
 
 type LastAutoPrint = {
   text: string;
@@ -69,10 +66,7 @@ function isAllowed(placement: Placement, settings: AutoPrintSettings): boolean {
   return true;
 }
 
-async function isDuplicate(
-  placement: Placement,
-  settings: AutoPrintSettings,
-): Promise<boolean> {
+async function isDuplicate(placement: Placement, settings: AutoPrintSettings): Promise<boolean> {
   const result = await chrome.storage.local.get(LAST_AUTO_PRINT_KEY);
   const last = result?.[LAST_AUTO_PRINT_KEY] as LastAutoPrint | undefined;
 
@@ -188,8 +182,7 @@ export async function handleAutoPrint(value: unknown): Promise<AutoPrintEvent | 
 
     return event;
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "PrintNum недоступен";
+    const message = error instanceof Error ? error.message : "PrintNum недоступен";
     const event = makeEvent(placement, false, null, message);
     await writeEvent(event);
     console.error(`[PrintNum:auto] сеть: ${message}`);

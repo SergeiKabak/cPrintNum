@@ -168,8 +168,7 @@ export function normalizePlacement(value: unknown): Placement | null {
         ? "transferByBarcode"
         : "resolve";
 
-  const origin: PlacementOrigin =
-    p.origin === "dom" || p.origin === "scanner" ? p.origin : "xhr";
+  const origin: PlacementOrigin = p.origin === "dom" || p.origin === "scanner" ? p.origin : "xhr";
 
   const dedupe: PlacementDedupe =
     p.dedupe === "none" || p.dedupe === "consecutive"
@@ -181,10 +180,7 @@ export function normalizePlacement(value: unknown): Placement | null {
   // QR-полезная нагрузка: печатный ASCII до 64 символов. Это может быть
   // `ii…` (штрихкод товара) или номер отправления вида `78060603-0180-1` —
   // резолвер приёмки отдаёт именно его в `article.barcode`.
-  const qr =
-    typeof p.qr === "string" && QR_PAYLOAD_RE.test(p.qr.trim())
-      ? p.qr.trim()
-      : undefined;
+  const qr = typeof p.qr === "string" && QR_PAYLOAD_RE.test(p.qr.trim()) ? p.qr.trim() : undefined;
 
   return {
     text,

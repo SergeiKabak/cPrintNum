@@ -16,8 +16,7 @@ const PORT = import.meta.env.VITE_PRINTNUM_PORT || DEFAULT_PORT;
 const API_BASE = `http://127.0.0.1:${PORT}`;
 
 export const sendServer = {
-  get: async (domain = API_BASE, endpoint = "") =>
-    fetch(`${domain}/${endpoint}`),
+  get: async (domain = API_BASE, endpoint = "") => fetch(`${domain}/${endpoint}`),
   post: async (endpoint: string, body: Object) =>
     fetch(`${API_BASE}/${endpoint}`, {
       method: "POST",

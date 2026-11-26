@@ -92,9 +92,7 @@ export default defineContentScript({
       if (!box) return null;
 
       const field = box.querySelector(SELECTORS.copyValue) as
-        | HTMLTextAreaElement
-        | HTMLInputElement
-        | null;
+        HTMLTextAreaElement | HTMLInputElement | null;
 
       const raw =
         field?.value?.trim() ||

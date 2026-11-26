@@ -134,15 +134,13 @@ export default function DebtorsPanel() {
         <span className="text-sm font-bold tracking-tight flex-1 truncate leading-none">
           Должники
         </span>
-        <span className="text-[10px] text-muted-foreground shrink-0">
-          {list.length}
-        </span>
+        <span className="text-[10px] text-muted-foreground shrink-0">{list.length}</span>
       </div>
 
       <div className="p-3 flex flex-col gap-2">
         <span className="text-[10px] text-muted-foreground leading-tight">
-          При скане отправления на выдачу сверяем `clientId` с этим списком и
-          показываем предупреждение, если клиент в базе.
+          При скане отправления на выдачу сверяем `clientId` с этим списком и показываем
+          предупреждение, если клиент в базе.
         </span>
 
         <label className="flex flex-col gap-1">
@@ -169,9 +167,7 @@ export default function DebtorsPanel() {
             />
           </label>
           <label className="flex flex-col gap-1 flex-1 min-w-0">
-            <span className="text-[11px] font-medium text-muted-foreground">
-              Комментарий
-            </span>
+            <span className="text-[11px] font-medium text-muted-foreground">Комментарий</span>
             <input
               type="text"
               value={note}
@@ -182,13 +178,7 @@ export default function DebtorsPanel() {
         </div>
 
         <div className="flex gap-2">
-          <Button
-            variant="default"
-            size="sm"
-            className="flex-1"
-            disabled={!canSave}
-            onClick={save}
-          >
+          <Button variant="default" size="sm" className="flex-1" disabled={!canSave} onClick={save}>
             <Plus class="h-4 w-4 shrink-0" />
             <span>{editId ? "Сохранить" : "Добавить"}</span>
           </Button>
@@ -224,9 +214,7 @@ export default function DebtorsPanel() {
         {/* Список */}
         <div className="max-h-56 overflow-y-auto rounded-lg border border-border divide-y divide-border">
           {sorted.length === 0 && (
-            <div className="p-2 text-[11px] text-muted-foreground">
-              Список пуст
-            </div>
+            <div className="p-2 text-[11px] text-muted-foreground">Список пуст</div>
           )}
 
           {sorted.map((d) => (
@@ -237,9 +225,7 @@ export default function DebtorsPanel() {
                 className="flex-1 min-w-0 text-left"
                 title="Изменить"
               >
-                <div className="text-[11px] font-semibold truncate">
-                  {d.name || d.clientId}
-                </div>
+                <div className="text-[11px] font-semibold truncate">{d.name || d.clientId}</div>
                 <div className="text-[10px] text-muted-foreground truncate">
                   {d.clientId}
                   {d.note ? ` · ${d.note}` : ""}
@@ -288,9 +274,7 @@ export default function DebtorsPanel() {
               size="sm"
               className="w-full"
               onClick={() => {
-                const input = document.getElementById(
-                  "debtors-import",
-                ) as HTMLInputElement | null;
+                const input = document.getElementById("debtors-import") as HTMLInputElement | null;
                 input?.click();
               }}
             >

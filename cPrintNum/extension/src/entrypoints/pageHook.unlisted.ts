@@ -103,12 +103,8 @@ function barcodeFromBody(body: string): string | null {
  * ввод проигнорирует, поэтому сначала кликните в поле сканирования.
  */
 function dispatchKey(target: EventTarget, key: string): void {
-  target.dispatchEvent(
-    new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }),
-  );
-  target.dispatchEvent(
-    new KeyboardEvent("keyup", { key, bubbles: true, cancelable: true }),
-  );
+  target.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+  target.dispatchEvent(new KeyboardEvent("keyup", { key, bubbles: true, cancelable: true }));
 }
 
 /**
@@ -276,9 +272,7 @@ export default defineUnlistedScript({
     // Ответы выдачи/резолвера тоже могут содержать clientId рядом с
     // отправлением — из них и получается связка «кто этот заказ».
     const isGiveoutUrl = (url: string) =>
-      url.includes("/giveout/") ||
-      url.includes("/inbound/") ||
-      url.includes("/Resolver/");
+      url.includes("/giveout/") || url.includes("/inbound/") || url.includes("/Resolver/");
 
     /**
      * Что вообще передаём в `handle`.
@@ -348,10 +342,7 @@ export default defineUnlistedScript({
     };
 
     const originalSend = XMLHttpRequest.prototype.send;
-    (XMLHttpRequest.prototype as any).send = function (
-      this: XMLHttpRequest,
-      ...args: any[]
-    ) {
+    (XMLHttpRequest.prototype as any).send = function (this: XMLHttpRequest, ...args: any[]) {
       try {
         const body = bodyText(args[0]);
         if (body) xhrBodies.set(this, body);
@@ -366,14 +357,8 @@ export default defineUnlistedScript({
           const url = this.responseURL || xhrUrls.get(this) || "";
           if (!shouldHandle(url)) return;
 
-          const isText =
-            this.responseType === "" || this.responseType === "text";
-          handle(
-            url,
-            readJson(this),
-            xhrBodies.get(this),
-            isText ? this.responseText : undefined,
-          );
+          const isText = this.responseType === "" || this.responseType === "text";
+          handle(url, readJson(this), xhrBodies.get(this), isText ? this.responseText : undefined);
         } catch {
           // Ошибка разбора не должна ломать страницу Ozon.
         }

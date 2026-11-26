@@ -8,12 +8,7 @@
 import type { ComponentChildren, JSX } from "preact";
 import { cn } from "@/lib/utils";
 
-export type ButtonVariant =
-  | "default"
-  | "ghost"
-  | "secondary"
-  | "outline"
-  | "destructive";
+export type ButtonVariant = "default" | "ghost" | "secondary" | "outline" | "destructive";
 
 export type ButtonSize = "default" | "sm" | "lg" | "icon";
 

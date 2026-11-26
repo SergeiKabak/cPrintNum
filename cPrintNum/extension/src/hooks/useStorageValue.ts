@@ -24,8 +24,7 @@ export function useStorageValue<T>(key: string, initialValue: T) {
   // Сеттер с сохранением в хранилище.
   const setValue = (value: T | ((prev: T) => T)) => {
     setState((prev) => {
-      const next =
-        typeof value === "function" ? (value as (p: T) => T)(prev) : value;
+      const next = typeof value === "function" ? (value as (p: T) => T)(prev) : value;
       chrome.storage.local.set({ [key]: next });
       return next;
     });

@@ -74,11 +74,6 @@ export function normalizeAutoPrint(value: unknown): AutoPrintSettings {
     packing: typeof v.packing === "boolean" ? v.packing : DEFAULT_AUTO_PRINT.packing,
     resolve: typeof v.resolve === "boolean" ? v.resolve : DEFAULT_AUTO_PRINT.resolve,
     dedupeMs: clampInt(v.dedupeMs, 0, 60000, DEFAULT_AUTO_PRINT.dedupeMs),
-    overlapGuardMs: clampInt(
-      v.overlapGuardMs,
-      0,
-      10000,
-      DEFAULT_AUTO_PRINT.overlapGuardMs,
-    ),
+    overlapGuardMs: clampInt(v.overlapGuardMs, 0, 10000, DEFAULT_AUTO_PRINT.overlapGuardMs),
   };
 }

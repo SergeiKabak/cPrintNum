@@ -106,9 +106,7 @@ export default function AutoPrintPanel() {
       <div className="p-4 flex flex-col gap-3">
         {/* Режим */}
         <label className="flex flex-col gap-1">
-          <span className="text-[11px] font-medium text-muted-foreground">
-            Источник событий
-          </span>
+          <span className="text-[11px] font-medium text-muted-foreground">Источник событий</span>
           <select
             value={settings.mode}
             onChange={(e) =>
@@ -168,8 +166,8 @@ export default function AutoPrintPanel() {
           <div className="flex items-start gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/10 p-2">
             <CircleAlert class="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
             <span className="text-[10px] leading-snug text-amber-700 dark:text-amber-300">
-              Установленный PrintNum не поддерживает полки. Обновите приложение
-              до версии с <code>features:["shelf-dash"]</code>.
+              Установленный PrintNum не поддерживает полки. Обновите приложение до версии с{" "}
+              <code>features:["shelf-dash"]</code>.
             </span>
           </div>
         )}
@@ -191,9 +189,7 @@ export default function AutoPrintPanel() {
             >
               {lastEvent.ok
                 ? `Напечатано: ${lastEvent.text}` +
-                  (lastEvent.qr
-                    ? ` + QR ${lastEvent.qr}`
-                    : " — QR нет: ШК не найден")
+                  (lastEvent.qr ? ` + QR ${lastEvent.qr}` : " — QR нет: ШК не найден")
                 : `Ошибка (${lastEvent.text}): ${lastEvent.error ?? lastEvent.status ?? "—"}`}
               <span className="text-muted-foreground">
                 {" "}

@@ -55,10 +55,7 @@ function dispatchKey(char: string): void {
  * @param value     текст штрихкода (например "123-47")
  * @param charDelay задержка между символами в мс (сканер обычно ~5–20 мс)
  */
-export async function simulate(
-  value: string,
-  charDelay = 15,
-): Promise<void> {
+export async function simulate(value: string, charDelay = 15): Promise<void> {
   if (!value) return;
 
   for (const char of value) {
@@ -110,7 +107,5 @@ export function registerScannerSimulator(): void {
   if (!import.meta.env.DEV) return;
 
   (window as any).PrintNumScanner = PrintNumScanner;
-  console.info(
-    "[PrintNum:scanner] Эмулятор сканера доступен: PrintNumScanner.simulate(\"123-47\")",
-  );
+  console.info('[PrintNum:scanner] Эмулятор сканера доступен: PrintNumScanner.simulate("123-47")');
 }

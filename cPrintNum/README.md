@@ -1417,6 +1417,8 @@ Smoke-тестов API в CI нет: `wine` с i386-архитектурой н�
 | Сборка сервера + расширения + 2 zip | `./build.sh` (`SKIP_EXTENSION=1` — только exe) |
 | Живой сервер | `./wine-ctl.sh start` / `stop` / `status` / `logs` / `reset` |
 | Контракт API (27 проверок) | `./wine-ctl.sh test` (проверено: `27 passed, 0 failed`) |
+| Форматирование | `cd extension && npm run format` (prettier, стиль в `.prettierrc.json`); проверка — `npm run format:check` |
+| Отступы/переносы во всех редакторах | `.editorconfig` в корне (C — 4 пробела, TS/JSON/YAML — 2) |
 | Типы расширения | `cd extension && npm run compile` (сейчас 0 ошибок) |
 | Сборка расширения | `npm run build` → `output/chrome-mv3` |
 | Демо-этикетка без принтера | `wine printnum-diag.exe --demo-file "45" label.bmp` |

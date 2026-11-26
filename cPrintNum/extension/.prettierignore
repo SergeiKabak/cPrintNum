@@ -1,0 +1,6 @@
+# Сборка и зависимости — не форматируем.
+output/
+node_modules/
+.wxt/
+*.min.js
+*.zip

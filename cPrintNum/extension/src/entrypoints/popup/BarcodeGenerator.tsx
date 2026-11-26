@@ -21,19 +21,12 @@ import { Barcode, MonitorUp, Printer } from "lucide-preact";
 import { Button } from "@/components/preact/button";
 import { getSettings, sendServer } from "@/utils/api";
 import { LAST_LABEL_KEY } from "@/entrypoints/labelCopy.content";
-import {
-  buildQrLabelSvg,
-  createCanvasTextMeasurer,
-  parsePaperSize,
-} from "@/utils/qrLabel";
+import { buildQrLabelSvg, createCanvasTextMeasurer, parsePaperSize } from "@/utils/qrLabel";
 
 /** Пример, который показываем, пока поле пустое. */
 const SAMPLE_TEXT = "ii19382868529";
 
-type Status =
-  | { kind: "idle" }
-  | { kind: "ok"; msg: string }
-  | { kind: "err"; msg: string };
+type Status = { kind: "idle" } | { kind: "ok"; msg: string } | { kind: "err"; msg: string };
 
 export default function BarcodeGenerator() {
   const [text, setText] = useState("");
@@ -163,9 +156,7 @@ export default function BarcodeGenerator() {
       <div className="p-4 flex flex-col gap-3">
         {/* Ввод текста */}
         <label className="flex flex-col gap-1">
-          <span className="text-[11px] font-medium text-muted-foreground">
-            Текст штрихкода
-          </span>
+          <span className="text-[11px] font-medium text-muted-foreground">Текст штрихкода</span>
           <input
             type="text"
             value={text}
@@ -200,8 +191,7 @@ export default function BarcodeGenerator() {
         </div>
 
         <span className="text-[10px] text-muted-foreground">
-          QR слева и справа, последние 4 цифры — жирным. Печать выполняется
-          приложением PrintNum.
+          QR слева и справа, последние 4 цифры — жирным. Печать выполняется приложением PrintNum.
         </span>
 
         {/* Кнопки печати */}

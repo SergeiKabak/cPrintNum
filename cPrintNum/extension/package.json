@@ -13,7 +13,9 @@
     "zip:firefox": "wxt zip -b firefox",
     "compile": "tsc --noEmit",
     "postinstall": "wxt prepare",
-    "pack:store": "node scripts/pack-store.mjs"
+    "pack:store": "node scripts/pack-store.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "dependencies": {
     "@thedutchcoder/postcss-rem-to-px": "^0.0.2",
@@ -27,6 +29,7 @@
     "autoprefixer": "^10.4.19",
     "esbuild": "^0.28.2",
     "postcss": "^8.4.38",
+    "prettier": "^3.10.1",
     "tailwindcss": "^3.4.3",
     "typescript": "^5.3.3",
     "wxt": "^0.21.4"

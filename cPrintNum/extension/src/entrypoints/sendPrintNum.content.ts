@@ -8,10 +8,7 @@ import {
   normalizeAutoPrint,
   type AutoPrintSettings,
 } from "@/utils/autoPrintSettings";
-import {
-  normalizePlacement,
-  type Placement,
-} from "@/utils/ozonPlacements";
+import { normalizePlacement, type Placement } from "@/utils/ozonPlacements";
 
 export default defineContentScript({
   matches: ["https://turbo-pvz.ozon.ru/*"],
@@ -117,25 +114,19 @@ export default defineContentScript({
       try {
         if (!chrome?.runtime?.id) return;
 
-        chrome.runtime.sendMessage(
-          { action: "injectPageHook" },
-          (response: any) => {
-            const err = chrome.runtime.lastError;
-            if (!err && response?.ok) return;
+        chrome.runtime.sendMessage({ action: "injectPageHook" }, (response: any) => {
+          const err = chrome.runtime.lastError;
+          if (!err && response?.ok) return;
 
-            if (attempt < 4) {
-              ctx.setTimeout(
-                () => requestPageHook(attempt + 1),
-                250 * 2 ** attempt,
-              );
-              return;
-            }
+          if (attempt < 4) {
+            ctx.setTimeout(() => requestPageHook(attempt + 1), 250 * 2 ** attempt);
+            return;
+          }
 
-            console.warn(
-              `[PrintNum] pageHook не внедрён: ${err?.message ?? response?.error ?? "unknown"}`,
-            );
-          },
-        );
+          console.warn(
+            `[PrintNum] pageHook не внедрён: ${err?.message ?? response?.error ?? "unknown"}`,
+          );
+        });
       } catch {
         // Контекст невалиден — вкладку нужно перезагрузить.
       }
@@ -146,13 +137,15 @@ export default defineContentScript({
     function getTexts(): string[] {
       const tags = document.querySelectorAll(SELECTORS.numprint);
 
-      return Array.from(tags)
-        .map((tag) => tag.textContent?.trim() || "")
-        .filter(Boolean)
-        // Исключаем текстовые ячейки ('Возврат-1', 'Прямой поток-5'):
-        // они не являются номером ячейки.
-        .filter((text) => CELL_CODE_RE.test(text))
-        .slice(0, 10);
+      return (
+        Array.from(tags)
+          .map((tag) => tag.textContent?.trim() || "")
+          .filter(Boolean)
+          // Исключаем текстовые ячейки ('Возврат-1', 'Прямой поток-5'):
+          // они не являются номером ячейки.
+          .filter((text) => CELL_CODE_RE.test(text))
+          .slice(0, 10)
+      );
     }
 
     function areListsEqual(first: string[], second: string[]): boolean {
@@ -269,9 +262,7 @@ export default defineContentScript({
       // Эмулированное сканирование тоже не должно отправлять
       // текстовые ячейки: иначе в консоли придётся видеть мусор.
       if (!CELL_CODE_RE.test(value)) {
-        console.info(
-          `[PrintNum:scanner] пропущено (текстовая ячейка): "${value}"`,
-        );
+        console.info(`[PrintNum:scanner] пропущено (текстовая ячейка): "${value}"`);
         return;
       }
 
@@ -279,11 +270,7 @@ export default defineContentScript({
 
       // Защита от возможного дублирования с DOM-событием.
       const now = Date.now();
-      if (
-        lastSimulated &&
-        lastSimulated.value === value &&
-        now - lastSimulated.at < 500
-      ) {
+      if (lastSimulated && lastSimulated.value === value && now - lastSimulated.at < 500) {
         return;
       }
       lastSimulated = { value, at: now };

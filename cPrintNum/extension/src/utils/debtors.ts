@@ -135,9 +135,7 @@ export function parseDebtorsJson(text: string): Debtor[] {
   if (!Array.isArray(data)) throw new Error("ожидается JSON-массив");
 
   return normalizeDebtors(
-    data.map((item) =>
-      typeof item === "string" ? { clientId: item } : item,
-    ),
+    data.map((item) => (typeof item === "string" ? { clientId: item } : item)),
   );
 }
 

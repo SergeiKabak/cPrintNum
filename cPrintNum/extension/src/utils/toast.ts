@@ -20,11 +20,7 @@ export function removeToast(): void {
 }
 
 /** Показывает плашку в правом верхнем углу. */
-export function showToast(
-  text: string,
-  kind: ToastKind = "ok",
-  ms = 2500,
-): void {
+export function showToast(text: string, kind: ToastKind = "ok", ms = 2500): void {
   removeToast();
 
   const host = document.body || document.documentElement;
