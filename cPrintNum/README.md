@@ -34,6 +34,9 @@ Ozon (turbo-pvz.ozon.ru)
 
 ---
 
+> 📋 Текущий статус, план на 2.2.0 и бэклог — в
+> [`docs/status-and-roadmap.md`](./docs/status-and-roadmap.md).
+
 ## Содержание
 
 - [1. Быстрый старт](#1-быстрый-старт)
