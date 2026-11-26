@@ -56,10 +56,11 @@ Ozon (turbo-pvz.ozon.ru)
 
 ### 1.1. Пользователь (Windows 7/10/11)
 
-1. Распаковать `dist/cPrintNum_vQRGenerator.zip` в любую папку, например
-   `C:\PrintNum\`. В корне архива лежат **и расширение** (`manifest.json`,
-   `background.js`, `content-scripts/`, `chunks/`, `assets/`, `icon/`),
-   **и приложение** (`printnum-win7.exe`, `printnum-diag.exe`, `config.json`).
+1. Распаковать `dist/PrintNum-<версия>-windows.zip` в любую папку, например
+   `C:\PrintNum\`. Внутри папка `PrintNum/`: **расширение** в `extension/`
+   (`manifest.json`, `background.js`, `content-scripts/`, `chunks/`, `assets/`,
+   `icon/`), **приложение** рядом (`printnum-win7.exe`, `printnum-diag.exe`,
+   `config.json`, `install.ps1`, `README.txt`).
 2. Запустить `printnum-win7.exe` — сразу служба (режим по умолчанию, флаг
    `--service` не обязателен): HTTP-сервер `127.0.0.1:5000`, без окон и
    консоли. Графического интерфейса нет. Лог: `%APPDATA%\PrintNum\log.txt`.
@@ -112,8 +113,9 @@ cPrintNum/
 ├── build.sh                 # кросс-сборка exe + сборка расширения + единый zip
 ├── wine-ctl.sh              # запуск/остановка/логи/smoke-тест службы под Wine
 ├── config.json              # рабочий конфиг для сборки (копируется в dist/)
-├── dist/                    # 2 exe + config.json + cPrintNum_vQRGenerator.zip
-│                            # (единый архив: расширение + exe + config)
+├── dist/                    # 2 exe + config.json + PrintNum-<ver>-windows.zip
+│                            # (единый архив: PrintNum/extension + exe + config + install.ps1)
+│                            # release/ — тот же архив + extension-only zip + SHA256SUMS
 ├── printnum-win7.exe        # артефакт сборки: служба (подсистема Windows)
 ├── printnum-diag.exe        # артефакт сборки (-mconsole, для Wine/диагностики)
 ├── (демо-BMP не хранятся в репозитории: генерируются через --demo-*)
@@ -225,18 +227,26 @@ x86_64-w64-mingw32-gcc -municode -Os -s -Wall -static \
 ```
 
 `build.sh` после сборки проверяет отсутствие `api-ms-win-crt*` в импортах,
-собирает расширение и пакует **один** архив `dist/cPrintNum_vQRGenerator.zip`:
+собирает расширение и пакует **один** архив — `dist/PrintNum-<версия>-windows.zip`,
+он же уходит в GitHub Releases:
 
 ```
-cPrintNum_vQRGenerator.zip
-├── manifest.json          ← расширение в корне архива
-├── background.js
-├── content-scripts/
-├── chunks/  assets/  icon/
-├── printnum-win7.exe      ← приложение рядом
-├── printnum-diag.exe
-└── config.json
+PrintNum-<версия>-windows.zip
+└── PrintNum/
+    ├── extension/         ← manifest.json внутри extension/
+    │   ├── manifest.json
+    │   ├── background.js
+    │   └── content-scripts/  chunks/  assets/  icon/
+    ├── printnum-win7.exe  ← служба
+    ├── printnum-diag.exe
+    ├── config.json
+    ├── install.ps1        ← автоустановка
+    └── README.txt
 ```
+
+`scripts/release.sh` ничего не переупаковывает: копирует этот архив в
+`dist/release/`, добавляет `extension`-only zip, exe по отдельности и
+`SHA256SUMS.txt`.
 
 Почему так: распаковал один раз — запускаешь exe и **эту же папку** грузишь
 как unpacked extension (`chrome://extensions` → «Загрузить распакованное»).

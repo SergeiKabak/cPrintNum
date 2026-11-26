@@ -4,8 +4,11 @@
 #   ./scripts/release.sh              # собрать всё и сложить в dist/release/
 #   SKIP_BUILD=1 ./scripts/release.sh # не пересобирать (взять готовые exe/расширение)
 #
+# Единый windows-архив собирает build.sh (dist/PrintNum-<ver>-windows.zip),
+# здесь он только копируется в dist/release/ — переупаковки нет.
+#
 # Результат в dist/release/:
-#   PrintNum-<ver>-windows.zip          всё в одной папке: extension/ + exe + config + README.txt
+#   PrintNum-<ver>-windows.zip          extension/ + exe + config + install.ps1 + README.txt
 #   printnum-extension-<ver>.zip        только расширение (manifest.json в корне) — Chrome/Edge/Opera
 #   printnum-win7.exe / printnum-diag.exe   служба печати (Windows 7 x64)
 #   config.json                         конфиг службы по умолчанию
@@ -55,60 +58,13 @@ cp -f printnum-win7.exe printnum-diag.exe "$OUT"/
 if [ -f config.json ]; then cp -f config.json "$OUT"/; fi
 echo "✅ exe + config.json"
 
-# ---------- 3. всё в одной папке (для «распаковал и работает») ----------
-STAGE="$(mktemp -d)"
-trap 'rm -rf "$STAGE"' EXIT
-PKG="$STAGE/PrintNum"
-mkdir -p "$PKG"
-
-cp -R "$EXT_OUT" "$PKG/extension"
-rm -rf "$PKG/extension/.DS_Store"
-cp -f printnum-win7.exe printnum-diag.exe "$PKG"/
-if [ -f config.json ]; then cp -f config.json "$PKG"/; fi
-cp -f scripts/install.ps1 "$PKG"/ 2>/dev/null || true
-
-cat > "$PKG/README.txt" <<'TXT'
-PrintNum — печать этикеток ячеек и QR для ПВЗ Ozon
-==================================================
-
-В папке:
-  printnum-win7.exe   служба печати (запустить один раз, окна нет)
-  printnum-diag.exe   то же + консоль (диагностика)
-  config.json         настройки службы (принтер, режим GDI/ESC-POS)
-  extension\          расширение для браузера
-  install.ps1         автоматическая установка (правый клик -> Выполнить с PowerShell)
-
-Быстрый старт
--------------
-1. Запустить printnum-win7.exe (можно из этой папки).
-   Появится запрос брандмауэра — разрешить для частных сетей.
-   Проверка: откройте http://127.0.0.1:5000/ в браузере.
-
-2. Установить расширение:
-   • Chrome/Edge/Opera: chrome://extensions (или edge://extensions, opera://extensions)
-   • включить «Режим разработчика» / Developer mode
-   • «Загрузить распакованное» / Load unpacked
-   • выбрать папку extension (ту, что рядом с этим файлом)
-
-3. Открыть https://turbo-pvz.ozon.ru, войти как обычно.
-   В панели браузера появится иконка PrintNum.
-
-4. В popup: выбрать принтер, бумагу (43*25), проверить печать.
-
-Обновление
-----------
-Скачать новый архив, распаковать поверх этой папки (config.json можно не
-перезаписывать), в chrome://extensions нажать «Обновить» у PrintNum.
-
-Если не печатает
-----------------
-• http://127.0.0.1:5000/status-printer — видит ли служба принтер;
-• принтер должен быть установлен в Windows (драйвер), имя — в config.json
-  или в popup расширения;
-• подробности: https://github.com/SergeiKabak/cPrintNum
-TXT
-
-( cd "$STAGE" && zip -X -r -9 "$OUT/PrintNum-$VER-windows.zip" "PrintNum" >/dev/null )
+# ---------- 3. windows-архив из build.sh ----------
+WINDOWS_ZIP="$DIST/PrintNum-$VER-windows.zip"
+if [ ! -f "$WINDOWS_ZIP" ]; then
+  echo "❌ Нет $WINDOWS_ZIP — build.sh не собрал архив (SKIP_EXTENSION=1?)"
+  exit 1
+fi
+cp -f "$WINDOWS_ZIP" "$OUT"/
 echo "✅ PrintNum-$VER-windows.zip"
 
 # ---------- 4. установщик ----------

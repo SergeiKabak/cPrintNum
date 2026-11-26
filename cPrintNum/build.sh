@@ -6,9 +6,10 @@
 #      printnum-diag.exe  — та же служба + консоль (диагностика/Wine)
 # 2. Сборка браузерного расширения (WXT): extension/output/chrome-mv3 —
 #    это и есть папка готового расширения (её содержимое идёт в архив).
-# 3. Упаковка: ЕДИНЫЙ архив dist/cPrintNum_vQRGenerator.zip — файлы расширения в корне
-#    (manifest.json рядом) + printnum-win7.exe, printnum-diag.exe, config.json.
-#    Распаковал в папку — запускаешь exe и эту же папку грузишь как расширение.
+# 3. Упаковка: ЕДИНЫЙ архив dist/PrintNum-<версия>-windows.zip — папка PrintNum/
+#    с extension/ (manifest.json внутри), printnum-win7.exe, printnum-diag.exe,
+#    config.json, install.ps1 и README.txt. Тот же архив публикуется в GitHub
+#    Releases (scripts/release.sh ничего не переупаковывает).
 #
 # Переменные окружения:
 #   SKIP_EXTENSION=1  — собрать только exe (без Node.js/расширения)
@@ -25,7 +26,6 @@ SRC="printnum-win7.c"
 EXT_DIR="$ROOT_DIR/extension"
 EXT_OUT="$EXT_DIR/output/chrome-mv3"
 DIST="$ROOT_DIR/dist"
-RELEASE_ZIP="cPrintNum_vQRGenerator.zip"
 
 # Общие флаги: без CRT, свой entry point wWinMain, свои strlen/memcpy.
 # -Os: минимальный размер кода. -fdata-sections НЕ используем — множество
@@ -121,36 +121,93 @@ mkdir -p "$DIST"
 cp -f *.exe "$DIST"/
 if [ -f config.json ]; then cp -f config.json "$DIST"/; fi
 
-STAGE="$(mktemp -d)"
-trap 'rm -rf "$STAGE"' EXIT
+# Версия: из собранного манифеста, иначе из package.json расширения.
+read_version() {
+    grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' "$1" 2>/dev/null \
+        | head -1 | sed 's/.*"\([^"]*\)"$/\1/'
+}
+VER="$(read_version "$EXT_OUT/manifest.json")"
+[ -n "$VER" ] || VER="$(read_version "$EXT_DIR/package.json")"
+[ -n "$VER" ] || VER="dev"
+WINDOWS_ZIP="PrintNum-$VER-windows.zip"
 
-# Расширение — в корень архива: manifest.json лежит рядом с exe, поэтому
-# одну и ту же папку можно и запускать, и грузить как unpacked extension.
-if [ "${SKIP_EXTENSION:-0}" != "1" ]; then
-    cp -R "$EXT_OUT/." "$STAGE/"
+if [ "${SKIP_EXTENSION:-0}" = "1" ]; then
+    echo ""
+    echo "=== Готово (без архива: SKIP_EXTENSION=1) ==="
+    ls -lh "$DIST"/*.exe | awk '{print "  " $9 "  (" $5 ")"}'
+    exit 0
 fi
 
-# Приложение и конфиг — рядом.
-cp *.exe "$STAGE"/
-if [ -f config.json ]; then cp config.json "$STAGE"/; fi
+STAGE="$(mktemp -d)"
+trap 'rm -rf "$STAGE"' EXIT
+PKG="$STAGE/PrintNum"
+mkdir -p "$PKG"
+
+# Расширение — подпапкой: в корне архива лежат exe и конфиг, а грузить как
+# unpacked нужно именно extension/ (manifest.json обязан быть в её корне).
+cp -R "$EXT_OUT" "$PKG/extension"
+
+cp -f *.exe "$PKG"/
+if [ -f config.json ]; then cp -f config.json "$PKG"/; fi
+if [ -f scripts/install.ps1 ]; then cp -f scripts/install.ps1 "$PKG"/; fi
+
+cat > "$PKG/README.txt" <<'TXT'
+PrintNum — печать этикеток ячеек и QR для ПВЗ Ozon
+==================================================
+
+В папке:
+  printnum-win7.exe   служба печати (запустить один раз, окна нет)
+  printnum-diag.exe   то же + консоль (диагностика)
+  config.json         настройки службы (принтер, режим GDI/ESC-POS)
+  extension\          расширение для браузера
+  install.ps1         автоустановка (правый клик -> Выполнить с PowerShell)
+
+Быстрый старт
+-------------
+1. Запустить printnum-win7.exe (можно из этой папки).
+   Появится запрос брандмауэра — разрешить для частных сетей.
+   Проверка: откройте http://127.0.0.1:5000/ в браузере.
+
+2. Установить расширение:
+   • Chrome/Edge/Opera: chrome://extensions (или edge://extensions, opera://extensions)
+   • включить «Режим разработчика» / Developer mode
+   • «Загрузить распакованное» / Load unpacked
+   • выбрать папку extension (ту, что рядом с этим файлом)
+
+3. Открыть https://turbo-pvz.ozon.ru, войти как обычно.
+   В панели браузера появится иконка PrintNum.
+
+4. В popup: выбрать принтер, бумагу (43*25), проверить печать.
+
+Обновление
+----------
+Скачать новый архив, распаковать поверх этой папки (config.json можно не
+перезаписывать), в chrome://extensions нажать «Обновить» у PrintNum и
+перезагрузить вкладку Ozon (F5).
+
+Если не печатает
+----------------
+• http://127.0.0.1:5000/status-printer — видит ли служба принтер;
+• принтер должен быть установлен в Windows (драйвер), имя — в config.json
+  или в popup расширения;
+• подробности: https://github.com/SergeiKabak/cPrintNum
+TXT
 
 find "$STAGE" -name '.DS_Store' -delete
 find "$STAGE" -name '__MACOSX' -type d -prune -exec rm -rf {} +
 
-rm -f "$DIST/$RELEASE_ZIP"
-( cd "$STAGE" && zip -qr "$DIST/$RELEASE_ZIP" . -x '*.DS_Store' -x '__MACOSX/*' )
+rm -f "$DIST/$WINDOWS_ZIP"
+( cd "$STAGE" && zip -qr "$DIST/$WINDOWS_ZIP" "PrintNum" -x '*.DS_Store' -x '__MACOSX/*' )
 
 echo ""
 echo "=== Готово ==="
-ls -lh "$DIST"/*.zip | awk '{print "  " $9 "  (" $5 ")"}'
+ls -lh "$DIST/$WINDOWS_ZIP" | awk '{print "  " $9 "  (" $5 ")"}'
 echo ""
 echo "Установка:"
-echo "  1) распаковать $RELEASE_ZIP в папку, например C:\\PrintNum\\"
+echo "  1) распаковать $WINDOWS_ZIP в папку, например C:\\PrintNum\\"
 echo "  2) запустить printnum-win7.exe (служба на 127.0.0.1:5000)"
-if [ "${SKIP_EXTENSION:-0}" != "1" ]; then
-    echo "  3) chrome://extensions → «Режим разработчика» → «Загрузить распакованное»"
-    echo "     → выбрать ЭТУ ЖЕ папку (manifest.json лежит в корне архива)"
-fi
+echo "  3) chrome://extensions → «Режим разработчика» → «Загрузить распакованное»"
+echo "     → выбрать папку PrintNum\\extension"
 echo ""
-echo "Содержимое $RELEASE_ZIP:"
-unzip -l "$DIST/$RELEASE_ZIP"
+echo "Содержимое $WINDOWS_ZIP:"
+unzip -l "$DIST/$WINDOWS_ZIP"
