@@ -11,6 +11,12 @@
 #   ./wine-ctl.sh reset     # удалить config.json в префиксе (дефолты при старте)
 #
 # Порядок: первый запуск создаёт префикс ~/.wine-printnum (~1-2 минуты).
+#
+# `test` не требует Wine: это обычные curl-запросы к уже запущенной службе.
+# Адрес задаётся PRINTNUM_URL — можно проверить сборку на другой машине:
+#
+#   PRINTNUM_URL=http://192.168.1.20:5000 ./wine-ctl.sh test
+#   PRINTNUM_URL=http://127.0.0.1:5000 ./wine-ctl.sh test   # Windows, exe запущен вручную
 
 set -u
 
@@ -21,6 +27,8 @@ export WINEPREFIX="${WINEPREFIX:-$HOME/.wine-printnum}"
 export WINEDEBUG=-all
 
 PORT=5000
+# Адрес службы для проверок. `test` работает с любой машиной, не только с Wine.
+BASE_URL="${PRINTNUM_URL:-http://127.0.0.1:$PORT}"
 EXE_GUI="printnum-win7.exe"
 EXE_DIAG="printnum-diag.exe"
 
@@ -41,7 +49,7 @@ appdata_dir() {
 # Наш ли сервер на порту? AirPlay Receiver на macOS тоже слушает 5000 и
 # отвечает 403 — отличаем по фирменному ответу {"status": true}.
 our_server_up() {
-    [ "$(curl -s -m 3 "http://127.0.0.1:$PORT/" 2>/dev/null)" = '{"status": true}' ]
+    [ "$(curl -s -m 3 "$BASE_URL/" 2>/dev/null)" = '{"status": true}' ]
 }
 
 port_owner() {
@@ -150,7 +158,10 @@ cmd_reset() {
 }
 
 cmd_test() {
-    our_server_up || die "наш сервер не запущен ($0 start)"
+    our_server_up || die "служба не отвечает на $BASE_URL/
+   Запустите её: $0 start (Wine) или printnum-win7.exe (Windows);
+   для чужой машины: PRINTNUM_URL=http://host:5000 $0 test"
+    [ "$BASE_URL" = "http://127.0.0.1:$PORT" ] || echo "Проверяю: $BASE_URL"
 
     local pass=0 fail=0
     t() { # t <описание> <ожидаемый_код> <метод> <путь> [тело]
@@ -158,7 +169,7 @@ cmd_test() {
         local args=(-s -o /tmp/pn-test-body -w "%{http_code}" -X "$method")
         [ -n "$body" ] && args+=(-H "Content-Type: application/json" -d "$body")
         local code
-        code="$(curl -m 5 "${args[@]}" "http://127.0.0.1:$PORT$path")"
+        code="$(curl -m 5 "${args[@]}" "$BASE_URL$path")"
         if [ "$code" = "$want" ]; then
             printf "  ✅ %-26s HTTP %s\n" "$name" "$code"; pass=$((pass+1))
         else
@@ -203,7 +214,7 @@ cmd_test() {
     t "404"                  404 GET  /nonexistent
 
     # Возможности API: расширение проверяет их перед печатью полок.
-    if curl -s -m 5 "http://127.0.0.1:$PORT/config" | grep -q '"shelf-dash"'; then
+    if curl -s -m 5 "$BASE_URL/config" | grep -q '"shelf-dash"'; then
         printf "  ✅ %-26s\n" "features shelf-dash"; pass=$((pass+1))
     else
         printf "  ❌ %-26s\n" "features shelf-dash"; fail=$((fail+1))

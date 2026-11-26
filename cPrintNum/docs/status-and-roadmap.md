@@ -56,7 +56,7 @@
 |---|---|
 | ✅ Единая база знаний | `cPrintNum/README.md` — карта файлов, контракт API, инварианты, рецепты |
 | ✅ CI (`.github/workflows/ci.yml`) | push в любую ветку и PR: exe без CRT и без предупреждений `-Wall -Wextra`, `tsc`, сборка WXT, валидация манифеста |
-| ⚠️ Smoke-тесты API — только локально | 27 проверок через `./wine-ctl.sh test`; в CI отключены: wine+i386 на раннере ставится минутами, окружение ПВЗ не воспроизвести |
+| ⚠️ Smoke-тесты API — только локально | 27 проверок через `./wine-ctl.sh test`; в CI отключены: wine+i386 на раннере ставится минутами, окружение ПВЗ не воспроизвести. Сам `test` — обычный curl, Wine не нужен: адрес задаётся `PRINTNUM_URL` |
 | ✅ Release (`.github/workflows/release.yml`) | тег `v*` → сборка + GitHub Release (архивы, exe, `install.ps1`, `SHA256SUMS.txt`) |
 | ✅ Pages (`.github/workflows/pages.yml`) | изменения в `docs/` → `index.html`, `install.html`, `privacy.html` |
 | ✅ Self-hosted распространение | `scripts/release.sh`, `install.ps1` (скачивает последний релиз в `%LOCALAPPDATA%\PrintNum`, запускает службу, открывает `chrome://extensions`) |
