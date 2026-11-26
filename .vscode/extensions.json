@@ -1,8 +1,15 @@
 {
+  // Рекомендованные расширения для работы над проектом.
+  // Личные предпочтения (языковые пакеты, темы, просмотрщики) сюда не кладём —
+  // это настройки конкретного редактора, а не репозитория.
   "recommendations": [
+    // C-служба printnum-win7.c: подсветка, переходы, диагностика
+    "ms-vscode.cpptools",
+    // .github/workflows/*.yml
+    "redhat.vscode-yaml",
+    // форматирование TS/TSX и CSS в extension/
     "esbenp.prettier-vscode",
-    "humao.rest-client",
-    "ms-ceintl.vscode-language-pack-ru",
-    "jock.svg"
+    // ручные запросы к API службы (127.0.0.1:5000) прямо из редактора
+    "humao.rest-client"
   ]
 }
