@@ -12,7 +12,8 @@
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
     "compile": "tsc --noEmit",
-    "postinstall": "wxt prepare"
+    "postinstall": "wxt prepare",
+    "pack:store": "node scripts/pack-store.mjs"
   },
   "dependencies": {
     "@thedutchcoder/postcss-rem-to-px": "^0.0.2",

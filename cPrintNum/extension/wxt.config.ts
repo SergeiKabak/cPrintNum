@@ -19,11 +19,14 @@ export default defineConfig({
   manifest: {
     permissions: ["storage", "scripting"],
     action: {},
-    name: "PrintNum - Печать Ячеек (Ozon)",
+    name: "PrintNum — печать этикеток для ПВЗ",
+    short_name: "PrintNum",
+    // ≤132 символов — требование магазинов расширений.
     description:
-      "Полезные инструменты для turbo-pvz.ozon.ru: печать ячеек, автоскрипты, удобная автоматизация по QR-кодам и другое.",
+      "Печать ячеек и этикеток с QR для ПВЗ Ozon: автопечать, проверка должников. Нужна локальная служба PrintNum (Windows).",
     host_permissions: [
-      "http://localhost/*",
+      // Локальная служба печати. Порт 5000 матчится любым портом (MV3 не
+      // умеет порт в host_permissions), но только петлевой адрес.
       "http://127.0.0.1/*",
       // Нужно для chrome.scripting.executeScript({ world: "MAIN" })
       // и инъекции pageHook на страницы Ozon.
