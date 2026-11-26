@@ -65,6 +65,15 @@ ZIP="$(find_tool zip "")" || ZIP=""
 UNZIP="$(find_tool unzip "")" || UNZIP=""
 SHA256="$(find_tool sha256sum "")" || SHA256=""
 
+# PowerShell нужен на Windows-хосте: MSYS2-шный zip пишет "dir\\file",
+# Windows Explorer такой архив распаковывает плоским файлом.
+PWSH=""
+for cand in powershell.exe /c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe \
+            "${SYSTEMROOT:-}/System32/WindowsPowerShell/v1.0/powershell.exe"; do
+    if [ -n "$cand" ] && command -v "$cand" >/dev/null 2>&1; then PWSH="$cand"; break; fi
+    if [ -x "$cand" ]; then PWSH="$cand"; break; fi
+done
+
 if [ -z "$SHA256" ] && command -v shasum >/dev/null 2>&1; then
     SHA256="shasum -a 256"
 fi
@@ -77,18 +86,14 @@ fi
 make_zip() {
     local out="$1" dir="$2" folder="$3"
     rm -f "$out"
-    case "$HOST_NAME" in
-        Windows*)
-            if command -v powershell.exe >/dev/null 2>&1; then
-                local win_out win_dir
-                win_out="$(cygpath -w "$out" 2>/dev/null || echo "$out")"
-                win_dir="$(cygpath -w "$dir" 2>/dev/null || echo "$dir")"
-                powershell.exe -NoProfile -Command \
-                    "Compress-Archive -Path '$win_dir\\$folder' -DestinationPath '$win_out' -Force" >/dev/null
-                return
-            fi
-            ;;
-    esac
+    if [ -n "$PWSH" ]; then
+        local win_out win_dir
+        win_out="$(cygpath -w "$out" 2>/dev/null || echo "$out")"
+        win_dir="$(cygpath -w "$dir" 2>/dev/null || echo "$dir")"
+        "$PWSH" -NoProfile -Command \
+            "Compress-Archive -Path '$win_dir\\$folder' -DestinationPath '$win_out' -Force" >/dev/null
+        return
+    fi
 
     if [ -n "$ZIP" ]; then
         ( cd "$dir" && "$ZIP" -qr "$out" "$folder" -x '*.DS_Store' -x '__MACOSX/*' )
@@ -105,8 +110,8 @@ make_zip() {
 inspect_zip() {
     if [ -n "$UNZIP" ]; then
         "$UNZIP" -l "$1"
-    elif command -v powershell.exe >/dev/null 2>&1; then
-        powershell.exe -NoProfile -Command \
+    elif [ -n "$PWSH" ]; then
+        "$PWSH" -NoProfile -Command \
             "Add-Type -A System.IO.Compression.FileSystem; [IO.Compression.ZipFile]::OpenRead('$(cygpath -w "$1")').Entries | ForEach-Object { \$_.FullName }"
     else
         echo "  (нет unzip — список файлов пропущен)"
@@ -114,6 +119,8 @@ inspect_zip() {
 }
 
 echo "=== Хост: $HOST_NAME ==="
+[ -n "$PWSH" ] && echo "=== Архиватор: PowerShell (Compress-Archive, прямые слэши) ===" \
+              || echo "=== Архиватор: zip ==="
 echo "=== Компилятор: $CC ==="
 if [ -z "$ZIP" ]; then
     echo "⚠️  zip не найден — архив собирать не смогу."
