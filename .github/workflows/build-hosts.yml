@@ -96,17 +96,22 @@ jobs:
             echo "✅ $exe без CRT ($size байт)"
           done
 
+          # Функциональная проверка архива: распаковать и убедиться, что
+          # структура вложенная. Если бы разделители были "\\", распаковка
+          # создала бы один плоский файл, и путей ниже бы не существовало.
           if command -v unzip >/dev/null 2>&1; then
-            unzip -l "$ZIP" > zip-list.txt 2>&1 || true
-            head -6 zip-list.txt
-            if ! grep -q 'PrintNum/extension/manifest.json' zip-list.txt; then
-              echo "❌ в архиве нет PrintNum/extension/manifest.json"
-              tail -25 zip-list.txt
-              exit 1
-            fi
-            grep -q 'PrintNum/printnum-win7.exe' zip-list.txt || {
-              echo "❌ в архиве нет printnum-win7.exe"; exit 1; }
-            echo "✅ в архиве extension/manifest.json и exe"
+            TMP=$(mktemp -d)
+            unzip -q "$ZIP" -d "$TMP"
+            for f in PrintNum/extension/manifest.json PrintNum/printnum-win7.exe \
+                     PrintNum/config.json PrintNum/README.txt; do
+              if [ ! -f "$TMP/$f" ]; then
+                echo "❌ после распаковки нет $f"
+                find "$TMP" -maxdepth 3 | head -20
+                exit 1
+              fi
+            done
+            echo "✅ архив распаковывается во вложенную структуру"
+            rm -rf "$TMP"
           else
             echo "⚠️ unzip не найден — проверка содержимого пропущена"
           fi
