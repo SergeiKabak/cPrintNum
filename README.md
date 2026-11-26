@@ -78,9 +78,8 @@ cd cPrintNum
 git tag v2.1.0 && git push origin v2.1.0   # CI соберёт и опубликует сам
 ```
 
-Сборка работает на macOS, Linux и Windows (Git Bash/MSYS2): `./build.sh`
-сам находит компилятор MinGW-w64, `zip`/`unzip` (или PowerShell Compress-Archive
-на Windows) и `sha256sum`/`shasum`. Цель сборки одна — Windows 7 x64.
+Сборка — кросс-компиляция под Windows 7 x64 (macOS/Linux, MinGW-w64).
+Порта под macOS/Linux не будет: служба печати опирается на GDI и спулер Windows.
 
 `.github/workflows/release.yml` на тег `v*` собирает exe (MinGW), расширение
 (WXT), прогоняет `tsc`, проверяет архивы (manifest в корне, нет CRT-зависимостей)
@@ -93,7 +92,6 @@ git tag v2.1.0 && git push origin v2.1.0   # CI соберёт и опублик
 | [`ci.yml`](./.github/workflows/ci.yml) | push в любую ветку, PR | exe (MinGW) без CRT и без предупреждений `-Wall -Wextra`; prettier-проверка, `tsc` + сборка расширения + валидация манифеста |
 | [`release.yml`](./.github/workflows/release.yml) | тег `v*` | сборка + GitHub Release с архивами, exe, `install.ps1`, `SHA256SUMS.txt` |
 | [`pages.yml`](./.github/workflows/pages.yml) | изменения в `docs/` | деплой `docs/` на GitHub Pages (`install.html`, `privacy.html`) |
-| [`build-hosts.yml`](./.github/workflows/build-hosts.yml) | push в `main`, PR | тот же `build.sh` на **Linux, macOS и Windows (MSYS2)** — проект не привязан к ОС разработчика |
 
 Проверки в CI не «на глаз»: предупреждение компилятора валит job `server`,
 сломанный манифест или типы — job `extension`.

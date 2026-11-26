@@ -1426,8 +1426,8 @@ Smoke-тестов API в CI нет: `wine` с i386-архитектурой н�
 
 | Что | Команда |
 |---|---|
-| Сборка сервера + расширения + архив | `./build.sh` (`SKIP_EXTENSION=1` — только exe); работает на macOS/Linux/Windows(Git Bash, MSYS2) |
-| Где взять MinGW | macOS: `brew install mingw-w64`; Debian/Ubuntu: `apt install mingw-w64`; Fedora: `dnf install mingw64-gcc`; Windows: MSYS2 `pacman -S mingw-w64-x86_64-gcc zip` |
+| Сборка сервера + расширения + архив | `./build.sh` (`SKIP_EXTENSION=1` — только exe); цель — Windows 7 x64 |
+| Где взять MinGW | macOS: `brew install mingw-w64`; Debian/Ubuntu: `apt install mingw-w64`; Fedora: `dnf install mingw64-gcc` |
 | Живой сервер | `./wine-ctl.sh start` / `stop` / `status` / `logs` / `reset` |
 | Контракт API (27 проверок) | `./wine-ctl.sh test` (проверено: `27 passed, 0 failed`); адрес задаётся `PRINTNUM_URL` — можно проверить службу на Windows/другой машине: `PRINTNUM_URL=http://192.168.1.20:5000 ./wine-ctl.sh test` |
 | Форматирование | `cd extension && npm run format` (prettier, стиль в `.prettierrc.json`); проверка — `npm run format:check` |

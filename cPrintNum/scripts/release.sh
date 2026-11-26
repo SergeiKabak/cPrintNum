@@ -50,31 +50,7 @@ mkdir -p "$OUT"
 # ---------- 1. только расширение ----------
 # manifest.json обязан быть в корне архива — иначе «Загрузить распакованное»
 # и магазины не поймут пакет.
-# Windows-хост: Compress-Archive, а не MSYS2 zip (тот пишет "dir\\file" — explorer
-# распаковывает такой архив плоским файлом).
-case "$(uname -s 2>/dev/null)" in
-  MINGW*|MSYS*|CYGWIN*) PREFER_PS=1 ;;
-  *) PREFER_PS=0 ;;
-esac
-
-PWSH=""
-command -v pwsh >/dev/null 2>&1 && PWSH="pwsh"
-[ -n "$PWSH" ] || { command -v powershell.exe >/dev/null 2>&1 && PWSH="powershell.exe"; }
-[ -n "$PWSH" ] || { [ -x /c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe ] && PWSH=/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe; }
-
-if [ "$PREFER_PS" = "1" ] && [ -n "$PWSH" ] && [ -f scripts/zip-forward.ps1 ]; then
-    win_out="$(cygpath -w "$OUT/printnum-extension-$VER.zip" 2>/dev/null || echo "$OUT/printnum-extension-$VER.zip")"
-    win_src="$(cygpath -w "$EXT_OUT" 2>/dev/null || echo "$EXT_OUT")"
-    win_ps1="$(cygpath -w scripts/zip-forward.ps1 2>/dev/null || echo scripts/zip-forward.ps1)"
-    "$PWSH" -NoProfile -ExecutionPolicy Bypass -File "$win_ps1" -Src "$win_src" -Dst "$win_out" -ContentsOnly >/dev/null
-elif [ "$PREFER_PS" = "0" ] && command -v zip >/dev/null 2>&1; then
-    ( cd "$EXT_OUT" && zip -X -r -9 "$OUT/printnum-extension-$VER.zip" . -x '*.map' '.DS_Store' >/dev/null )
-else
-    # Windows-хост без zip: PowerShell сжимает содержимое папки.
-    rm -f "$OUT/printnum-extension-$VER.zip"
-    powershell.exe -NoProfile -Command \
-        "Compress-Archive -Path '$(cygpath -w "$EXT_OUT")\*' -DestinationPath '$(cygpath -w "$OUT/printnum-extension-$VER.zip")' -Force" >/dev/null
-fi
+( cd "$EXT_OUT" && zip -X -r -9 "$OUT/printnum-extension-$VER.zip" . -x '*.map' '.DS_Store' >/dev/null )
 echo "✅ printnum-extension-$VER.zip"
 
 # ---------- 2. exe + конфиг ----------
@@ -96,21 +72,9 @@ cp -f scripts/install.ps1 "$OUT"/
 echo "✅ install.ps1"
 
 # ---------- 5. контрольные суммы ----------
-# macOS/shasum, Linux/sha256sum, Windows/MSYS2 — что найдётся.
-if command -v sha256sum >/dev/null 2>&1; then
-    SHA="sha256sum"
-elif command -v shasum >/dev/null 2>&1; then
-    SHA="shasum -a 256"
-else
-    SHA=""
-fi
-
-if [ -n "$SHA" ]; then
-    ( cd "$OUT" && $SHA *.zip *.exe *.ps1 2>/dev/null > SHA256SUMS.txt )
-else
-    echo "⚠️  sha256sum/shasum не найдены — SHA256SUMS.txt не создан"
-    : > "$OUT/SHA256SUMS.txt"
-fi
+SHA="sha256sum"
+command -v sha256sum >/dev/null 2>&1 || SHA="shasum -a 256"
+( cd "$OUT" && $SHA *.zip *.exe *.ps1 2>/dev/null > SHA256SUMS.txt )
 echo "✅ SHA256SUMS.txt"
 
 echo ""
