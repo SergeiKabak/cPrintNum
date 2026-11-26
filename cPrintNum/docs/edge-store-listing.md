@@ -63,7 +63,7 @@ QR-кодом отправления на обычном принтере эти
 Расширение не печатает само: оно передаёт данные маленькой службе
 printnum-win7.exe на этом же компьютере (127.0.0.1:5000), а та печатает на
 принтере через драйвер Windows. Служба бесплатная, лежит в релизах:
-https://github.com/SergeiKabak/PrintNum/releases
+https://github.com/SergeiKabak/cPrintNum/releases
 
 Требования
 • Windows 7 SP1 и новее (x64).
@@ -72,9 +72,9 @@ https://github.com/SergeiKabak/PrintNum/releases
 
 Приватность
 Расширение не собирает статистику и ничего не отправляет наружу: данные идут
-только на локальную службу. Политика: https://sergeikabak.github.io/PrintNum/privacy.html
+только на локальную службу. Политика: https://sergeikabak.github.io/cPrintNum/privacy.html
 
-Исходный код: https://github.com/SergeiKabak/PrintNum
+Исходный код: https://github.com/SergeiKabak/cPrintNum
 ```
 
 ### Подробное описание (EN, необязательно)
@@ -126,8 +126,8 @@ host_permissions:
 Разрешения: storage (настройки, список должников), scripting (инъекция
 pageHook в MAIN world страницы Ozon для чтения ответов API о штрихкодах).
 
-Скачать службу: https://github.com/SergeiKabak/PrintNum/releases
-Исходный код: https://github.com/SergeiKabak/PrintNum
+Скачать службу: https://github.com/SergeiKabak/cPrintNum/releases
+Исходный код: https://github.com/SergeiKabak/cPrintNum
 ```
 
 ## 5. Скриншоты
@@ -145,11 +145,11 @@ pageHook в MAIN world страницы Ozon для чтения ответов 
 
 ## 6. Приватность и поддержка
 
-- Privacy policy URL: `https://sergeikabak.github.io/PrintNum/privacy.html`
+- Privacy policy URL: `https://sergeikabak.github.io/cPrintNum/privacy.html`
   (включить GitHub Pages: Settings → Pages → Source: `main`, папка `/docs`,
   затем положить `privacy.md` → `privacy.html` или включить Jekyll).
-- Support/contact: `https://github.com/SergeiKabak/PrintNum/issues`.
-- Homepage: `https://github.com/SergeiKabak/PrintNum`.
+- Support/contact: `https://github.com/SergeiKabak/cPrintNum/issues`.
+- Homepage: `https://github.com/SergeiKabak/cPrintNum`.
 
 ## 7. Видимость: Public или Hidden
 

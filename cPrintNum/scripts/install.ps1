@@ -12,7 +12,7 @@
 
 $ErrorActionPreference = "Stop"
 
-$repo    = "SergeiKabak/PrintNum"
+$repo    = "SergeiKabak/cPrintNum"
 $dest    = Join-Path $env:LOCALAPPDATA "PrintNum"
 $zipPath = Join-Path $env:TEMP "printnum-windows.zip"
 

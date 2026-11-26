@@ -4,8 +4,8 @@
 **что лежит в бэклоге и почему пока не сделано**.
 
 - Текущая версия: **v2.1.0** (тег `v2.1.0`, релиз опубликован)
-- Репозиторий и CI/CD: <https://github.com/SergeiKabak/PrintNum>
-- Страницы для операторов: <https://sergeikabak.github.io/PrintNum/>
+- Репозиторий и CI/CD: <https://github.com/SergeiKabak/cPrintNum>
+- Страницы для операторов: <https://sergeikabak.github.io/cPrintNum/>
 - Техническая база знаний: [`README.md`](../README.md) (единый KB, ~1500 строк)
 
 ---
@@ -62,7 +62,7 @@
 | ✅ Self-hosted распространение | `scripts/release.sh`, `install.ps1` (скачивает последний релиз в `%LOCALAPPDATA%\PrintNum`, запускает службу, открывает `chrome://extensions`) |
 | ✅ Материалы для магазинов | `pack:store` (zip с `manifest.json` в корне), `store-logo-300.png`, тексты карточки и «Notes for certification» |
 | ✅ Политика конфиденциальности | `docs/privacy.html` — готова для полей Privacy policy URL |
-| ✅ Репозиторий с записью | форк `SergeiKabak/PrintNum`; `origin` = форк, `upstream` = `kirill18734/PrintNum` (только чтение) |
+| ✅ Репозиторий с записью | форк `SergeiKabak/cPrintNum`; `origin` = форк, `upstream` = `kirill18734/PrintNum` (только чтение) |
 
 ---
 
@@ -176,8 +176,8 @@ git push origin main
 git tag v2.2.0 && git push origin v2.2.0                    # CI соберёт и опубликует
 
 # 4. после релиза
-gh release view v2.2.0 -R SergeiKabak/PrintNum
-curl -sI https://github.com/SergeiKabak/PrintNum/releases/latest/download/install.ps1
+gh release view v2.2.0 -R SergeiKabak/cPrintNum
+curl -sI https://github.com/SergeiKabak/cPrintNum/releases/latest/download/install.ps1
 ```
 
 Обновление у оператора: распаковать новый архив поверх папки (сохранив

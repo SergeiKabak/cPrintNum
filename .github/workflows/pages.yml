@@ -1,9 +1,9 @@
 name: Pages
 
 # Публикует содержимое docs/ на GitHub Pages:
-#   https://sergeikabak.github.io/PrintNum/            — лендинг
-#   https://sergeikabak.github.io/PrintNum/install.html — установка
-#   https://sergeikabak.github.io/PrintNum/privacy.html — политика (для магазинов)
+#   https://sergeikabak.github.io/cPrintNum/            — лендинг
+#   https://sergeikabak.github.io/cPrintNum/install.html — установка
+#   https://sergeikabak.github.io/cPrintNum/privacy.html — политика (для магазинов)
 #
 # Один раз включить: Settings → Pages → Source: "GitHub Actions".
 

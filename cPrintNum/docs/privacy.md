@@ -47,9 +47,9 @@ PrintNum — инструмент для сотрудников пунктов �
 ## 7. Изменения
 
 Актуальная версия политики — в репозитории
-<https://github.com/SergeiKabak/PrintNum> (файл `cPrintNum/docs/privacy.md`).
-Публикуемая версия: <https://sergeikabak.github.io/PrintNum/privacy.html>.
+<https://github.com/SergeiKabak/cPrintNum> (файл `cPrintNum/docs/privacy.md`).
+Публикуемая версия: <https://sergeikabak.github.io/cPrintNum/privacy.html>.
 
 ## 8. Контакты
 
-GitHub Issues: <https://github.com/SergeiKabak/PrintNum/issues>
+GitHub Issues: <https://github.com/SergeiKabak/cPrintNum/issues>
