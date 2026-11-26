@@ -18,6 +18,9 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+# ZipArchiveMode живёт в System.IO.Compression, ZipFile/CreateEntryFromFile —
+# в System.IO.Compression.FileSystem. Нужны обе сборки (.NET Framework).
+Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 $base = (Get-Item -LiteralPath $Src).FullName
