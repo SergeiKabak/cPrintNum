@@ -57,7 +57,17 @@ case "$(uname -s 2>/dev/null)" in
   *) PREFER_PS=0 ;;
 esac
 
-if [ "$PREFER_PS" = "0" ] && command -v zip >/dev/null 2>&1; then
+PWSH=""
+command -v pwsh >/dev/null 2>&1 && PWSH="pwsh"
+[ -n "$PWSH" ] || { command -v powershell.exe >/dev/null 2>&1 && PWSH="powershell.exe"; }
+[ -n "$PWSH" ] || { [ -x /c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe ] && PWSH=/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe; }
+
+if [ "$PREFER_PS" = "1" ] && [ -n "$PWSH" ] && [ -f scripts/zip-forward.ps1 ]; then
+    win_out="$(cygpath -w "$OUT/printnum-extension-$VER.zip" 2>/dev/null || echo "$OUT/printnum-extension-$VER.zip")"
+    win_src="$(cygpath -w "$EXT_OUT" 2>/dev/null || echo "$EXT_OUT")"
+    win_ps1="$(cygpath -w scripts/zip-forward.ps1 2>/dev/null || echo scripts/zip-forward.ps1)"
+    "$PWSH" -NoProfile -ExecutionPolicy Bypass -File "$win_ps1" -Src "$win_src" -Dst "$win_out" -ContentsOnly >/dev/null
+elif [ "$PREFER_PS" = "0" ] && command -v zip >/dev/null 2>&1; then
     ( cd "$EXT_OUT" && zip -X -r -9 "$OUT/printnum-extension-$VER.zip" . -x '*.map' '.DS_Store' >/dev/null )
 else
     # Windows-хост без zip: PowerShell сжимает содержимое папки.

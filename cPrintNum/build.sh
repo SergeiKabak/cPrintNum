@@ -86,17 +86,16 @@ fi
 make_zip() {
     local out="$1" dir="$2" folder="$3"
     rm -f "$out"
-    if [ -n "$PWSH" ]; then
-        local win_out win_dir
+    if [ -n "$PWSH" ] && [ -f "$ROOT_DIR/scripts/zip-forward.ps1" ]; then
+        local win_out win_dir win_ps1
         win_out="$(cygpath -w "$out" 2>/dev/null || echo "$out")"
         win_dir="$(cygpath -w "$dir" 2>/dev/null || echo "$dir")"
-        # Compress-Archive в Windows PowerShell 5.1 пишет разделители как
-        # "PrintNum\extension\file" — Windows Explorer такой архив распаковывает
-        # неправильно. ZipFile.CreateFromDirectory всегда даёт "/".
-        "$PWSH" -NoProfile -Command \
-            "Add-Type -AssemblyName System.IO.Compression.FileSystem; \
-             if (Test-Path '$win_out') { Remove-Item '$win_out' -Force }; \
-             [IO.Compression.ZipFile]::CreateFromDirectory('$win_dir\\$folder', '$win_out', [IO.Compression.CompressionLevel]::Optimal, \$true)" >/dev/null
+        win_ps1="$(cygpath -w "$ROOT_DIR/scripts/zip-forward.ps1" 2>/dev/null || echo "$ROOT_DIR/scripts/zip-forward.ps1")"
+        # Compress-Archive (PS 5.1) и ZipFile::CreateFromDirectory (.NET Framework)
+        # пишут "dir\file" → Explorer распаковывает архив плоским файлом.
+        # zip-forward.ps1 собирает имена вручную через "/".
+        "$PWSH" -NoProfile -ExecutionPolicy Bypass -File "$win_ps1" \
+            -Src "$win_dir\\$folder" -Dst "$win_out" >/dev/null
         return
     fi
 
