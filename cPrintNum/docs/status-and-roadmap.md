@@ -66,13 +66,13 @@
 | ✅ Self-hosted распространение | `scripts/release.sh`, `install.ps1` (скачивает последний релиз в `%LOCALAPPDATA%\PrintNum`, запускает службу, открывает `chrome://extensions`) |
 | ✅ Материалы для магазинов | `pack:store` (zip с `manifest.json` в корне), `store-logo-300.png`, тексты карточки и «Notes for certification» |
 | ✅ Политика конфиденциальности | `docs/privacy.html` — готова для полей Privacy policy URL |
-| ✅ Отдельный репозиторий | `SergeiKabak/cPrintNum` — самостоятельный (не форк), одна ветка `main`, один тег `v2.1.0`; remote `origin` только туда |
+| ✅ Отдельный репозиторий | `SergeiKabak/cPrintNum` — самостоятельный (не форк), одна ветка `main`, теги `v2.1.0`, `v2.2.0`, `v2.2.1`; remote `origin` только туда |
 
 ---
 
-## 2. Следующее: версия 2.2.0
+## 2. Текущая работа: 2.2.x и кандидаты 2.3.0
 
-Состав релиза — две темы: **блокировка выдачи должнику** и выпуск обновления.
+2.2.0 — блокировка выдачи должнику; 2.2.1 — QR товара из `label`.
 
 ### 2.1. `giveoutGuard` — не дать выдать заказ должнику
 
@@ -105,10 +105,13 @@ capture-фазе, держит баннер, перепроверяет DOM на
       → баннер «Выдача заблокирована: Сергей К. (должник)», кнопка «Выдать»
       `disabled` + `pointer-events: none`, в т.ч. после SPA-перехода
       «К выдаче»; код не-должника блокировку снимает;
-- [ ] README §4.19 — как устроена блокировка и её ограничения
-      (кнопка ищется по тексту: «выдать», «завершить», «подтвердить»);
-- [ ] честно оценить риск ложных срабатываний: если Ozon нарисует кнопку
-      без текста (иконка) — блокировка не сработает, нужен лог-предупреждение.
+- [x] README §4.17 — как устроена блокировка и её ограничения
+      (кнопка ищется по тексту: «выдать», «завершить», «подтвердить»,
+      «провести оплату»; крестик закрывает только плашку);
+- [x] риск «кнопка без текста»: `giveoutGuard` считает проверки, где не нашёл
+      ни одной кнопки, и через ~3.5 с пишет в консоль
+      `[PrintNum:guard] кнопка выдачи не найдена по тексту…` — молчаливого
+      отказа больше нет.
 
 **Ограничение, о котором надо помнить:** блокировка на уровне DOM не
 защищает от выдачи, начатой другим путём (другая вкладка, мобильное
@@ -188,7 +191,7 @@ capture-фазе, держит баннер, перепроверяет DOM на
 
 ```bash
 # 1. версия
-$EDITOR extension/wxt.config.ts extension/package.json      # 2.2.0
+$EDITOR cPrintNum/extension/package.json                    # версия X.Y.Z
 
 # 2. проверки
 ./build.sh
@@ -196,12 +199,12 @@ $EDITOR extension/wxt.config.ts extension/package.json      # 2.2.0
 cd extension && npm run compile && npm run build && cd ..
 
 # 3. релиз
-git add -A && git commit -m "Release 2.2.0: …"
+git add -A && git commit -m "Release X.Y.Z: …"
 git push origin main
-git tag v2.2.0 && git push origin v2.2.0                    # CI соберёт и опубликует
+git tag vX.Y.Z && git push origin vX.Y.Z                    # CI соберёт и опубликует
 
 # 4. после релиза
-gh release view v2.2.0 -R SergeiKabak/cPrintNum
+gh release view vX.Y.Z -R SergeiKabak/cPrintNum
 curl -sI https://github.com/SergeiKabak/cPrintNum/releases/latest/download/install.ps1
 ```
 

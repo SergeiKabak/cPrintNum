@@ -48,6 +48,9 @@ let active: { clientId: string; name?: string } | null = null;
 const touched = new Set<GuardTarget>();
 
 let observer: MutationObserver | null = null;
+/** Сколько подряд проверок не нашли ни одной кнопки выдачи (для предупреждения). */
+let emptyChecks = 0;
+let warnedEmpty = false;
 let timer: ReturnType<typeof setInterval> | null = null;
 let scheduled = false;
 
@@ -172,7 +175,22 @@ const apply = () => {
     return;
   }
 
-  for (const el of candidates()) blockOne(el);
+  const found = candidates();
+  if (!found.length) {
+    emptyChecks += 1;
+    // Кнопка ищется по тексту: иконка без подписи не находится. Сообщаем один
+    // раз, чтобы это не осталось незамеченным (и не спамило каждые 700 мс).
+    if (emptyChecks === 5 && !warnedEmpty) {
+      warnedEmpty = true;
+      console.warn(
+        "[PrintNum:guard] кнопка выдачи не найдена по тексту (возможно, иконка без подписи) — блокировка не сработает",
+      );
+    }
+  } else {
+    emptyChecks = 0;
+  }
+
+  for (const el of found) blockOne(el);
 
   setBanner(`Выдача заблокирована${active.name ? `: ${active.name}` : ""} (должник)`);
 
@@ -249,6 +267,8 @@ export function applyGiveoutGuard(debtor: { clientId: string; name?: string } | 
     return;
   }
 
+  emptyChecks = 0;
+  warnedEmpty = false;
   const changed = active?.clientId !== debtor.clientId;
   active = { clientId: debtor.clientId, name: debtor.name };
 
