@@ -232,6 +232,14 @@ export default defineContentScript({
         return;
       }
 
+      if (data.type === "SCAN_BLOCKED") {
+        const code = typeof data.payload?.code === "string" ? data.payload.code : "";
+        if (!code) return;
+        showToast(`ШК не найден на выдаче\nКод: ${code}\nЗапрос в Ozon не отправлен`, "warn", 0);
+        console.warn(`[PrintNum:scan] заблокирован запрос со ШК ${code}`);
+        return;
+      }
+
       if (data.type === "ORDER") {
         const code = data.payload?.code;
         if (typeof code === "string") checkScan(code.trim());

@@ -29,6 +29,8 @@ import {
   SEARCH_ENDPOINT,
   SESSIONS_ENDPOINT,
   clientIdFromSearchBody,
+  codesInText,
+  extractGiveoutCodes,
   extractOrderCodes,
   extractSearchHit,
   extractSessionClients,
@@ -233,6 +235,51 @@ export default defineUnlistedScript({
     /** Отправления, пришедшие раньше, чем клиент сессии. */
     const pendingBySession = new Map<string, string[]>();
 
+    /**
+     * `sessionId → коды, доступные к выдаче` (Postings с pvzState=ReadyToGiveout).
+     * По этому списку блокируются запросы со ШК, которого нет на выдаче.
+     */
+    const giveoutCodes = new Map<string, Set<string>>();
+
+    /**
+     * Эндпоинты, несущие отсканированный ШК. Проверяем их до отправки:
+     * если кода нет среди товаров «на выдаче» — запрос не уходит в Ozon.
+     */
+    const SCAN_URL_RE = /\/Resolver\/|\/barcode|\/scan|order-condition\/Session\/search/i;
+
+    /** ШК из запроса, которого нет в списке «на выдаче» (или null — можно). */
+    const blockedScanCode = (url: string, body?: string): string | null => {
+      if (!SCAN_URL_RE.test(url)) return null;
+      if (url.includes(POSTINGS_ENDPOINT) || url.includes(SESSIONS_ENDPOINT)) return null;
+
+      const sessionId = currentSessionId();
+      const allowed = giveoutCodes.get(sessionId);
+      // Список ещё не загружен — не мешаем работать.
+      if (!allowed || !allowed.size) return null;
+
+      const codes = codesInText(`${url} ${body ?? ""}`);
+      for (const code of codes) {
+        if (!allowed.has(code)) return code;
+      }
+      return null;
+    };
+
+    /** Сообщает content script, что запрос со ШК заблокирован. */
+    const postBlockedScan = (code: string) => {
+      window.postMessage(
+        { source: "PrintNum", type: "SCAN_BLOCKED", payload: { code } },
+        location.origin,
+      );
+    };
+
+    /** Текущая сессия выдачи: из query или из пути `/session(-new)/<id>`. */
+    const currentSessionId = (): string => {
+      const fromQuery = urlSessionId(location.href);
+      if (fromQuery) return fromQuery;
+      const m = location.pathname.match(/\/session(?:-new)?\/(\d{3,})/);
+      return m?.[1] ?? "";
+    };
+
     /** `?sessionId=…` из URL ответа Postings. */
     const urlSessionId = (url: string): string => {
       try {
@@ -337,7 +384,9 @@ export default defineUnlistedScript({
       }
 
       if (url.includes(POSTINGS_ENDPOINT)) {
-        const sessionId = urlSessionId(url);
+        const sessionId = urlSessionId(url) || currentSessionId();
+        const allowed = extractGiveoutCodes(data);
+        if (sessionId && allowed.length) giveoutCodes.set(sessionId, new Set(allowed));
         const codes = extractOrderCodes(data);
         if (!sessionId || !codes.length) return;
 
@@ -392,11 +441,24 @@ export default defineUnlistedScript({
 
     const originalSend = XMLHttpRequest.prototype.send;
     (XMLHttpRequest.prototype as any).send = function (this: XMLHttpRequest, ...args: any[]) {
+      let body = "";
       try {
-        const body = bodyText(args[0]);
+        body = bodyText(args[0]);
         if (body) xhrBodies.set(this, body);
       } catch {
         // ignore
+      }
+
+      // Не отправляем запрос, если ШК нет среди товаров «на выдаче».
+      try {
+        const blocked = blockedScanCode(xhrUrls.get(this) || "", body);
+        if (blocked) {
+          postBlockedScan(blocked);
+          this.dispatchEvent(new ProgressEvent("loadend"));
+          return;
+        }
+      } catch {
+        // проверка не должна ломать сканирование
       }
 
       this.addEventListener("load", () => {
@@ -422,6 +484,25 @@ export default defineUnlistedScript({
       window.fetch = function (this: any, ...args: any[]) {
         const url = requestUrl(args[0]);
         const body = bodyText(args[1]?.body);
+
+        // Запрос со ШК, которого нет на выдаче, не уходит в Ozon.
+        try {
+          const blocked = blockedScanCode(url, body);
+          if (blocked) {
+            postBlockedScan(blocked);
+            return Promise.resolve(
+              new Response(
+                JSON.stringify({ result: "NotFound", message: "ШК не найден на выдаче" }),
+                {
+                  status: 404,
+                  headers: { "Content-Type": "application/json" },
+                },
+              ),
+            );
+          }
+        } catch {
+          // проверка не должна ломать сканирование
+        }
 
         return (originalFetch as any).apply(this, args).then(async (response: Response) => {
           try {

@@ -401,3 +401,50 @@ export function codeMatches(scanned: string, known: string): boolean {
   const shortB = b.replace(/-\d+$/, "");
   return shortA === b || shortB === a || (shortA.length > 6 && shortA === shortB);
 }
+
+/** Штрихкоды/номера отправлений, которые сейчас доступны к выдаче. */
+export function extractGiveoutCodes(data: unknown): string[] {
+  const list = (data as { postings?: unknown })?.postings;
+  if (!Array.isArray(list)) return [];
+
+  const out: string[] = [];
+  const seen = new Set<string>();
+
+  for (const raw of list.slice(0, 500)) {
+    if (!raw || typeof raw !== "object") continue;
+    const p = raw as Record<string, unknown>;
+
+    // «На выдаче» = пвз-состояние ReadyToGiveout; остальное (InRoute и т.п.)
+    // выдавать нельзя.
+    const state =
+      typeof p.pvzState === "string" ? p.pvzState : typeof p.state === "string" ? p.state : "";
+    if (state && state !== "ReadyToGiveout") continue;
+
+    const candidates: unknown[] = [p.label, p.name, p.orderNumber, p.displayBarcode1];
+    if (Array.isArray(p.barcodes)) candidates.push(...p.barcodes.slice(0, 5));
+
+    for (const value of candidates) {
+      if (typeof value !== "string") continue;
+      const code = value.trim();
+      if (!isOrderCode(code) || seen.has(code)) continue;
+      seen.add(code);
+      out.push(code);
+    }
+  }
+
+  return out;
+}
+
+/** Все коды отправлений, встречающиеся в произвольном тексте (тело запроса). */
+export function codesInText(text: string): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const re = /ii\d{9,14}|\d{6,12}-\d{3,5}-\d/g;
+  for (const m of text.matchAll(re)) {
+    const code = m[0];
+    if (!isOrderCode(code) || seen.has(code)) continue;
+    seen.add(code);
+    out.push(code);
+  }
+  return out;
+}
