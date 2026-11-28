@@ -39,6 +39,9 @@ export default defineContentScript({
     let blockGiveout = true;
     /** Сессия, по которой уже показали предупреждение (чтобы не спамить). */
     let warnedSession = "";
+    /** Последний клиент-должник: нужен, чтобы вернуть блокировку после
+     *  выключения и включения галки в popup. */
+    let lastDebtor: { clientId: string; name?: string } | null = null;
 
     const loadDebtors = () => {
       readDebtors().then((list) => {
@@ -58,7 +61,12 @@ export default defineContentScript({
       if (changes?.debtors) loadDebtors();
       if (changes?.[BLOCK_KEY] && typeof changes[BLOCK_KEY].newValue === "boolean") {
         blockGiveout = changes[BLOCK_KEY].newValue;
-        if (!blockGiveout) applyGiveoutGuard(null);
+        if (!blockGiveout) {
+          applyGiveoutGuard(null);
+        } else if (lastDebtor) {
+          // Галку вернули, а предметы уже выбраны — блокируем снова.
+          applyGiveoutGuard(lastDebtor);
+        }
       }
     };
 
@@ -148,6 +156,7 @@ export default defineContentScript({
         // Блокировку снимаем только по явному вводу кода другого клиента:
         // фоновые ответы API не должны «разблокировать» должника случайно.
         if (input.allowClear) {
+          lastDebtor = null;
           applyGiveoutGuard(null);
           warnedSession = "";
         }
@@ -158,7 +167,8 @@ export default defineContentScript({
       const who = ozonName ? `${ozonName} (${clientId})` : clientId;
       const clientKey = input.sessionId || clientId;
 
-      if (blockGiveout) applyGiveoutGuard({ clientId, name: ozonName || clientId });
+      lastDebtor = { clientId, name: ozonName || clientId };
+      if (blockGiveout) applyGiveoutGuard(lastDebtor);
 
       if (warnedSession !== clientKey) {
         warnedSession = clientKey;
