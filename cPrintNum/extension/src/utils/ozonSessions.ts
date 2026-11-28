@@ -15,6 +15,62 @@ export const SESSIONS_ENDPOINT = "/api2/giveout/Sessions";
 /** Эндпоинт отправлений сессии (`?sessionId=…` → список заказов). */
 export const POSTINGS_ENDPOINT = "/api2/giveout/Postings";
 
+/**
+ * Поиск клиента/сессии по коду выдачи (`clientId*NNNN`).
+ *
+ * Ответ содержит `clientInfo.id` и `giveoutInfo.sessionId` — самый ранний
+ * момент, когда известен клиент, ещё до открытия кнопки «Выдать».
+ */
+export const SEARCH_ENDPOINT = "/api2/order-condition/Session/search-v2";
+
+/** Что удалось вытащить из ответа `search-v2`. */
+export type SearchHit = {
+  clientId?: string;
+  clientName?: string;
+  sessionId?: string;
+};
+
+/** Разбирает ответ `search-v2` (`clientInfo` / `giveoutInfo`). */
+export function extractSearchHit(data: unknown): SearchHit | null {
+  if (!data || typeof data !== "object") return null;
+
+  const root = data as Record<string, any>;
+  const info = root.clientInfo as Record<string, unknown> | undefined;
+  const giveout = root.giveoutInfo as Record<string, unknown> | undefined;
+
+  const clientId = info ? clientIdOf(info.id) : "";
+  const sessionId = giveout ? clientIdOf(giveout.sessionId) : "";
+  if (!clientId && !sessionId) return null;
+
+  const rawName = info && (typeof info.shortName === "string" ? info.shortName : "");
+  const clientName = rawName ? rawName.trim().slice(0, 80) : "";
+
+  return {
+    ...(clientId ? { clientId } : {}),
+    ...(sessionId ? { sessionId } : {}),
+    ...(clientName ? { clientName } : {}),
+  };
+}
+
+/**
+ * `clientId` из кода выдачи в теле запроса `search-v2`
+ * (`{"query":"89367626*0328"}` → `89367626`).
+ */
+export function clientIdFromSearchBody(body: string | undefined): string {
+  if (!body) return "";
+  try {
+    const parsed = JSON.parse(body) as { query?: unknown };
+    if (typeof parsed?.query === "string") {
+      const id = clientIdOf(parsed.query.split("*")[0]);
+      if (id) return id;
+    }
+  } catch {
+    // не JSON — пробуем регуляркой ниже
+  }
+  const m = body.match(/"query"\s*:\s*"(\d{3,})\s*\*/);
+  return m?.[1] ?? "";
+}
+
 /** Номер отправления Ozon: `78060603-0180-1`. */
 export const ORDER_NUMBER_RE = /^\d{6,12}-\d{3,5}-\d$/;
 

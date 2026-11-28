@@ -26,8 +26,11 @@ import {
 } from "@/utils/ozonPlacements";
 import {
   POSTINGS_ENDPOINT,
+  SEARCH_ENDPOINT,
   SESSIONS_ENDPOINT,
+  clientIdFromSearchBody,
   extractOrderCodes,
+  extractSearchHit,
   extractSessionClients,
   extractSessionOrders,
   extractSessionOrdersFromText,
@@ -254,6 +257,22 @@ export default defineUnlistedScript({
         { source: "PrintNum", type: "SESSIONS", payload: { orders, clients: [] } },
         location.origin,
       );
+
+      // Сессия выдачи целиком: по ней content script решает, блокировать ли
+      // кнопку «Выдать» (должник определяется по clientId сессии).
+      window.postMessage(
+        {
+          source: "PrintNum",
+          type: "GIVEOUT",
+          payload: {
+            sessionId,
+            clientId: client.clientId,
+            ...(client.clientName ? { clientName: client.clientName } : {}),
+            codes: codes.slice(0, 200),
+          },
+        },
+        location.origin,
+      );
     };
 
     /** Скан отправления (для проверки должников) — код из `article.*`. */
@@ -284,9 +303,39 @@ export default defineUnlistedScript({
       isInterestingUrl(url) ||
       url.includes(SESSIONS_ENDPOINT) ||
       url.includes(POSTINGS_ENDPOINT) ||
+      url.includes(SEARCH_ENDPOINT) ||
       isGiveoutUrl(url);
 
     const handle = (url: string, data: unknown, body?: string, rawText?: string) => {
+      // Код выдачи (clientId*NNNN): клиент известен сразу — до кнопки «Выдать».
+      if (url.includes(SEARCH_ENDPOINT)) {
+        const hit = extractSearchHit(data) ?? {};
+        const clientId = hit.clientId || clientIdFromSearchBody(body);
+        if (!clientId) return;
+
+        if (hit.sessionId && hit.clientName) {
+          sessionClients.set(hit.sessionId, {
+            clientId: hit.clientId || clientId,
+            clientName: hit.clientName,
+          });
+        }
+
+        window.postMessage(
+          {
+            source: "PrintNum",
+            type: "GIVEOUT",
+            payload: {
+              ...(hit.sessionId ? { sessionId: hit.sessionId } : {}),
+              clientId,
+              ...(hit.clientName ? { clientName: hit.clientName } : {}),
+              codes: [],
+            },
+          },
+          location.origin,
+        );
+        return;
+      }
+
       if (url.includes(POSTINGS_ENDPOINT)) {
         const sessionId = urlSessionId(url);
         const codes = extractOrderCodes(data);

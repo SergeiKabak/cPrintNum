@@ -14,11 +14,13 @@
 declare const chrome: any;
 
 import { readDebtors, type Debtor } from "@/utils/debtors";
+import { applyGiveoutGuard } from "@/utils/giveoutGuard";
 import { codeMatches } from "@/utils/ozonSessions";
 import { showToast } from "@/utils/toast";
 
 const MAX_ENTRIES = 3000;
 const STATS_KEY = "debtorStats";
+const BLOCK_KEY = "debtorBlockGiveout";
 const TOAST_MS = 8000;
 
 export default defineContentScript({
@@ -33,6 +35,10 @@ export default defineContentScript({
     /** `clientId → clientShortName` из `/giveout/Sessions` (там нет отправлений). */
     const clientNames = new Map<string, string>();
     let debtors: Debtor[] = [];
+    /** Блокировать ли кнопку «Выдать», когда клиент сессии в долгу. */
+    let blockGiveout = true;
+    /** Сессия, по которой уже показали предупреждение (чтобы не спамить). */
+    let warnedSession = "";
 
     const loadDebtors = () => {
       readDebtors().then((list) => {
@@ -42,9 +48,18 @@ export default defineContentScript({
 
     loadDebtors();
 
+    chrome.storage.local.get([BLOCK_KEY], (stored: any) => {
+      if (typeof stored?.[BLOCK_KEY] === "boolean") blockGiveout = stored[BLOCK_KEY];
+      else blockGiveout = true;
+    });
+
     const onStorageChanged = (changes: any, area: string) => {
-      if (area !== "local" || !changes?.debtors) return;
-      loadDebtors();
+      if (area !== "local") return;
+      if (changes?.debtors) loadDebtors();
+      if (changes?.[BLOCK_KEY] && typeof changes[BLOCK_KEY].newValue === "boolean") {
+        blockGiveout = changes[BLOCK_KEY].newValue;
+        if (!blockGiveout) applyGiveoutGuard(null);
+      }
     };
 
     chrome.storage.onChanged.addListener(onStorageChanged);
@@ -114,6 +129,58 @@ export default defineContentScript({
       console.warn(`[PrintNum:debt] должник ${who}, отправление ${code}`);
     };
 
+    /**
+     * Решение по клиенту сессии выдачи: должник → блокируем кнопку «Выдать»
+     * и показываем плашку с именем из Ozon (`shortName`).
+     */
+    const evaluateGiveout = (input: {
+      clientId: string;
+      sessionId?: string;
+      clientName?: string;
+    }) => {
+      const { clientId } = input;
+      if (!clientId) return;
+
+      const debtor = debtors.find((d) => d.clientId === clientId);
+      if (!debtor) {
+        // Клиент не должник — снимаем блокировку, если стояла.
+        applyGiveoutGuard(null);
+        warnedSession = "";
+        return;
+      }
+
+      const ozonName = input.clientName?.trim() || clientNames.get(clientId) || debtor.name || "";
+      const who = ozonName ? `${ozonName} (${clientId})` : clientId;
+      const clientKey = input.sessionId || clientId;
+
+      if (blockGiveout) applyGiveoutGuard({ clientId, name: ozonName || clientId });
+
+      if (warnedSession !== clientKey) {
+        warnedSession = clientKey;
+        showToast(`Не оплачено!\nКлиент: ${who}\nВыдача заблокирована`, "err", TOAST_MS);
+        console.warn(`[PrintNum:debt] должник ${who}, сессия ${input.sessionId || "—"}`);
+      }
+    };
+
+    /**
+     * Код выдачи Ozon — `<clientId>*<NNNN>` (например, `89367626*0328`).
+     * Проверяем прямо в поле сканера: блокировка включается до ответа API.
+     */
+    const GIVEOUT_CODE_RE = /^(\d{3,})\s*\*\s*\d{1,6}$/;
+
+    const onScanInput = (event: Event) => {
+      const el = event.target as HTMLInputElement | null;
+      if (!el || el.tagName !== "INPUT") return;
+      const value = (el.value || "").trim();
+      if (!value.includes("*")) return;
+      const m = value.match(GIVEOUT_CODE_RE);
+      if (!m?.[1]) return;
+      evaluateGiveout({ clientId: m[1] });
+    };
+
+    document.addEventListener("input", onScanInput, true);
+    ctx.onInvalidated(() => document.removeEventListener("input", onScanInput, true));
+
     // ---- сообщения из pageHook (MAIN world) ----
     ctx.addEventListener(window, "message", (event: MessageEvent) => {
       if (event.source !== window) return;
@@ -132,6 +199,16 @@ export default defineContentScript({
           ),
           clients.filter((c: any) => c && typeof c.clientId === "string"),
         );
+        return;
+      }
+
+      if (data.type === "GIVEOUT") {
+        const payload = data.payload ?? {};
+        evaluateGiveout({
+          clientId: typeof payload.clientId === "string" ? payload.clientId : "",
+          sessionId: typeof payload.sessionId === "string" ? payload.sessionId : "",
+          clientName: typeof payload.clientName === "string" ? payload.clientName : "",
+        });
         return;
       }
 

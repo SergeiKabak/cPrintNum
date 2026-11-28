@@ -29,6 +29,9 @@ type Status = { kind: "idle" | "ok" | "err"; msg?: string };
 /** Диагностика из content script: сколько пар «клиент ↔ отправление» поймано. */
 type WatchStats = { pairs: number; clients: number; at: number };
 
+/** Ключ настройки: блокировать кнопку «Выдать» у должника. */
+const BLOCK_KEY = "debtorBlockGiveout";
+
 export default function DebtorsPanel() {
   const [list, setList] = useState<Debtor[]>([]);
   const [clientId, setClientId] = useState("");
@@ -37,6 +40,7 @@ export default function DebtorsPanel() {
   const [editId, setEditId] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const [watch, setWatch] = useState<WatchStats | null>(null);
+  const [blockGiveout, setBlockGiveout] = useState(true);
 
   const reload = () => {
     readDebtors().then(setList);
@@ -45,14 +49,16 @@ export default function DebtorsPanel() {
   useEffect(() => {
     reload();
 
-    chrome.storage.local.get(["debtorStats"], (stored: any) => {
+    chrome.storage.local.get(["debtorStats", BLOCK_KEY], (stored: any) => {
       if (stored?.debtorStats) setWatch(stored.debtorStats as WatchStats);
+      if (typeof stored?.[BLOCK_KEY] === "boolean") setBlockGiveout(stored[BLOCK_KEY]);
     });
 
     const onChanged = (changes: any, area: string) => {
       if (area !== "local") return;
       if (changes?.[DEBTORS_KEY]) reload();
       if (changes?.debtorStats) setWatch(changes.debtorStats.newValue ?? null);
+      if (changes?.[BLOCK_KEY]) setBlockGiveout(changes[BLOCK_KEY].newValue !== false);
     };
 
     chrome.storage.onChanged.addListener(onChanged);
@@ -188,6 +194,20 @@ export default function DebtorsPanel() {
             </Button>
           )}
         </div>
+
+        <label className="flex items-center gap-2 text-[11px] leading-tight cursor-pointer select-none">
+          <input
+            type="checkbox"
+            className="h-3.5 w-3.5 accent-red-600"
+            checked={blockGiveout}
+            onChange={(e) => {
+              const next = e.currentTarget.checked;
+              setBlockGiveout(next);
+              chrome.storage.local.set({ [BLOCK_KEY]: next });
+            }}
+          />
+          <span>Блокировать кнопку «Выдать» у должника</span>
+        </label>
 
         {watch && (
           <span className="text-[10px] text-muted-foreground leading-tight">
