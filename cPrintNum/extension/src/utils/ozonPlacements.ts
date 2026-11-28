@@ -114,18 +114,29 @@ export function findBarcode(value: unknown): string | null {
 }
 
 /**
- * ШК из ответа о полке: `barcode`, иначе `label` внутри указанного объекта.
+ * Код для QR товара.
+ *
+ * Всегда предпочитаем `label` (номер отправления вида `0121553149-0095-1`):
+ * `barcode` у КИЗ/DataMatrix — длинная строка с непечатаемыми разделителями
+ * (`\u001d`, `*`, base64), она не проходит `QR_PAYLOAD_RE` и на этикетку
+ * не влезает. Если `label` нет или он битый — пробуем `barcode`.
+ */
+function pickQrCode(obj: Record<string, unknown> | null | undefined): string | null {
+  for (const value of [obj?.label, obj?.barcode]) {
+    if (typeof value !== "string") continue;
+    const code = value.trim();
+    if (code && QR_PAYLOAD_RE.test(code)) return code;
+  }
+  return null;
+}
+
+/**
+ * ШК из ответа о полке: `label`, иначе `barcode` внутри указанного объекта.
  * Резолвер для ячеек отдаёт его же в `article.*`.
  */
 function shelfQr(data: unknown, key: string): string | null {
   const obj = (data as Record<string, any> | null)?.[key];
-  const code =
-    typeof obj?.barcode === "string" && obj.barcode
-      ? obj.barcode
-      : typeof obj?.label === "string"
-        ? obj.label
-        : "";
-  return code && QR_PAYLOAD_RE.test(code.trim()) ? code.trim() : null;
+  return pickQrCode(obj);
 }
 
 /** Быстрый префильтр URL до `JSON.parse`. */
@@ -232,13 +243,8 @@ export function parsePlacement(
     const raw = article?.address;
     if (typeof raw !== "string" || !raw.trim()) return null;
 
-    // ШК берём из того же ответа: barcode, иначе label.
-    const code =
-      typeof article?.barcode === "string" && article.barcode
-        ? article.barcode
-        : typeof article?.label === "string"
-          ? article.label
-          : "";
+    // QR берём из того же ответа: label, иначе barcode (КИЗ не печатается).
+    const code = pickQrCode(article) ?? "";
 
     return normalizePlacement({
       text: raw.trim(),
