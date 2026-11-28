@@ -137,15 +137,20 @@ export default defineContentScript({
       clientId: string;
       sessionId?: string;
       clientName?: string;
+      /** Снимать блокировку, если клиент не должник (только явный ввод кода). */
+      allowClear?: boolean;
     }) => {
       const { clientId } = input;
       if (!clientId) return;
 
       const debtor = debtors.find((d) => d.clientId === clientId);
       if (!debtor) {
-        // Клиент не должник — снимаем блокировку, если стояла.
-        applyGiveoutGuard(null);
-        warnedSession = "";
+        // Блокировку снимаем только по явному вводу кода другого клиента:
+        // фоновые ответы API не должны «разблокировать» должника случайно.
+        if (input.allowClear) {
+          applyGiveoutGuard(null);
+          warnedSession = "";
+        }
         return;
       }
 
@@ -157,7 +162,12 @@ export default defineContentScript({
 
       if (warnedSession !== clientKey) {
         warnedSession = clientKey;
-        showToast(`Не оплачено!\nКлиент: ${who}\nВыдача заблокирована`, "err", TOAST_MS);
+        // Висит, пока оператор не закроет крестиком (ms = 0).
+        showToast(
+          `Не оплачено!\nКлиент: ${who}\nВыдача заблокирована — закройте плашку крестиком, когда разберётесь`,
+          "err",
+          0,
+        );
         console.warn(`[PrintNum:debt] должник ${who}, сессия ${input.sessionId || "—"}`);
       }
     };
@@ -175,7 +185,7 @@ export default defineContentScript({
       if (!value.includes("*")) return;
       const m = value.match(GIVEOUT_CODE_RE);
       if (!m?.[1]) return;
-      evaluateGiveout({ clientId: m[1] });
+      evaluateGiveout({ clientId: m[1], allowClear: true });
     };
 
     document.addEventListener("input", onScanInput, true);
